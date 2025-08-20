@@ -77,7 +77,9 @@ func createMeta(diffCmd []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open meta file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	if _, err := io.Copy(f, bytes.NewReader(metab)); err != nil {
 		return fmt.Errorf("failed to write meta file: %w", err)
 	}

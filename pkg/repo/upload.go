@@ -31,7 +31,9 @@ func uploadFileToS3(presignedURL, filePath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	// Read the file content into memory
 	fileBytes, err := io.ReadAll(file)
@@ -53,7 +55,9 @@ func uploadFileToS3(presignedURL, filePath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to upload file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	// Check S3 response
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
@@ -95,7 +99,9 @@ func getPresignedURL(apiEndpoint string, jwtToken string, filePath string) (stri
 	if err != nil {
 		return "", fmt.Errorf("failed to POST to %s, with error: %w", apiEndpoint, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusUnauthorized {
