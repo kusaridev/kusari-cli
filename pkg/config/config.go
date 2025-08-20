@@ -1,6 +1,6 @@
-// =============================================================================
-// pkg/config/config.go
-// =============================================================================
+// Copyright (c) Kusari <https://www.kusari.dev/>
+// SPDX-License-Identifier: MIT
+
 package config
 
 import (

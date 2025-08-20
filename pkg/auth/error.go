@@ -1,4 +1,6 @@
-// pkg/auth/errors.go
+// Copyright (c) Kusari <https://www.kusari.dev/>
+// SPDX-License-Identifier: MIT
+
 package auth
 
 import "fmt"
