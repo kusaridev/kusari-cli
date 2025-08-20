@@ -7,6 +7,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	platformUrl string
+)
+
+func init() {
+	scan.Flags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
+}
+
 var scan = &cobra.Command{
 	Use:   "scan <directory> <git-diff command>",
 	Short: "Package directory and diff, then submit for analysis",
@@ -21,6 +29,6 @@ var scan = &cobra.Command{
 		dir := args[0]
 		diff := args[1:]
 
-		return repo.Scan(dir, diff)
+		return repo.Scan(dir, diff, platformUrl)
 	},
 }

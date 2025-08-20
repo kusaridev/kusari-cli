@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	clientId    string
-	authEndpoint      string
-	consoleUrl  string
-	verbose        bool
+	clientId     string
+	authEndpoint string
+	consoleUrl   string
+	verbose      bool
 )
 
 func init() {
@@ -32,6 +32,6 @@ var login = &cobra.Command{
 func run(cmd *cobra.Command, args []string) error {
 	redirectPort := port.GenerateRandomPortOrDefault()
 	redirectUrl := fmt.Sprintf("http://localhost:%s/callback", redirectPort)
-	
+
 	return l.Login(cmd.Context(), clientId, redirectUrl, authEndpoint, redirectPort, consoleUrl, verbose)
 }

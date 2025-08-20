@@ -1,6 +1,7 @@
 package auth
 
 import "time"
+
 type AuthResult struct {
 	Token *Token
 	Error error
