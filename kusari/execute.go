@@ -4,7 +4,7 @@
 package main
 
 import (
-	"github.com/kusaridev/iac/app-code/kusari-cli/kusari/cmd"
+	"github.com/kusaridev/kusari-cli/kusari/cmd"
 	"github.com/spf13/cobra"
 )
 

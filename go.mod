@@ -1,4 +1,4 @@
-module github.com/kusaridev/iac/app-code/kusari-cli
+module github.com/kusaridev/kusari-cli
 
 go 1.24.4
 

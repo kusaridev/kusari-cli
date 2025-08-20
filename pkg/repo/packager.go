@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kusaridev/iac/app-code/kusari-cli/api"
+	"github.com/kusaridev/kusari-cli/api"
 )
 
 // PackageDirectory creates a zip file from a directory
