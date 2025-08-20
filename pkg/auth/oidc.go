@@ -33,10 +33,15 @@ func Authenticate(ctx context.Context, clientId string, redirectUrl string, auth
 	codeVerifier := oauth2.GenerateVerifier()
 
 	// Get code.
-	l, _ := net.Listen("tcp", fmt.Sprintf("localhost:%s", redirectPort))
+	l, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", redirectPort))
+	if err != nil {
+		return nil, NewAuthErrorWithCause(ErrNetworkError, "failed to listen", err)
+	}
 	var callbackRes = make(chan callbackResult)
 	go func() {
-		defer l.Close()
+		defer func() {
+			_ = l.Close()
+		}()
 		err := http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			handleCallbackv2(w, r, state, callbackRes, consoleAnalysisUrl)
 		}))
