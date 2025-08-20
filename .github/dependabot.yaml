@@ -1,0 +1,34 @@
+version: 2
+updates:
+- package-ecosystem: "gomod"
+  directory: "/"
+  schedule:
+    interval: "weekly"
+  groups:
+    gomod:
+      patterns:
+        - "*"
+      exclude-patterns:
+        - "golang.org/x/*"
+    golang-x:
+      patterns:
+        - "golang.org/x/*"
+- package-ecosystem: "github-actions"
+  directory: "/"
+  schedule:
+    interval: "weekly"
+  groups:
+    github-actions:
+      patterns:
+        - "*"
+      exclude-patterns:
+        - "actions/*"
+        - "github/*"
+        - "golangci/*"
+    github-owned:
+      patterns:
+        - "actions/*"
+        - "github/*"
+    golangci:
+      patterns:
+        - "golangci/*"
