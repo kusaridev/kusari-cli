@@ -1,6 +1,6 @@
-// =============================================================================
-// pkg/auth/oidc.go
-// =============================================================================
+// Copyright (c) Kusari <https://www.kusari.dev/>
+// SPDX-License-Identifier: MIT
+
 package auth
 
 import (

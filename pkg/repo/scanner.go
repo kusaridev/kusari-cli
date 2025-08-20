@@ -1,6 +1,6 @@
-// =============================================================================
-// pkg/repo/scanner.go
-// =============================================================================
+// Copyright (c) Kusari <https://www.kusari.dev/>
+// SPDX-License-Identifier: MIT
+
 package repo
 
 import (
