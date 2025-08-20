@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	l "github.com/kusaridev/iac/app-code/kusari-cli/pkg/login"
-	"github.com/kusaridev/iac/app-code/kusari-cli/pkg/port"
+	l "github.com/kusaridev/kusari-cli/pkg/login"
+	"github.com/kusaridev/kusari-cli/pkg/port"
 	"github.com/spf13/cobra"
 )
 

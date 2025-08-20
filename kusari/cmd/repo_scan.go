@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/kusaridev/iac/app-code/kusari-cli/pkg/repo"
+	"github.com/kusaridev/kusari-cli/pkg/repo"
 	"github.com/spf13/cobra"
 )
 

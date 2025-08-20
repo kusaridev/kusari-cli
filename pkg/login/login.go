@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kusaridev/iac/app-code/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/pkg/auth"
 )
 
 func Login(ctx context.Context, clientId string, redirectUrl string, authEndpoint string, redirectPort string, consoleUrl string, verbose bool) error {

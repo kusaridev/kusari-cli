@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kusaridev/iac/app-code/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/pkg/auth"
 )
 
 const (
