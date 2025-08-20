@@ -64,8 +64,6 @@ func uploadFileToS3(presignedURL, filePath string) error {
 // GetPresignedUrl utilizes authorized client to obtain the presigned URL to upload to S3
 func getPresignedURL(apiEndpoint string, jwtToken string, filePath string) (string, error) {
 
-	// apiEndpoint = fmt.Sprintf("%s/inspector/presign/bundle-upload", apiEndpoint)
-
 	// Prepare the payload for the presigned URL request
 	payload := map[string]string{
 		"filename": filePath,
@@ -74,8 +72,6 @@ func getPresignedURL(apiEndpoint string, jwtToken string, filePath string) (stri
 	if err != nil {
 		return "", fmt.Errorf("error creating JSON payload: %w", err)
 	}
-
-	fmt.Printf("payload: %s\n", string(payloadBytes))
 
 	// Create HTTP client with timeout
 	client := &http.Client{

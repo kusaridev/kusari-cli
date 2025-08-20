@@ -5,6 +5,7 @@ package repo
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -57,16 +58,22 @@ func Scan(dir string, diffCmd []string, platformUrl string) error {
 		return fmt.Errorf("failed to load auth token: %w", err)
 	}
 
-	apiEndpoint := fmt.Sprintf("%s/inspector/presign/bundle-upload", platformUrl)
+	baseURL, err := url.Parse(platformUrl)
+	if err != nil {
+		return err
+	}
+	apiEndpoint := baseURL.JoinPath("inspector/presign/bundle-upload").String()
+
 	presignedUrl, err := getPresignedURL(apiEndpoint, token.AccessToken, tarballName)
 	if err != nil {
 		return fmt.Errorf("failed to get presigned URL: %w", err)
 	}
-	fmt.Printf("Presigned URL: %s\n", presignedUrl)
 
 	if err := uploadFileToS3(presignedUrl, filepath.Join(tarballDir, tarballName)); err != nil {
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
+
+	fmt.Println("Success!")
 
 	return nil
 }

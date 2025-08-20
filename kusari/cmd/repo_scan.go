@@ -12,7 +12,7 @@ var (
 )
 
 func init() {
-	login.Flags().StringVarP(&platformUrl, "platform-url", "p", "https://platform.api.us.kusari.cloud/", "platform url")
+	scan.Flags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
 }
 
 var scan = &cobra.Command{
