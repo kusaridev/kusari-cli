@@ -18,7 +18,7 @@ const (
 	tarballDir  = "kusari-dir"
 )
 
-func Scan(dir string, diffCmd []string) error {
+func Scan(dir string, diffCmd []string, platformUrl string) error {
 	if err := validateDirectory(dir); err != nil {
 		return fmt.Errorf("failed to validate directory: %w", err)
 	}
@@ -57,7 +57,7 @@ func Scan(dir string, diffCmd []string) error {
 		return fmt.Errorf("failed to load auth token: %w", err)
 	}
 
-	apiEndpoint := fmt.Sprintf("%s/inspector/presign/bundle-upload", "https://platform.api.dev.kusari.cloud")
+	apiEndpoint := fmt.Sprintf("%s/inspector/presign/bundle-upload", platformUrl)
 	presignedUrl, err := getPresignedURL(apiEndpoint, token.AccessToken, tarballName)
 	if err != nil {
 		return fmt.Errorf("failed to get presigned URL: %w", err)
