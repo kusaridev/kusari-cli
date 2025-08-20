@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/kusaridev/iac/app-code/kusari-cli/pkg/auth"
@@ -73,9 +74,23 @@ func Scan(dir string, diffCmd []string, platformUrl string) error {
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
 
-	fmt.Println("Success!")
+	epoch, err := getEpochFromUrl(presignedUrl)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: https://console.dev.kusari.cloud/analysis/users/%s/result\n", *epoch)
 
 	return nil
+}
+
+func getEpochFromUrl(presignUrl string) (*string, error) {
+	u, err := url.Parse(presignUrl)
+	if err != nil {
+		return nil, fmt.Errorf("Error parsing URL: ", err)
+	}
+	epoch := path.Base(u.Path)
+	return &epoch, nil
 }
 
 // ValidateDirectory checks if a directory exists and is readable
