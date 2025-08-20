@@ -87,7 +87,7 @@ func Scan(dir string, diffCmd []string, platformUrl string) error {
 func getEpochFromUrl(presignUrl string) (*string, error) {
 	u, err := url.Parse(presignUrl)
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing URL: ", err)
+		return nil, fmt.Errorf("error parsing URL: %w", err)
 	}
 	epoch := path.Base(u.Path)
 	return &epoch, nil
