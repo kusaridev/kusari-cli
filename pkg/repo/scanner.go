@@ -79,7 +79,7 @@ func Scan(dir string, diffCmd []string, platformUrl string) error {
 		return err
 	}
 
-	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: https://console.dev.kusari.cloud/analysis/users/%s/result\n", *epoch)
+	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: https://console.us.kusari.cloud/analysis/users/%s/result\n", *epoch)
 
 	return nil
 }
