@@ -125,9 +125,9 @@ changelog:
 # GitHub release configuration
 release:
   # Repository information
-  github:
-    owner: kusaridev
-    name: kusari
+  # github:
+  #   owner: kusaridev
+  #   name: kusari-cli
   # Draft release
   draft: false
   # Mark as prerelease for non-tagged versions
