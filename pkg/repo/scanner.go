@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/kusaridev/kusari-cli/pkg/auth"
 )
@@ -21,6 +22,13 @@ const (
 )
 
 func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, verbose bool) error {
+	if verbose {
+		fmt.Printf(" dir: %s\n", dir)
+		fmt.Printf(" diffCmd: %s\n", strings.Join(diffCmd, " "))
+		fmt.Printf(" platformUrl: %s\n", platformUrl)
+		fmt.Printf(" consoleUrl: %s\n", consoleUrl)
+	}
+
 	if err := validateDirectory(dir); err != nil {
 		return fmt.Errorf("failed to validate directory: %w", err)
 	}
