@@ -38,7 +38,6 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '1.24'
           go-version-file: 'go.mod'
           cache: false
 
@@ -47,27 +46,26 @@ jobs:
       - name: Install syft
         uses: anchore/sbom-action/download-syft@cee1b8e05ae5b2593a75e197229729eabaa9f8ec # v0.20.2
 
-      - name: Run GoReleaser Snapshot
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        id: run-goreleaser-snapshot
-        uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean --snapshot --skip=sign
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: v0.0.0-snapshot-tag
-          DOCKER_CONTEXT: default
+      # - name: Run GoReleaser Snapshot
+      #   if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      #   id: run-goreleaser-snapshot
+      #   uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
+      #   with:
+      #     distribution: goreleaser
+      #     version: latest
+      #     args: release --clean --snapshot --skip=sign
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     GORELEASER_CURRENT_TAG: v0.0.0-snapshot-tag
+      #     DOCKER_CONTEXT: default
       - name: Run GoReleaser Release
-        if: startsWith(github.ref, 'refs/tags/')
+        # if: startsWith(github.ref, 'refs/tags/')
         id: run-goreleaser-release
         uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
         with:
           distribution: goreleaser
           version: latest
-          # use .goreleaser-nightly.yaml for nightly build; otherwise use the default
-          args: ${{ contains( github.ref, 'nightly' ) && 'release --clean -f .goreleaser-nightly.yaml' || 'release --clean' }}
+          args: 'release --clean'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCKER_CONTEXT: default
