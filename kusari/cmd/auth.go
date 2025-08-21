@@ -8,13 +8,14 @@ import (
 )
 
 func Auth() *cobra.Command {
+
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "auth things",
 		Long:  "do auth things",
 	}
 
-	cmd.AddCommand(login)
+	cmd.AddCommand(login())
 
 	return cmd
 }
