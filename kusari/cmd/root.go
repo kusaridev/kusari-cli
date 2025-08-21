@@ -1,10 +1,9 @@
 // Copyright (c) Kusari <https://www.kusari.dev/>
 // SPDX-License-Identifier: MIT
 
-package main
+package cmd
 
 import (
-	"github.com/kusaridev/kusari-cli/kusari/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -26,8 +25,8 @@ var rootCmd = &cobra.Command{
 
 func Execute() error {
 
-	rootCmd.AddCommand(cmd.Auth(consoleUrl, verbose))
-	rootCmd.AddCommand(cmd.Repo(consoleUrl, verbose))
+	rootCmd.AddCommand(Auth())
+	rootCmd.AddCommand(Repo())
 
 	return rootCmd.Execute()
 }

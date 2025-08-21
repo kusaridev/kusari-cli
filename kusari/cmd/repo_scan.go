@@ -18,7 +18,7 @@ func init() {
 	scancmd.Flags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
 }
 
-func scan(consoleUrl string, verbose bool) *cobra.Command {
+func scan() *cobra.Command {
 	scancmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if len(args) < 2 {
 			return fmt.Errorf("not enough arguments")

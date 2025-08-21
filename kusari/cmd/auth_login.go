@@ -27,7 +27,7 @@ var logincmd = &cobra.Command{
 	Long:  `Login to Kusari Platform`,
 }
 
-func login(consoleUrl string, verbose bool) *cobra.Command {
+func login() *cobra.Command {
 	logincmd.RunE = func(cmd *cobra.Command, args []string) error {
 		redirectPort := port.GenerateRandomPortOrDefault()
 		redirectUrl := fmt.Sprintf("http://localhost:%s/callback", redirectPort)
