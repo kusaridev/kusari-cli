@@ -71,7 +71,7 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return err
 	}
 
-	presignedUrl, err := getPresignedURL(apiEndpoint, token.AccessToken, tarballName)
+	presignedUrl, err := getPresignedURL(*apiEndpoint, token.AccessToken, tarballName)
 	if err != nil {
 		return fmt.Errorf("failed to get presigned URL: %w", err)
 	}
@@ -90,7 +90,7 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return err
 	}
 
-	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: %s\n", consoleFullUrl)
+	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: %s\n", *consoleFullUrl)
 
 	return nil
 }
