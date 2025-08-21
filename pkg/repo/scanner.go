@@ -20,7 +20,7 @@ const (
 	tarballDir  = "kusari-dir"
 )
 
-func Scan(dir string, diffCmd []string, platformUrl string) error {
+func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, verbose bool) error {
 	if err := validateDirectory(dir); err != nil {
 		return fmt.Errorf("failed to validate directory: %w", err)
 	}
@@ -79,7 +79,14 @@ func Scan(dir string, diffCmd []string, platformUrl string) error {
 		return err
 	}
 
-	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: https://console.us.kusari.cloud/analysis/users/%s/result\n", *epoch)
+	baseConsoleURL, err := url.Parse(consoleUrl)
+	if err != nil {
+		return err
+	}
+	path := fmt.Sprintf("analysis/users/%s/result", *epoch)
+	consoleFullUrl := baseConsoleURL.JoinPath(path).String()
+
+	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: %s\n", consoleFullUrl)
 
 	return nil
 }

@@ -14,15 +14,11 @@ import (
 var (
 	clientId     string
 	authEndpoint string
-	consoleUrl   string
-	verbose      bool
 )
 
 func init() {
-	login.Flags().StringVarP(&consoleUrl, "console-url", "", "http://console.us.kusari.cloud/", "console url")
 	login.Flags().StringVarP(&authEndpoint, "auth-endpoint", "p", "https://auth.us.kusari.cloud/", "authentication endpoint URL")
 	login.Flags().StringVarP(&clientId, "client-id", "c", "4lnk6jccl3hc4lkcudai5lt36u", "OAuth2 client ID")
-	login.Flags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 }
 
 var login = &cobra.Command{
