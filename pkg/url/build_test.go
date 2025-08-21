@@ -14,7 +14,7 @@ func Test_Build_Base(t *testing.T) {
 }
 func Test_Build_Hostname_Error(t *testing.T) {
 	_, e := Build("*****")
-	
+
 	assert.NotNil(t, e)
 }
 func Test_Build_Base_Trailing_Slash(t *testing.T) {
