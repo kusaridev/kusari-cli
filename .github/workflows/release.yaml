@@ -71,25 +71,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCKER_CONTEXT: default
 
-      # - name: Generate hashes and extract image digest
-      #   id: hash
-      #   if: startsWith(github.ref, 'refs/tags/')
-      #   env:
-      #     ARTIFACTS: "${{ steps.run-goreleaser-release.outputs.artifacts }}"
-      #   run: |
-      #     set -euo pipefail
+      - name: Generate hashes and extract image digest
+        id: hash
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          ARTIFACTS: "${{ steps.run-goreleaser-release.outputs.artifacts }}"
+        run: |
+          set -euo pipefail
 
-      #     hashes=$(echo $ARTIFACTS | jq --raw-output '.[] | {name, "digest": (.extra.Digest // .extra.Checksum)} | select(.digest) | {digest} + {name} | join("  ") | sub("^sha256:";"")' | base64 -w0)
-      #     if test "$hashes" = ""; then # goreleaser < v1.13.0
-      #       checksum_file=$(echo "$ARTIFACTS" | jq -r '.[] | select (.type=="Checksum") | .path')
-      #       hashes=$(cat $checksum_file | base64 -w0)
-      #     fi
-      #     echo "hashes=$hashes" >> $GITHUB_OUTPUT
+          hashes=$(echo $ARTIFACTS | jq --raw-output '.[] | {name, "digest": (.extra.Digest // .extra.Checksum)} | select(.digest) | {digest} + {name} | join("  ") | sub("^sha256:";"")' | base64 -w0)
+          if test "$hashes" = ""; then # goreleaser < v1.13.0
+            checksum_file=$(echo "$ARTIFACTS" | jq -r '.[] | select (.type=="Checksum") | .path')
+            hashes=$(cat $checksum_file | base64 -w0)
+          fi
+          echo "hashes=$hashes" >> $GITHUB_OUTPUT
 
-      #     image=$(echo $ARTIFACTS | jq --raw-output '.[] | select( .type =="Docker Manifest" ).name | split(":")[0]')
-      #     echo "image=$image" >> $GITHUB_OUTPUT
-      #     digest=$(echo $ARTIFACTS | jq --raw-output '.[] | select( .type =="Docker Manifest" ).extra.Digest')
-      #     echo "digest=$digest" >> $GITHUB_OUTPUT
+          image=$(echo $ARTIFACTS | jq --raw-output '.[] | select( .type =="Docker Manifest" ).name | split(":")[0]')
+          echo "image=$image" >> $GITHUB_OUTPUT
+          digest=$(echo $ARTIFACTS | jq --raw-output '.[] | select( .type =="Docker Manifest" ).extra.Digest')
+          echo "digest=$digest" >> $GITHUB_OUTPUT
 
   # sbom-container:
   #   # generate sbom for container as goreleaser can't - https://goreleaser.com/customization/sbom/#limitations
