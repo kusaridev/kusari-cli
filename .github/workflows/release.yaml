@@ -70,6 +70,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCKER_CONTEXT: default
+          GORELEASER_CURRENT_TAG: v0.1.0-beta.buildtest
 
       # - name: Generate hashes and extract image digest
       #   id: hash
