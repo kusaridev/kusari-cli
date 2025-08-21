@@ -1,0 +1,167 @@
+# Documentation: https://goreleaser.com
+---
+version: 2
+
+# Project metadata
+project_name: kusari
+
+# Environment variables required for the build
+env:
+  - CGO_ENABLED=0
+  # - GITHUB_REPOSITORY=kuaridev/kusari-cli
+  # - DOCKER_CONTEXT=default
+
+# dockers:
+#   # see details at https://goreleaser.com/customization/docker/
+#   - use: buildx
+#     goos: linux
+#     goarch: amd64
+#     image_templates:
+#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-amd64"
+#     dockerfile: Dockerfile.goreleaser
+#     build_flag_templates:
+#       - "--platform=linux/amd64"
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.name={{.ProjectName}}"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"
+#       - "--label=org.opencontainers.image.source={{.GitURL}}"
+#       - "--builder={{ .Env.DOCKER_CONTEXT }}"
+#   - use: buildx
+#     goos: linux
+#     goarch: arm64
+#     image_templates:
+#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-arm64"
+#     dockerfile: Dockerfile.goreleaser
+#     build_flag_templates:
+#       - "--platform=linux/arm64"
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.name={{.ProjectName}}"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"
+#       - "--label=org.opencontainers.image.source={{.GitURL}}"
+#       - "--builder={{ .Env.DOCKER_CONTEXT }}"
+
+# docker_manifests:
+#   - name_template: "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}"
+#     image_templates:
+#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-amd64"
+#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-arm64"
+
+# docker_signs:
+#   - cmd: cosign
+#     artifacts: all
+#     output: true
+#     args:
+#       - "sign"
+#       - "--a"
+#       - "git_sha={{.FullCommit}}"
+#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}@${digest}"
+#       - "--yes"
+
+# Build configuration
+builds:
+  - id: kusari 
+    # Main package path
+    main: ./kusari
+    # Binary name (optional - defaults to project name)
+    binary: kusari
+#     binary: kusari-{{ .Os }}-{{ .Arch }}
+    # Build flags
+    flags:
+      - -trimpath
+    # Linker flags for version info and optimization
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
+    # Target platforms
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+universal_binaries:
+  - replace: true
+    name_template: kusari
+    id: kusari
+    ids:
+      - kusari 
+
+# Archive configuration
+archives:
+  - id: default
+    # Archive name template
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Files to include in the archive
+    files:
+      - README.md
+      - LICENSE
+    # Build info file
+    builds_info:
+      group: root
+      owner: root
+
+# Checksum configuration
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+# Snapshot configuration for development builds
+snapshot:
+  version_template: SNAPSHOT-{{ .ShortCommit }}
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+# GitHub release configuration
+release:
+  # Repository information
+  github:
+    owner: kusaridev
+    name: kusari
+  # Draft release
+  draft: false
+  # Mark as prerelease for non-tagged versions
+  prerelease: auto
+  # Release name template
+  name_template: "Release {{ .Tag }}"
+  # Disable release if no new commits since last tag
+  disable: false
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+    - go test ./...
+
+# ---
+# project_name: kusari-cli
+# version: 2
+
+# env:
+#   - CGO_ENABLED=0
+#   - PKG=github.com/guacsec/guac/pkg/version
+
+
+# builds:
+#   - main: ./kusari
+#     id: kusari 
+#     binary: kusari-{{ .Os }}-{{ .Arch }}
+#     ldflags:
+#       # See https://goreleaser.com/customization/templates/#common-fields for field definitions
+#       - -X {{.Env.PKG}}.Commit={{.FullCommit}}
+#       - -X {{.Env.PKG}}.Date={{.Date}}
+#       - -X {{.Env.PKG}}.Version={{.Summary}}
+#     goos: [ 'darwin', 'linux' ]
+#     goarch:
+#       - amd64
+#       - arm64
