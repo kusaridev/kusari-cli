@@ -5,13 +5,12 @@ package repo
 
 import (
 	"fmt"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/kusaridev/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/pkg/url"
 )
 
 const (
@@ -67,11 +66,10 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return fmt.Errorf("failed to load auth token: %w", err)
 	}
 
-	baseURL, err := url.Parse(platformUrl)
+	apiEndpoint, err := url.Build(platformUrl, "inspector/presign/bundle-upload")
 	if err != nil {
 		return err
 	}
-	apiEndpoint := baseURL.JoinPath("inspector/presign/bundle-upload").String()
 
 	presignedUrl, err := getPresignedURL(apiEndpoint, token.AccessToken, tarballName)
 	if err != nil {
@@ -82,30 +80,19 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
 
-	epoch, err := getEpochFromUrl(presignedUrl)
+	epoch, err := url.GetEpochFromUrl(presignedUrl)
 	if err != nil {
 		return err
 	}
 
-	baseConsoleURL, err := url.Parse(consoleUrl)
+	consoleFullUrl, err := url.Build(consoleUrl, "analysis/users", *epoch, "result")
 	if err != nil {
 		return err
 	}
-	path := fmt.Sprintf("analysis/users/%s/result", *epoch)
-	consoleFullUrl := baseConsoleURL.JoinPath(path).String()
 
 	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: %s\n", consoleFullUrl)
 
 	return nil
-}
-
-func getEpochFromUrl(presignUrl string) (*string, error) {
-	u, err := url.Parse(presignUrl)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing URL: %w", err)
-	}
-	epoch := path.Base(u.Path)
-	return &epoch, nil
 }
 
 // ValidateDirectory checks if a directory exists and is readable
