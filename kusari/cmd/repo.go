@@ -14,7 +14,7 @@ func Repo() *cobra.Command {
 		Long:  "Handle repository scanning and packaging operations",
 	}
 
-	cmd.AddCommand(scan)
+	cmd.AddCommand(scan())
 
 	return cmd
 }

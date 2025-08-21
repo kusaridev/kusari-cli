@@ -5,12 +5,12 @@ package repo
 
 import (
 	"fmt"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/kusaridev/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/pkg/url"
 )
 
 const (
@@ -20,7 +20,14 @@ const (
 	tarballDir  = "kusari-dir"
 )
 
-func Scan(dir string, diffCmd []string, platformUrl string) error {
+func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, verbose bool) error {
+	if verbose {
+		fmt.Printf(" dir: %s\n", dir)
+		fmt.Printf(" diffCmd: %s\n", strings.Join(diffCmd, " "))
+		fmt.Printf(" platformUrl: %s\n", platformUrl)
+		fmt.Printf(" consoleUrl: %s\n", consoleUrl)
+	}
+
 	if err := validateDirectory(dir); err != nil {
 		return fmt.Errorf("failed to validate directory: %w", err)
 	}
@@ -59,13 +66,12 @@ func Scan(dir string, diffCmd []string, platformUrl string) error {
 		return fmt.Errorf("failed to load auth token: %w", err)
 	}
 
-	baseURL, err := url.Parse(platformUrl)
+	apiEndpoint, err := url.Build(platformUrl, "inspector/presign/bundle-upload")
 	if err != nil {
 		return err
 	}
-	apiEndpoint := baseURL.JoinPath("inspector/presign/bundle-upload").String()
 
-	presignedUrl, err := getPresignedURL(apiEndpoint, token.AccessToken, tarballName)
+	presignedUrl, err := getPresignedURL(*apiEndpoint, token.AccessToken, tarballName)
 	if err != nil {
 		return fmt.Errorf("failed to get presigned URL: %w", err)
 	}
@@ -74,23 +80,19 @@ func Scan(dir string, diffCmd []string, platformUrl string) error {
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
 
-	epoch, err := getEpochFromUrl(presignedUrl)
+	epoch, err := url.GetEpochFromUrl(presignedUrl)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: https://console.us.kusari.cloud/analysis/users/%s/result\n", *epoch)
+	consoleFullUrl, err := url.Build(consoleUrl, "analysis/users", *epoch, "result")
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: %s\n", *consoleFullUrl)
 
 	return nil
-}
-
-func getEpochFromUrl(presignUrl string) (*string, error) {
-	u, err := url.Parse(presignUrl)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing URL: %w", err)
-	}
-	epoch := path.Base(u.Path)
-	return &epoch, nil
 }
 
 // ValidateDirectory checks if a directory exists and is readable
