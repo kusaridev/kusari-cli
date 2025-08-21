@@ -26,7 +26,6 @@ var rootCmd = &cobra.Command{
 
 func Execute() error {
 
-	//todo: pass the variables here to cross the package boundary...
 	rootCmd.AddCommand(cmd.Auth(consoleUrl, verbose))
 	rootCmd.AddCommand(cmd.Repo(consoleUrl, verbose))
 

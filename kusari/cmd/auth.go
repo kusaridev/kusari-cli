@@ -7,21 +7,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	consoleUrl string
-	verbose    bool
-)
-
-func Auth(c string, v bool) *cobra.Command {
-	consoleUrl = c
-	verbose = v
+func Auth(consoleUrl string, verbose bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "auth things",
 		Long:  "do auth things",
 	}
 
-	cmd.AddCommand(login)
+	cmd.AddCommand(login(consoleUrl, verbose))
 
 	return cmd
 }
