@@ -3,7 +3,7 @@
 version: 2
 
 # Project metadata
-project_name: kusari
+project_name: kusari-cli
 
 # Environment variables required for the build
 env:
