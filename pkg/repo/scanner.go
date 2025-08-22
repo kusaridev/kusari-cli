@@ -30,10 +30,10 @@ const (
 
 func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, verbose bool) error {
 	if verbose {
-		fmt.Printf(" dir: %s\n", dir)
-		fmt.Printf(" diffCmd: %s\n", strings.Join(diffCmd, " "))
-		fmt.Printf(" platformUrl: %s\n", platformUrl)
-		fmt.Printf(" consoleUrl: %s\n", consoleUrl)
+		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
+		fmt.Fprintf(os.Stderr, " diffCmd: %s\n", strings.Join(diffCmd, " "))
+		fmt.Fprintf(os.Stderr, " platformUrl: %s\n", platformUrl)
+		fmt.Fprintf(os.Stderr, " consoleUrl: %s\n", consoleUrl)
 	}
 
 	if err := validateDirectory(dir); err != nil {
@@ -61,13 +61,13 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return fmt.Errorf("failed to package directory: %w", err)
 	}
 
-	fmt.Printf("Generating diff...\n")
+	fmt.Fprint(os.Stderr, "Generating diff...\n")
 
 	if err := generateDiff(dir, diffCmd); err != nil {
 		return fmt.Errorf("failed to generate diff: %w", err)
 	}
 
-	fmt.Printf("Packaging directory...\n")
+	fmt.Fprint(os.Stderr, "Packaging directory...\n")
 
 	if err := packageDirectory(); err != nil {
 		return fmt.Errorf("failed to package directory: %w", err)
@@ -88,7 +88,7 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return fmt.Errorf("failed to get presigned URL: %w", err)
 	}
 
-	fmt.Printf("Uploading package repo...\n")
+	fmt.Fprint(os.Stderr, "Uploading package repo...\n")
 
 	if err := uploadFileToS3(presignedUrl, filepath.Join(tarballDir, tarballName)); err != nil {
 		return fmt.Errorf("failed to upload file to S3: %w", err)
@@ -104,9 +104,8 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return err
 	}
 
-	fmt.Printf("Upload successful, your scan is processing!\n")
+	fmt.Fprint(os.Stderr, "Upload successful, your scan is processing!\n")
 
-	// At the beginning of your polling function
 	return queryForResult(platformUrl, epoch, token.AccessToken, consoleFullUrl)
 }
 
@@ -190,7 +189,7 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 					return nil
 				}
 
-				fmt.Printf("You can also view your results here: %s\n", *consoleFullUrl)
+				fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
 
 				fmt.Print(rendered) // stdout
 				return nil
