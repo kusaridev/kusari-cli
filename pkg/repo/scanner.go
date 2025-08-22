@@ -4,13 +4,20 @@
 package repo
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
+	"github.com/briandowns/spinner"
+	"github.com/charmbracelet/glamour"
 	"github.com/kusaridev/kusari-cli/pkg/auth"
-	"github.com/kusaridev/kusari-cli/pkg/url"
+	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
 )
 
 const (
@@ -19,6 +26,35 @@ const (
 	tarballName = "kusari-inspector.tar.bz2"
 	tarballDir  = "kusari-dir"
 )
+
+// UserInspectorResult represents the structure for our DynamoDB table
+type UserInspectorResult struct {
+	User     string   `docstore:"user" json:"user"` // Primary key
+	Sort     string   `docstore:"sort" json:"sort"` // Sort key (epoch timestamp)
+	TTL      int64    `docstore:"ttl" json:"ttl"`   // TTL (epoch expiration timestamp)
+	Analysis Analysis `docstore:"analysis" json:"analysis"`
+	Meta     Meta     `docstore:"meta" json:"meta"`
+}
+
+type Analysis struct {
+	Proceed bool   `docstore:"proceed" json:"proceed"`
+	Results string `docstore:"results" json:"results"` // markdown content
+	// Add other analysis fields as needed
+}
+
+type Meta struct {
+	Type     string `docstore:"type" json:"type"` // pr, cli
+	PR       int    `docstore:"pr" json:"pr"`
+	Repo     string `docstore:"repo" json:"repo"`
+	Org      string `docstore:"org" json:"org"`
+	PRURL    string `docstore:"pr_url" json:"pr_url"`
+	Commit   string `docstore:"commit" json:"commit"`
+	Branch   string `docstore:"branch" json:"branch"`
+	DirName  string `docstore:"dir_name" json:"dir_name"`
+	DiffCmd  string `docstore:"diff_cmd" json:"diff_cmd"`
+	Remote   string `docstore:"remote" json:"remote"`
+	GitDirty bool   `docstore:"git_dirty" json:"git_dirty"`
+}
 
 func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, verbose bool) error {
 	if verbose {
@@ -53,9 +89,13 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return fmt.Errorf("failed to package directory: %w", err)
 	}
 
+	fmt.Printf("Generating diff...\n")
+
 	if err := generateDiff(dir, diffCmd); err != nil {
 		return fmt.Errorf("failed to generate diff: %w", err)
 	}
+
+	fmt.Printf("Packaging directory...\n")
 
 	if err := packageDirectory(); err != nil {
 		return fmt.Errorf("failed to package directory: %w", err)
@@ -66,7 +106,7 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return fmt.Errorf("failed to load auth token: %w", err)
 	}
 
-	apiEndpoint, err := url.Build(platformUrl, "inspector/presign/bundle-upload")
+	apiEndpoint, err := urlBuilder.Build(platformUrl, "inspector/presign/bundle-upload")
 	if err != nil {
 		return err
 	}
@@ -76,23 +116,118 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		return fmt.Errorf("failed to get presigned URL: %w", err)
 	}
 
+	fmt.Printf("Uploading package repo...\n")
+
 	if err := uploadFileToS3(presignedUrl, filepath.Join(tarballDir, tarballName)); err != nil {
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
 
-	epoch, err := url.GetEpochFromUrl(presignedUrl)
+	epoch, err := urlBuilder.GetEpochFromUrl(presignedUrl)
 	if err != nil {
 		return err
 	}
 
-	consoleFullUrl, err := url.Build(consoleUrl, "analysis/users", *epoch, "result")
+	consoleFullUrl, err := urlBuilder.Build(consoleUrl, "analysis/users", *epoch, "result")
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Success, your scan is processing! Once completed, you can see results here: %s\n", *consoleFullUrl)
+	fmt.Printf("Upload successful, your scan is processing!\n")
 
-	return nil
+	// At the beginning of your polling function
+	maxAttempts := 50
+	attempt := 0
+	sleepDuration := 15 * time.Second
+
+	// Create spinner for stderr
+	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+	s.Writer = os.Stderr // Send spinner to stderr
+	s.Prefix = "Analysis in progress... "
+	s.FinalMSG = "✓ Results found!\n"
+	s.Start()
+
+	// Ensure spinner stops no matter what
+	defer s.Stop()
+
+	for attempt < maxAttempts {
+		attempt++
+
+		// Build URL
+		fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s",
+			strings.TrimSuffix(platformUrl, "/"),
+			*epoch)
+
+		// Create HTTP client
+		client := &http.Client{Timeout: 10 * time.Second}
+		req, err := http.NewRequest("GET", fullURL, nil)
+		if err != nil {
+			continue
+		}
+
+		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			time.Sleep(sleepDuration)
+			continue
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode == http.StatusOK {
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				time.Sleep(sleepDuration)
+				continue
+			}
+
+			var results []UserInspectorResult
+			if err := json.Unmarshal(body, &results); err != nil {
+				time.Sleep(sleepDuration)
+				continue
+			}
+
+			if len(results) > 0 {
+				// Stop spinner before outputting results
+				s.FinalMSG = "✓ Analysis complete!\n"
+				s.Stop()
+
+				// Clean and format results for stdout
+				rawContent := results[0].Analysis.Results
+				cleanedContent := removeImageLines(rawContent)
+
+				// Render with glamour to stdout
+				r, err := glamour.NewTermRenderer(
+					glamour.WithAutoStyle(),
+					glamour.WithWordWrap(100),
+				)
+				if err != nil {
+					fmt.Print(cleanedContent) // stdout
+					return nil
+				}
+
+				rendered, err := r.Render(cleanedContent)
+				if err != nil {
+					fmt.Print(cleanedContent) // stdout
+					return nil
+				}
+
+				fmt.Printf("You can also view your results here: %s\n", *consoleFullUrl)
+
+				fmt.Print(rendered) // stdout
+				return nil
+			}
+		}
+
+		time.Sleep(sleepDuration)
+	}
+
+	// If we get here, we failed
+	s.FinalMSG = "✗ No results found after maximum attempts\n"
+	s.Stop()
+	return fmt.Errorf("no results found after %d attempts", maxAttempts)
 }
 
 // ValidateDirectory checks if a directory exists and is readable
@@ -110,4 +245,30 @@ func validateDirectory(path string) error {
 	}
 
 	return nil
+}
+
+func removeImageLines(content string) string {
+	// Split into lines
+	lines := strings.Split(content, "\n")
+	var filteredLines []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Skip lines that start with "Image:" and contain "→"
+		if strings.HasPrefix(trimmed, "Image:") && strings.Contains(trimmed, "→") {
+			continue
+		}
+		filteredLines = append(filteredLines, line)
+	}
+
+	result := strings.Join(filteredLines, "\n")
+
+	// Also remove any remaining markdown images
+	imagePattern := regexp.MustCompile(`!\[.*?\]\(.*?\)`)
+	result = imagePattern.ReplaceAllString(result, "")
+
+	// Clean up multiple newlines
+	result = regexp.MustCompile(`\n{3,}`).ReplaceAllString(result, "\n\n")
+
+	return strings.TrimSpace(result)
 }
