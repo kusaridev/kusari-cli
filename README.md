@@ -31,10 +31,18 @@ set of changes. See [Git
 documentation](https://git-scm.com/docs/git-diff#_examples), for examples of
 commands.
 
-Example:
+Examples:
 
 ```
 kusari repo scan ~/git/guac HEAD^
+kusari repo scan ~/git/guac main..feature-branch
+```
+
+**For git diff arguments that start with `--` (like `--cached`, `--staged`), use the `--` separator:**
+
+```
+kusari repo scan ~/git/guac -- --cached
+kusari repo scan ~/git/guac -- --staged --name-only
 ```
 
 Will scan my `~/git/guac` repository with the git-diff command `HEAD^` which
