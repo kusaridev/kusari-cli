@@ -6,12 +6,14 @@ package repo
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/kusaridev/kusari-cli/api"
 )
@@ -19,7 +21,9 @@ import (
 // PackageDirectory creates a zip file from a directory
 func packageDirectory() error {
 	if err := os.Mkdir(tarballDir, 0700); err != nil {
-		return fmt.Errorf("failed to make Kusari directory: %w", err)
+		if !errors.Is(err, syscall.EEXIST) {
+			return fmt.Errorf("failed to make Kusari directory: %w", err)
+		}
 	}
 
 	outFile := filepath.Join(tarballDir, tarballName)

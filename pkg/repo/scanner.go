@@ -45,6 +45,7 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		_ = os.Remove(patchName)
 		_ = os.Remove(metaName)
 		_ = os.Remove(filepath.Join(tarballDir, tarballName))
+		// If something else is in tarballDir, this will fail
 		_ = os.Remove(tarballDir)
 		_ = os.Chdir(wd)
 	}()
