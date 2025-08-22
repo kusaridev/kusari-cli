@@ -16,6 +16,7 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/charmbracelet/glamour"
+	"github.com/kusaridev/kusari-cli/api"
 	"github.com/kusaridev/kusari-cli/pkg/auth"
 	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
 )
@@ -26,35 +27,6 @@ const (
 	tarballName = "kusari-inspector.tar.bz2"
 	tarballDir  = "kusari-dir"
 )
-
-// UserInspectorResult represents the structure for our DynamoDB table
-type UserInspectorResult struct {
-	User     string   `docstore:"user" json:"user"` // Primary key
-	Sort     string   `docstore:"sort" json:"sort"` // Sort key (epoch timestamp)
-	TTL      int64    `docstore:"ttl" json:"ttl"`   // TTL (epoch expiration timestamp)
-	Analysis Analysis `docstore:"analysis" json:"analysis"`
-	Meta     Meta     `docstore:"meta" json:"meta"`
-}
-
-type Analysis struct {
-	Proceed bool   `docstore:"proceed" json:"proceed"`
-	Results string `docstore:"results" json:"results"` // markdown content
-	// Add other analysis fields as needed
-}
-
-type Meta struct {
-	Type     string `docstore:"type" json:"type"` // pr, cli
-	PR       int    `docstore:"pr" json:"pr"`
-	Repo     string `docstore:"repo" json:"repo"`
-	Org      string `docstore:"org" json:"org"`
-	PRURL    string `docstore:"pr_url" json:"pr_url"`
-	Commit   string `docstore:"commit" json:"commit"`
-	Branch   string `docstore:"branch" json:"branch"`
-	DirName  string `docstore:"dir_name" json:"dir_name"`
-	DiffCmd  string `docstore:"diff_cmd" json:"diff_cmd"`
-	Remote   string `docstore:"remote" json:"remote"`
-	GitDirty bool   `docstore:"git_dirty" json:"git_dirty"`
-}
 
 func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, verbose bool) error {
 	if verbose {
@@ -135,6 +107,10 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 	fmt.Printf("Upload successful, your scan is processing!\n")
 
 	// At the beginning of your polling function
+	return queryForResult(platformUrl, epoch, token.AccessToken, consoleFullUrl)
+}
+
+func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string) error {
 	maxAttempts := 50
 	attempt := 0
 	sleepDuration := 15 * time.Second
@@ -164,7 +140,7 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 			continue
 		}
 
-		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+		req.Header.Set("Authorization", "Bearer "+accessToken)
 		req.Header.Set("Accept", "application/json")
 
 		resp, err := client.Do(req)
@@ -183,7 +159,7 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 				continue
 			}
 
-			var results []UserInspectorResult
+			var results []api.UserInspectorResult
 			if err := json.Unmarshal(body, &results); err != nil {
 				time.Sleep(sleepDuration)
 				continue
