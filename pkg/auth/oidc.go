@@ -9,18 +9,18 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/kusaridev/kusari-cli/pkg/url"
 	"golang.org/x/oauth2"
 )
 
 func Authenticate(ctx context.Context, clientId string, redirectUrl string, authEndpoint string, redirectPort string, consoleUrl string) (*oauth2.Token, error) {
-	baseURL, err := url.Parse(consoleUrl)
+
+	consoleAnalysisUrl, err := url.Build(consoleUrl, "analysis")
 	if err != nil {
 		return nil, err
 	}
-	consoleAnalysisUrl := baseURL.JoinPath("analysis").String()
 
 	oauth2Config := oauthConfig(clientId, redirectUrl, authEndpoint)
 	// Generate and use state to prevent CSRF attacks
@@ -33,22 +33,12 @@ func Authenticate(ctx context.Context, clientId string, redirectUrl string, auth
 	codeVerifier := oauth2.GenerateVerifier()
 
 	// Get code.
-	l, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", redirectPort))
-	if err != nil {
-		return nil, NewAuthErrorWithCause(ErrNetworkError, "failed to listen", err)
-	}
 	var callbackRes = make(chan callbackResult)
-	go func() {
-		defer func() {
-			_ = l.Close()
-		}()
-		err := http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handleCallbackv2(w, r, state, callbackRes, consoleAnalysisUrl)
-		}))
-		if err != nil {
-			log.Printf("Error listening for auth callback: %v", err)
-		}
-	}()
+
+	err = initializeListener(callbackRes, redirectPort, state, *consoleAnalysisUrl)
+	if err != nil {
+		return nil, err
+	}
 
 	challengeOption := oauth2.S256ChallengeOption(codeVerifier)
 	authURL := oauth2Config.AuthCodeURL(state, challengeOption)
@@ -62,7 +52,6 @@ func Authenticate(ctx context.Context, clientId string, redirectUrl string, auth
 	}
 
 	cs := <-callbackRes
-	//get code done
 	if cs.Error != nil {
 		return nil, cs.Error
 	}
@@ -72,8 +61,7 @@ func Authenticate(ctx context.Context, clientId string, redirectUrl string, auth
 	authUrlOption := oauth2.SetAuthURLParam("code_verifier", codeVerifier)
 	token, err := oauth2Config.Exchange(ctx, code, authUrlOption)
 	if err != nil {
-		log.Fatalf("Failed to exchange token: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("Failed to exchange token: %v", err)
 	}
 
 	provider := oauth2Config.Endpoint.TokenURL
@@ -82,6 +70,25 @@ func Authenticate(ctx context.Context, clientId string, redirectUrl string, auth
 	}
 
 	return token, nil
+}
+
+func initializeListener(callback chan callbackResult, redirectPort string, state string, consoleAnalysisUrl string) error {
+	l, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", redirectPort))
+	if err != nil {
+		return fmt.Errorf("Failed to initialize listener: %v", err)
+	}
+	go func() {
+		defer func() {
+			_ = l.Close()
+		}()
+		err := http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handleCallbackv2(w, r, state, callback, consoleAnalysisUrl)
+		}))
+		if err != nil {
+			log.Printf("Error listening for auth callback: %v", err)
+		}
+	}()
+	return nil
 }
 
 func oauthConfig(clientID string, redirectURL string, authendpoint string) *oauth2.Config {
