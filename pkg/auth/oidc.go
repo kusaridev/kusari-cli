@@ -32,7 +32,6 @@ func Authenticate(ctx context.Context, clientId string, redirectUrl string, auth
 	// use PKCE to protect the auth code exchange
 	codeVerifier := oauth2.GenerateVerifier()
 
-	// Get code.
 	var callbackRes = make(chan callbackResult)
 
 	err = initializeListener(callbackRes, redirectPort, state, *consoleAnalysisUrl)
