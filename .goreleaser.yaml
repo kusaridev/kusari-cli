@@ -6,56 +6,56 @@ project_name: kusari-cli
 # Environment variables required for the build
 env:
   - CGO_ENABLED=0
-  # - GITHUB_REPOSITORY=kuaridev/kusari-cli
-  # - DOCKER_CONTEXT=default
+  - GITHUB_REPOSITORY=kuaridev/kusari-cli
+  - DOCKER_CONTEXT=default
 
-# dockers:
-#   # see details at https://goreleaser.com/customization/docker/
-#   - use: buildx
-#     goos: linux
-#     goarch: amd64
-#     image_templates:
-#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-amd64"
-#     dockerfile: Dockerfile.goreleaser
-#     build_flag_templates:
-#       - "--platform=linux/amd64"
-#       - "--label=org.opencontainers.image.created={{.Date}}"
-#       - "--label=org.opencontainers.image.name={{.ProjectName}}"
-#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-#       - "--label=org.opencontainers.image.version={{.Version}}"
-#       - "--label=org.opencontainers.image.source={{.GitURL}}"
-#       - "--builder={{ .Env.DOCKER_CONTEXT }}"
-#   - use: buildx
-#     goos: linux
-#     goarch: arm64
-#     image_templates:
-#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-arm64"
-#     dockerfile: Dockerfile.goreleaser
-#     build_flag_templates:
-#       - "--platform=linux/arm64"
-#       - "--label=org.opencontainers.image.created={{.Date}}"
-#       - "--label=org.opencontainers.image.name={{.ProjectName}}"
-#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-#       - "--label=org.opencontainers.image.version={{.Version}}"
-#       - "--label=org.opencontainers.image.source={{.GitURL}}"
-#       - "--builder={{ .Env.DOCKER_CONTEXT }}"
+dockers:
+  # see details at https://goreleaser.com/customization/docker/
+  - use: buildx
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-amd64"
+    dockerfile: Dockerfile.goreleaser
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.name={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--builder={{ .Env.DOCKER_CONTEXT }}"
+  - use: buildx
+    goos: linux
+    goarch: arm64
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.name={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+      - "--builder={{ .Env.DOCKER_CONTEXT }}"
 
-# docker_manifests:
-#   - name_template: "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}"
-#     image_templates:
-#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-amd64"
-#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-arm64"
+docker_manifests:
+  - name_template: "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Tag }}-arm64"
 
-# docker_signs:
-#   - cmd: cosign
-#     artifacts: all
-#     output: true
-#     args:
-#       - "sign"
-#       - "--a"
-#       - "git_sha={{.FullCommit}}"
-#       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}@${digest}"
-#       - "--yes"
+docker_signs:
+  - cmd: cosign
+    artifacts: all
+    output: true
+    args:
+      - "sign"
+      - "--a"
+      - "git_sha={{.FullCommit}}"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}@${digest}"
+      - "--yes"
 
 # Build configuration
 builds:
