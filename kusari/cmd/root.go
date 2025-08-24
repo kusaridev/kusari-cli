@@ -13,7 +13,7 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&consoleUrl, "console-url", "", "http://console.us.kusari.cloud/", "console url")
+	rootCmd.PersistentFlags().StringVarP(&consoleUrl, "console-url", "", "https://console.us.kusari.cloud/", "console url")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 }
 
