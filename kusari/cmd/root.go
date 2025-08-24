@@ -19,8 +19,8 @@ func init() {
 
 var rootCmd = &cobra.Command{
 	Use:   "kusari",
-	Short: "Kusari - All signal, no noise. No chasing. No surprises. Just secure code, faster.",
-	Long:  "Kusari - All signal, no noise. No chasing. No surprises. Just secure code, faster.",
+	Short: "Kusari CLI",
+	Long:  "Kusari CLI - Interact with Kusari products",
 }
 
 func Execute() error {

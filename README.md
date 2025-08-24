@@ -19,14 +19,14 @@ is stored in `$HOME/.kusari/tokens.json`.
 
 Scans a diff on a git repository using [Kusari
 Inspector](https://www.kusari.dev/inspector). This will scan a set of changes,
-so a "git diff" command is needed. Usage:
+so a "git diff" path is needed. Usage:
 
 ```
-kusari repo scan <directory> <git-diff command>
+kusari repo scan <directory> <git-diff path>
 ```
 
 Where `<directory>` is the directory of the git repository you wish to scan,
-and `<git-diff command>` is the command to pass to `git diff` to generate the
+and `<git-diff path>` is the path to pass to `git diff` to generate the
 set of changes. See [Git
 documentation](https://git-scm.com/docs/git-diff#_examples), for examples of
 commands.
