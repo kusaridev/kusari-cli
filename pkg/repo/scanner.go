@@ -106,7 +106,9 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 	}
 
 	fmt.Fprint(os.Stderr, "Upload successful, your scan is processing!\n")
-
+	// We print the URL when it is completed, but that doesn't help if it fails
+	// for some reason and the user needs to contact support.
+	fmt.Fprintf(os.Stderr, "Once completed, you can see results at: %s\n", *consoleFullUrl)
 	return queryForResult(platformUrl, epoch, token.AccessToken, consoleFullUrl)
 }
 
