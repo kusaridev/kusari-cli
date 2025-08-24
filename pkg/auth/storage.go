@@ -93,7 +93,7 @@ func LoadToken(provider string) (*oauth2.Token, error) {
 	data, err := os.ReadFile(tokenPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, NewAuthError(ErrInvalidToken, "no stored tokens found")
+			return nil, NewAuthError(ErrInvalidToken, "no stored tokens found. Run `kusari auth login`.")
 		}
 		return nil, NewAuthErrorWithCause(ErrTokenStorage, "failed to read token file", err)
 	}

@@ -104,11 +104,16 @@ func getPresignedURL(apiEndpoint string, jwtToken string, filePath string) (stri
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized {
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
 			return "", fmt.Errorf("GetPresignedUrl failed with unauthorized request: %d", resp.StatusCode)
+		case http.StatusForbidden:
+			// Handle the HTTP 403 case by suggesting the user login
+			return "", fmt.Errorf("GetPresignedUrl failed with forbidden (%d). Try `kusari auth login`", resp.StatusCode)
+		default:
+			// otherwise return an error
+			return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 		}
-		// otherwise return an error
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
