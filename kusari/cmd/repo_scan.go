@@ -34,9 +34,9 @@ func scan() *cobra.Command {
 
 var scancmd = &cobra.Command{
 	Use:   "scan <directory> <git-diff command>",
-	Short: "Package directory and diff, then submit for analysis",
-	Long: `Run a git-diff command against a repository, then package the directory and diff. Submit for diff analysis in Kusar Inspector.
-    <directory>        Should be a Git directory of code to be analyzed
-    <git-diff command> Should be the arguments to provide to git-diff to determine what diff to analyze`,
+	Short: "Scan a git diff with Kusari Inspector",
+	Long: `Run a git-diff command against a repository, then submit the directory and diff for analysis in Kusai Inspector.
+    <directory>        A directory containing a git repository to analyze
+    <git-diff path> Git paths to analyze, using git-difff arguments`,
 	Args: cobra.MinimumNArgs(2),
 }
