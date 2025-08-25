@@ -50,10 +50,8 @@ func createMeta(diffCmd []string) error {
 
 	remote, err := exec.Command("git", "remote", "get-url", "origin").Output()
 	if err != nil {
-		return fmt.Errorf("failed to run git remote: %w", err)
-	}
-	if len(remote) == 0 {
-		return fmt.Errorf("git remote command produced no output: %v", diffCmd)
+		// Probably just a local git repo
+		remote = []byte{}
 	}
 
 	status, err := exec.Command("git", "status", "--porcelain").Output()
