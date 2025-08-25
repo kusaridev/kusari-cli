@@ -27,6 +27,7 @@ func Execute() error {
 
 	rootCmd.AddCommand(Auth())
 	rootCmd.AddCommand(Repo())
+	rootCmd.AddCommand(Inspector())
 
 	return rootCmd.Execute()
 }
