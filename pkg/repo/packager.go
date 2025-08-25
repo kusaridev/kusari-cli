@@ -25,14 +25,12 @@ func packageDirectory() error {
 			return fmt.Errorf("failed to make Kusari directory: %w", err)
 		}
 	}
-
 	outFile := filepath.Join(tarballDir, tarballName)
 	dirExclude := fmt.Sprintf("--exclude=%s", tarballDir)
-	// tar -jcf ./kusari-archive/kusari-inspector.tar.bz2 --exclude=kusari-archive --exclude=.git .
-	if err := exec.Command("tar", "-jcf", outFile, dirExclude, "--exclude=.git", ".").Run(); err != nil {
+	// tar -jcf ./kusari-archive/kusari-inspector.tar.bz2 --dereference --exclude=kusari-archive --exclude=.git .
+	if err := exec.Command("tar", "-jcf", outFile, "--dereference", dirExclude, "--exclude=.git", ".").Run(); err != nil {
 		return fmt.Errorf("error taring source code: %w", err)
 	}
-
 	return nil
 }
 
