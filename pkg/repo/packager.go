@@ -26,24 +26,11 @@ func packageDirectory() error {
 		}
 	}
 	outFile := filepath.Join(tarballDir, tarballName)
-	excludePath1 := fmt.Sprintf("./%s", tarballDir)
-	excludePath2 := "./.git"
-
-	findCmd := exec.Command("find", ".", "(", "-path", excludePath1, "-o", "-path", excludePath2, ")", "-prune", "-o", "(", "-type", "f", "-o", "-type", "d", ")", "-print")
-	tarCmd := exec.Command("tar", "-jcf", outFile, "-T", "-")
-
-	// Pipe find output to tar
-	tarCmd.Stdin, _ = findCmd.StdoutPipe()
-	if err := findCmd.Start(); err != nil {
-		return fmt.Errorf("failed to run find command with error: %w", err)
+	dirExclude := fmt.Sprintf("--exclude=%s", tarballDir)
+	// tar -jcf ./kusari-archive/kusari-inspector.tar.bz2 --dereference --exclude=kusari-archive --exclude=.git .
+	if err := exec.Command("tar", "-jcf", outFile, "--dereference", dirExclude, "--exclude=.git", ".").Run(); err != nil {
+		return fmt.Errorf("error taring source code: %w", err)
 	}
-	if err := tarCmd.Run(); err != nil {
-		return fmt.Errorf("failed to run tar command with error: %w", err)
-	}
-	if err := findCmd.Wait(); err != nil {
-		return fmt.Errorf("failed to run find command with error: %w", err)
-	}
-
 	return nil
 }
 
