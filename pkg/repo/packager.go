@@ -29,12 +29,19 @@ func packageDirectory() error {
 	excludePath1 := fmt.Sprintf("./%s", tarballDir)
 	excludePath2 := "./.git"
 
-	// Use find to only include regular files and directories, excluding symlinks
-	cmd := fmt.Sprintf(`find . \( -path "%s" -o -path "%s" \) -prune -o \( -type f -o -type d \) -print | tar -jcf "%s" -T -`,
-		excludePath1, excludePath2, outFile)
+	findCmd := exec.Command("find", ".", "(", "-path", excludePath1, "-o", "-path", excludePath2, ")", "-prune", "-o", "(", "-type", "f", "-o", "-type", "d", ")", "-print")
+	tarCmd := exec.Command("tar", "-jcf", outFile, "-T", "-")
 
-	if err := exec.Command("bash", "-c", cmd).Run(); err != nil {
-		return fmt.Errorf("error taring source code: %w", err)
+	// Pipe find output to tar
+	tarCmd.Stdin, _ = findCmd.StdoutPipe()
+	if err := findCmd.Start(); err != nil {
+		return fmt.Errorf("failed to run find command with error: %w", err)
+	}
+	if err := tarCmd.Run(); err != nil {
+		return fmt.Errorf("failed to run tar command with error: %w", err)
+	}
+	if err := findCmd.Wait(); err != nil {
+		return fmt.Errorf("failed to run find command with error: %w", err)
 	}
 
 	return nil
