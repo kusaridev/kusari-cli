@@ -12,10 +12,12 @@ import (
 
 var (
 	platformUrl string
+	wait        bool
 )
 
 func init() {
 	scancmd.Flags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
+	scancmd.Flags().BoolVarP(&wait, "wait", "w", true, "wait for results")
 }
 
 func scan() *cobra.Command {
@@ -36,7 +38,7 @@ func scan() *cobra.Command {
 			return fmt.Errorf("no git diff command provided")
 		}
 
-		return repo.Scan(dir, diff, platformUrl, consoleUrl, verbose)
+		return repo.Scan(dir, diff, platformUrl, consoleUrl, verbose, wait)
 	}
 
 	return scancmd

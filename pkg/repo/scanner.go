@@ -28,7 +28,7 @@ const (
 	tarballDir  = "kusari-dir"
 )
 
-func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, verbose bool) error {
+func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
 		fmt.Fprintf(os.Stderr, " diffCmd: %s\n", strings.Join(diffCmd, " "))
@@ -109,7 +109,13 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 	// We print the URL when it is completed, but that doesn't help if it fails
 	// for some reason and the user needs to contact support.
 	fmt.Fprintf(os.Stderr, "Once completed, you can see results at: %s\n", *consoleFullUrl)
-	return queryForResult(platformUrl, epoch, token.AccessToken, consoleFullUrl)
+
+	// Wait for results if the user wants, or exit immediately
+	if wait {
+		return queryForResult(platformUrl, epoch, token.AccessToken, consoleFullUrl)
+	} else {
+		return nil
+	}
 }
 
 func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string) error {
