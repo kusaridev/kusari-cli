@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -122,5 +123,12 @@ func ClearTokens() error {
 		return NewAuthErrorWithCause(ErrTokenStorage, "failed to remove token file", err)
 	}
 
+	return nil
+}
+
+func CheckTokenExpiry(token *oauth2.Token) error {
+	if token.Expiry.Before(time.Now()) {
+		return NewAuthError(ErrTokenExpired, "Token is expired")
+	}
 	return nil
 }
