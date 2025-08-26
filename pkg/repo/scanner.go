@@ -28,10 +28,10 @@ const (
 	tarballDir  = "kusari-dir"
 )
 
-func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
+func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
-		fmt.Fprintf(os.Stderr, " diffCmd: %s\n", strings.Join(diffCmd, " "))
+		fmt.Fprintf(os.Stderr, " rev: %s\n", rev)
 		fmt.Fprintf(os.Stderr, " platformUrl: %s\n", platformUrl)
 		fmt.Fprintf(os.Stderr, " consoleUrl: %s\n", consoleUrl)
 	}
@@ -58,13 +58,13 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 		_ = os.Chdir(wd)
 	}()
 
-	if err := createMeta(diffCmd); err != nil {
+	if err := createMeta(rev); err != nil {
 		return fmt.Errorf("failed to package directory: %w", err)
 	}
 
 	fmt.Fprint(os.Stderr, "Generating diff...\n")
 
-	if err := generateDiff(dir, diffCmd); err != nil {
+	if err := generateDiff(rev); err != nil {
 		return fmt.Errorf("failed to generate diff: %w", err)
 	}
 
@@ -113,9 +113,8 @@ func Scan(dir string, diffCmd []string, platformUrl string, consoleUrl string, v
 	// Wait for results if the user wants, or exit immediately
 	if wait {
 		return queryForResult(platformUrl, epoch, token.AccessToken, consoleFullUrl)
-	} else {
-		return nil
 	}
+	return nil
 }
 
 func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string) error {

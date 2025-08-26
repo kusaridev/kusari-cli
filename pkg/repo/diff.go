@@ -11,15 +11,16 @@ import (
 	"os/exec"
 )
 
-func generateDiff(dir string, diffCmd []string) error {
-	args := []string{"diff"}
-	args = append(args, diffCmd...)
-	output, err := exec.Command("git", args...).Output()
+func generateDiff(rev string) error {
+	if err := validateRev(rev); err != nil {
+		return err
+	}
+	output, err := exec.Command("git", "diff", rev).Output()
 	if err != nil {
 		return fmt.Errorf("failed to run git diff: %w", err)
 	}
 	if len(output) == 0 {
-		return fmt.Errorf("git diff command produced no output: %v", diffCmd)
+		return fmt.Errorf("git diff command produced no output: git diff %v", rev)
 	}
 	f, err := os.Create(patchName)
 	if err != nil {
@@ -30,6 +31,13 @@ func generateDiff(dir string, diffCmd []string) error {
 	}()
 	if _, err := io.Copy(f, bytes.NewReader(output)); err != nil {
 		return fmt.Errorf("failed to write patch file: %w", err)
+	}
+	return nil
+}
+
+func validateRev(rev string) error {
+	if err := exec.Command("git", "rev-parse", "--verify", "--quiet", "--end-of-options", rev).Run(); err != nil {
+		return fmt.Errorf("not a valid git rev: %w, %v", err, rev)
 	}
 	return nil
 }

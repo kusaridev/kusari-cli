@@ -19,36 +19,34 @@ is stored in `$HOME/.kusari/tokens.json`.
 
 Scans a diff on a git repository using [Kusari
 Inspector](https://www.kusari.dev/inspector). This will scan a set of changes,
-so a "git diff" path is needed. Usage:
+so a git revision is needed to compare to. Usage:
 
 ```
-kusari repo scan <directory> <git-diff path>
+kusari repo scan <directory> <git-rev>
 ```
 
 Where `<directory>` is the directory of the git repository you wish to scan,
-and `<git-diff path>` is the path to pass to `git diff` to generate the
-set of changes. See [Git
-documentation](https://git-scm.com/docs/git-diff#_examples), for examples of
-commands.
-
-* __Note:__ The current working tree must be the end state of the diff. Create a diff from some other branch or commit to the current working tree.
+and `<git-rev>` is the git revision to compare with the working tree to
+generate the set of changes. See [Git
+documentation](https://git-scm.com/docs/gitrevisions), for examples of git
+revisions. The revision must be a single revision to compare the working tree
+against, not a range.
 
 Examples:
 
 ```
 kusari repo scan ~/git/guac HEAD^
-kusari repo scan ~/git/guac main
 ```
 
-**For git diff arguments that start with `--` (like `--cached`, `--staged`), use the `--` separator:**
+Will scan my `~/git/guac` repository and compare the working tree with the
+commit before the most recent commit.
 
 ```
-kusari repo scan ~/git/guac -- --cached
-kusari repo scan ~/git/guac -- --staged --name-only
+kusari repo scan ~/git/guac origin/main
 ```
 
-Will scan my `~/git/guac` repository with the git-diff command `HEAD^` which
-compares my working tree with the commit before the most recent commit.
+Will scan my `~/git/guac` repository and compare the working tree with the
+`main` branch from the remote `origin`.
 
 Kusari Inspector results will be stored and displayed in the [Kusari
 Console](https://console.us.kusari.cloud/analysis/cli).
