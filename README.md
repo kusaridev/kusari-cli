@@ -31,11 +31,13 @@ set of changes. See [Git
 documentation](https://git-scm.com/docs/git-diff#_examples), for examples of
 commands.
 
+* __Note:__ The current working tree must be the end state of the diff. Create a diff from some other branch or commit to the current working tree.
+
 Examples:
 
 ```
 kusari repo scan ~/git/guac HEAD^
-kusari repo scan ~/git/guac main..feature-branch
+kusari repo scan ~/git/guac main
 ```
 
 **For git diff arguments that start with `--` (like `--cached`, `--staged`), use the `--` separator:**
