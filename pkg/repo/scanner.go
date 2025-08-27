@@ -36,6 +36,15 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		fmt.Fprintf(os.Stderr, " consoleUrl: %s\n", consoleUrl)
 	}
 
+	token, err := auth.LoadToken("kusari")
+	if err != nil {
+		return fmt.Errorf("failed to load auth token: %w", err)
+	}
+
+	if err := auth.CheckTokenExpiry(token); err != nil {
+		return err
+	}
+
 	if err := validateDirectory(dir); err != nil {
 		return fmt.Errorf("failed to validate directory: %w", err)
 	}
@@ -72,11 +81,6 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	if err := packageDirectory(); err != nil {
 		return fmt.Errorf("failed to package directory: %w", err)
-	}
-
-	token, err := auth.LoadToken("kusari")
-	if err != nil {
-		return fmt.Errorf("failed to load auth token: %w", err)
 	}
 
 	apiEndpoint, err := urlBuilder.Build(platformUrl, "inspector/presign/bundle-upload")
