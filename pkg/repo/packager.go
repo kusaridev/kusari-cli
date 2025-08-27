@@ -34,7 +34,7 @@ func packageDirectory() error {
 	return nil
 }
 
-func createMeta(diffCmd []string) error {
+func createMeta(rev string) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
@@ -45,7 +45,7 @@ func createMeta(diffCmd []string) error {
 		return fmt.Errorf("failed to run git rev-parse: %w", err)
 	}
 	if len(branch) == 0 {
-		return fmt.Errorf("git rev-parse command produced no output: %v", diffCmd)
+		return fmt.Errorf("git rev-parse command produced no output")
 	}
 
 	remote, err := exec.Command("git", "remote", "get-url", "origin").Output()
@@ -63,7 +63,7 @@ func createMeta(diffCmd []string) error {
 		PatchName:     patchName,
 		CurrentBranch: strings.TrimSpace(string(branch)),
 		DirName:       filepath.Base(wd),
-		DiffCmd:       strings.Join(diffCmd, " "),
+		DiffCmd:       rev,
 		Remote:        strings.TrimSpace(string(remote)),
 		GitDirty:      len(status) != 0,
 	}
