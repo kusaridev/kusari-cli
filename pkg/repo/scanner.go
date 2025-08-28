@@ -124,7 +124,7 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string) error {
 	maxAttempts := 50
 	attempt := 0
-	sleepDuration := 15 * time.Second
+	sleepDuration := time.Second
 
 	// Create spinner for stderr
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
@@ -140,7 +140,7 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 		attempt++
 
 		// Build URL
-		fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s",
+		fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s&op=beginswith",
 			strings.TrimSuffix(platformUrl, "/"),
 			*epoch)
 
@@ -177,34 +177,38 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 			}
 
 			if len(results) > 0 {
-				// Stop spinner before outputting results
-				s.FinalMSG = "✓ Analysis complete!\n"
-				s.Stop()
+				s.Prefix = results[len(results)-1].StatusMeta.Status + " "
 
-				// Clean and format results for stdout
-				rawContent := results[0].Analysis.Results
-				cleanedContent := removeImageLines(rawContent)
+				if results[0].Analysis != nil {
+					// Stop spinner before outputting results
+					s.FinalMSG = "✓ Analysis complete!\n"
+					s.Stop()
 
-				// Render with glamour to stdout
-				r, err := glamour.NewTermRenderer(
-					glamour.WithAutoStyle(),
-					glamour.WithWordWrap(100),
-				)
-				if err != nil {
-					fmt.Print(cleanedContent) // stdout
+					// Clean and format results for stdout
+					rawContent := results[0].Analysis.Results
+					cleanedContent := removeImageLines(rawContent)
+
+					// Render with glamour to stdout
+					r, err := glamour.NewTermRenderer(
+						glamour.WithAutoStyle(),
+						glamour.WithWordWrap(100),
+					)
+					if err != nil {
+						fmt.Print(cleanedContent) // stdout
+						return nil
+					}
+
+					rendered, err := r.Render(cleanedContent)
+					if err != nil {
+						fmt.Print(cleanedContent) // stdout
+						return nil
+					}
+
+					fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
+
+					fmt.Print(rendered) // stdout
 					return nil
 				}
-
-				rendered, err := r.Render(cleanedContent)
-				if err != nil {
-					fmt.Print(cleanedContent) // stdout
-					return nil
-				}
-
-				fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
-
-				fmt.Print(rendered) // stdout
-				return nil
 			}
 		}
 
