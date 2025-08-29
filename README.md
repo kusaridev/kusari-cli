@@ -8,6 +8,9 @@ Command line interface for Kusari.
 
 1. `go install github.com/kusaridev/kusari-cli/kusari@latest`
 
+Alternatively, you can install pre-built binaries for supported platforms from
+the [GitHub releases page](https://github.com/kusaridev/kusari-cli/releases).
+
 ## Commands
 
 ### `kusari auth login`
