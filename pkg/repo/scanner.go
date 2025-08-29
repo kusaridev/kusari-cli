@@ -123,7 +123,7 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 }
 
 func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string) error {
-	maxAttempts := 50
+	maxAttempts := 750
 	attempt := 0
 	sleepDuration := time.Second
 
