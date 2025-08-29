@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -177,8 +178,6 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 			}
 
 			if len(results) > 0 {
-				s.Prefix = results[len(results)-1].StatusMeta.Status + " "
-
 				if results[0].Analysis != nil {
 					// Stop spinner before outputting results
 					s.FinalMSG = "✓ Analysis complete!\n"
@@ -209,6 +208,26 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 					fmt.Print(rendered) // stdout
 					return nil
 				}
+
+				slices.SortFunc(results, func(a, b api.UserInspectorResult) int {
+					if a.StatusMeta.UpdatedAt < b.StatusMeta.UpdatedAt {
+						return 1
+					}
+
+					if a.StatusMeta.UpdatedAt == b.StatusMeta.UpdatedAt {
+						return 0
+					}
+
+					return -1
+				})
+
+				prefix := results[0].StatusMeta.Status
+
+				if len(prefix) >= 1 {
+					prefix = strings.ToUpper(results[0].StatusMeta.Status[:1]) + results[0].StatusMeta.Status[1:]
+				}
+
+				s.Prefix = prefix + " "
 			}
 		}
 
