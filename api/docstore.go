@@ -5,11 +5,18 @@ package api
 
 // UserInspectorResult represents the structure for our DynamoDB table
 type UserInspectorResult struct {
-	User     string   `docstore:"user" json:"user"` // Primary key
-	Sort     string   `docstore:"sort" json:"sort"` // Sort key (epoch timestamp)
-	TTL      int64    `docstore:"ttl" json:"ttl"`   // TTL (epoch expiration timestamp)
-	Analysis Analysis `docstore:"analysis" json:"analysis"`
-	Meta     Meta     `docstore:"meta" json:"meta"`
+	User       string     `docstore:"user" json:"user"` // Primary key
+	Sort       string     `docstore:"sort" json:"sort"` // Sort key (epoch timestamp)
+	TTL        int64      `docstore:"ttl" json:"ttl"`   // TTL (epoch expiration timestamp)
+	Analysis   *Analysis  `docstore:"analysis" json:"analysis,omitempty"`
+	Meta       Meta       `docstore:"meta" json:"meta"`
+	StatusMeta StatusMeta `docstore:"status_meta" json:"statusMeta"` // Status and metadata
+}
+
+type StatusMeta struct {
+	SortEpoch string `json:"sort"`      // the sort key will be "epoch|status|value", this is the epoch
+	Status    string `json:"status"`    // processing, uploaded, etc
+	UpdatedAt string `json:"updatedAt"` // Insertion time
 }
 
 // WorkspaceApp represents the workspace-gh-app table structure

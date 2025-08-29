@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -122,9 +123,9 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 }
 
 func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string) error {
-	maxAttempts := 50
+	maxAttempts := 750
 	attempt := 0
-	sleepDuration := 15 * time.Second
+	sleepDuration := time.Second
 
 	// Create spinner for stderr
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
@@ -136,16 +137,17 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 	// Ensure spinner stops no matter what
 	defer s.Stop()
 
+	client := &http.Client{Timeout: 10 * time.Second}
+
 	for attempt < maxAttempts {
 		attempt++
 
 		// Build URL
-		fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s",
+		fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s&op=beginswith",
 			strings.TrimSuffix(platformUrl, "/"),
 			*epoch)
 
 		// Create HTTP client
-		client := &http.Client{Timeout: 10 * time.Second}
 		req, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
 			continue
@@ -177,34 +179,56 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 			}
 
 			if len(results) > 0 {
-				// Stop spinner before outputting results
-				s.FinalMSG = "✓ Analysis complete!\n"
-				s.Stop()
+				if results[0].Analysis != nil {
+					// Stop spinner before outputting results
+					s.FinalMSG = "✓ Analysis complete!\n"
+					s.Stop()
 
-				// Clean and format results for stdout
-				rawContent := results[0].Analysis.Results
-				cleanedContent := removeImageLines(rawContent)
+					// Clean and format results for stdout
+					rawContent := results[0].Analysis.Results
+					cleanedContent := removeImageLines(rawContent)
 
-				// Render with glamour to stdout
-				r, err := glamour.NewTermRenderer(
-					glamour.WithAutoStyle(),
-					glamour.WithWordWrap(100),
-				)
-				if err != nil {
-					fmt.Print(cleanedContent) // stdout
+					// Render with glamour to stdout
+					r, err := glamour.NewTermRenderer(
+						glamour.WithAutoStyle(),
+						glamour.WithWordWrap(100),
+					)
+					if err != nil {
+						fmt.Print(cleanedContent) // stdout
+						return nil
+					}
+
+					rendered, err := r.Render(cleanedContent)
+					if err != nil {
+						fmt.Print(cleanedContent) // stdout
+						return nil
+					}
+
+					fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
+
+					fmt.Print(rendered) // stdout
 					return nil
 				}
 
-				rendered, err := r.Render(cleanedContent)
-				if err != nil {
-					fmt.Print(cleanedContent) // stdout
-					return nil
+				slices.SortFunc(results, func(a, b api.UserInspectorResult) int {
+					if a.StatusMeta.UpdatedAt < b.StatusMeta.UpdatedAt {
+						return 1
+					}
+
+					if a.StatusMeta.UpdatedAt == b.StatusMeta.UpdatedAt {
+						return 0
+					}
+
+					return -1
+				})
+
+				prefix := results[0].StatusMeta.Status
+
+				if len(prefix) >= 1 {
+					prefix = strings.ToUpper(results[0].StatusMeta.Status[:1]) + results[0].StatusMeta.Status[1:]
 				}
 
-				fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
-
-				fmt.Print(rendered) // stdout
-				return nil
+				s.Prefix = prefix + " "
 			}
 		}
 
