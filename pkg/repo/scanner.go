@@ -137,6 +137,8 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 	// Ensure spinner stops no matter what
 	defer s.Stop()
 
+	client := &http.Client{Timeout: 10 * time.Second}
+
 	for attempt < maxAttempts {
 		attempt++
 
@@ -146,7 +148,6 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 			*epoch)
 
 		// Create HTTP client
-		client := &http.Client{Timeout: 10 * time.Second}
 		req, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
 			continue
