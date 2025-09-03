@@ -10,10 +10,16 @@ import (
 
 const ConfigFilename = "kusari.yaml"
 
-func GenerateConfig() error {
+func GenerateConfig(forceWrite bool) error {
 	DefaultConfig := configuration.Config{
 		GitHubActionVersionPinningCheckEnabled: true,
 		ContainerVersionPinningCheckEnabled:    true,
+	}
+
+	// check to see if the config file already exists
+	_, err := os.Stat(ConfigFilename)
+	if (err == nil) && !forceWrite {
+		return fmt.Errorf("file %s exists, not overwriting (specify '--force' to overwrite)", ConfigFilename)
 	}
 
 	cfgYaml, err := yaml.Marshal(DefaultConfig)

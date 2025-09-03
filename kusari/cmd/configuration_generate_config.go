@@ -7,9 +7,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	forceWrite bool
+)
+
+func init() {
+	generatecmd.Flags().BoolVarP(&forceWrite, "force", "f", false, "Force creation when file exists")
+}
+
 func generateConfig() *cobra.Command {
 	generatecmd.RunE = func(cmd *cobra.Command, args []string) error {
-		return configuration.GenerateConfig()
+		return configuration.GenerateConfig(forceWrite)
 	}
 
 	return generatecmd
