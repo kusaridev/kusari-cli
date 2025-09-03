@@ -27,7 +27,7 @@ func Execute() error {
 
 	rootCmd.AddCommand(Auth())
 	rootCmd.AddCommand(Repo())
-	rootCmd.AddCommand(Inspector())
+	rootCmd.AddCommand(KusariConfiguration())
 
 	return rootCmd.Execute()
 }

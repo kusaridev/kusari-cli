@@ -1,17 +1,17 @@
-package inspector
+package configuration
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/kusaridev/kusari-cli/api/inspector"
+	"github.com/kusaridev/kusari-cli/api/configuration"
 	"gopkg.in/yaml.v3"
 )
 
 const ConfigFilename = "kusari.yaml"
 
 func GenerateConfig() error {
-	DefaultConfig := inspector.Config{
+	DefaultConfig := configuration.Config{
 		GitHubActionVersionPinningCheckEnabled: true,
 		ContainerVersionPinningCheckEnabled:    true,
 	}
