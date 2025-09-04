@@ -11,7 +11,9 @@ Command line interface for Kusari.
 Alternatively, you can install pre-built binaries for supported platforms from
 the [GitHub releases page](https://github.com/kusaridev/kusari-cli/releases).
 
-## Commands
+## Usage
+
+For detailed information, see the [Kusari Documentation](https://docs.kusari.cloud/docs/CLI/).
 
 ### `kusari auth login`
 
