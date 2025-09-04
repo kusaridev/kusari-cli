@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -23,10 +24,16 @@ import (
 )
 
 const (
-	patchName   = "kusari-inspector.patch"
-	metaName    = "kusari-inspector.json"
-	tarballName = "kusari-inspector.tar.bz2"
-	tarballDir  = "kusari-dir"
+	patchFile      = "kusari-inspector.patch"
+	metaFile       = "kusari-inspector.json"
+	tarballName    = "kusari-inspector.tar.bz2"
+	tarballDirName = "kusari-dir"
+)
+
+var (
+	metaName   string
+	patchName  string
+	tarballDir string
 )
 
 func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
@@ -50,22 +57,29 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return fmt.Errorf("failed to validate directory: %w", err)
 	}
 
-	wd, err := os.Getwd()
+	// Create a temporary working directory
+	wd, err := os.MkdirTemp(os.TempDir(), "kusari-")
 	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
+		return fmt.Errorf("failed to create working directory: %w", err)
 	}
+	metaName = filepath.Join(wd, metaFile)
+	patchName = filepath.Join(wd, patchFile)
+	tarballDir = filepath.Join(wd, tarballDirName)
+
+	// Set up signal handling to clean up after ourselves
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		cleanupWorkingDirectory(wd)
+		os.Exit(1)
+	}()
 
 	if err := os.Chdir(dir); err != nil {
 		return fmt.Errorf("failed to change directory: %w", err)
 	}
 	defer func() {
-		// If these haven't been created yet, they will error.
-		_ = os.Remove(patchName)
-		_ = os.Remove(metaName)
-		_ = os.Remove(filepath.Join(tarballDir, tarballName))
-		// If something else is in tarballDir, this will fail
-		_ = os.Remove(tarballDir)
-		_ = os.Chdir(wd)
+		cleanupWorkingDirectory(wd)
 	}()
 
 	if err := createMeta(rev); err != nil {
@@ -120,6 +134,10 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return queryForResult(platformUrl, epoch, token.AccessToken, consoleFullUrl)
 	}
 	return nil
+}
+
+func cleanupWorkingDirectory(wd string) {
+	_ = os.RemoveAll(wd)
 }
 
 func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string) error {
