@@ -23,10 +23,16 @@ import (
 )
 
 const (
-	patchName   = "kusari-inspector.patch"
-	metaName    = "kusari-inspector.json"
-	tarballName = "kusari-inspector.tar.bz2"
-	tarballDir  = "kusari-dir"
+	patchFile      = "kusari-inspector.patch"
+	metaFile       = "kusari-inspector.json"
+	tarballName    = "kusari-inspector.tar.bz2"
+	tarballDirName = "kusari-dir"
+)
+
+var (
+	metaName   string
+	patchName  string
+	tarballDir string
 )
 
 func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
@@ -50,10 +56,14 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return fmt.Errorf("failed to validate directory: %w", err)
 	}
 
-	wd, err := os.Getwd()
+	// Create a temporary working directory
+	wd, err := os.MkdirTemp(os.TempDir(), "kusari-")
 	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
+		return fmt.Errorf("failed to create working directory: %w", err)
 	}
+	metaName = filepath.Join(wd, metaFile)
+	patchName = filepath.Join(wd, patchFile)
+	tarballDir = filepath.Join(wd, tarballDirName)
 
 	if err := os.Chdir(dir); err != nil {
 		return fmt.Errorf("failed to change directory: %w", err)
