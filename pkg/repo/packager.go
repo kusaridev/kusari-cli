@@ -25,19 +25,28 @@ func packageDirectory() error {
 			return fmt.Errorf("failed to make Kusari directory: %w", err)
 		}
 	}
-	outFile := filepath.Join(tarballDir, tarballName)
-	dirExclude := fmt.Sprintf("--exclude=%s", tarballDir)
-	// tar -jcf ./kusari-archive/kusari-inspector.tar.bz2 --dereference --exclude=kusari-archive --exclude=.git .
-	if err := exec.Command("tar", "-jcf", outFile, "--dereference", dirExclude, "--exclude=.git", ".").Run(); err != nil {
+	outFile := filepath.Join(tarballDir, tarballNameUncompressed)
+	// Write the repo contents to the tarball, uncompressed so that we can append to it
+	// tar -cf ./kusari-archive/kusari-inspector.tar.bz2 --dereference --exclude=.git .
+	if err := exec.Command("tar", "-cf", outFile, "--dereference", "--exclude=.git", ".").Run(); err != nil {
 		return fmt.Errorf("error taring source code: %w", err)
 	}
+	// Append our Inspector files
+	if err := exec.Command("tar", "-C", workingDir, "--append", "-f", outFile, metaFile, patchFile).Run(); err != nil {
+		return fmt.Errorf("error tarring Inspector metadata: %w", err)
+	}
+	// Compress it
+	if err := exec.Command("bzip2", outFile).Run(); err != nil {
+		return fmt.Errorf("error compressing file: %w", err)
+	}
+
 	return nil
 }
 
 func createMeta(rev string) error {
-	wd, err := os.Getwd()
+	repoDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
+		return fmt.Errorf("failed to get repo directory: %w", err)
 	}
 
 	branch, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
@@ -62,7 +71,7 @@ func createMeta(rev string) error {
 	meta := &api.BundleMeta{
 		PatchName:     patchName,
 		CurrentBranch: strings.TrimSpace(string(branch)),
-		DirName:       filepath.Base(wd),
+		DirName:       filepath.Base(repoDir),
 		DiffCmd:       rev,
 		Remote:        strings.TrimSpace(string(remote)),
 		GitDirty:      len(status) != 0,

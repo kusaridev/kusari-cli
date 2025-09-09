@@ -24,16 +24,18 @@ import (
 )
 
 const (
-	patchFile      = "kusari-inspector.patch"
-	metaFile       = "kusari-inspector.json"
-	tarballName    = "kusari-inspector.tar.bz2"
-	tarballDirName = "kusari-dir"
+	patchFile               = "kusari-inspector.patch"
+	metaFile                = "kusari-inspector.json"
+	tarballNameUncompressed = "kusari-inspector.tar"
+	tarballName             = tarballNameUncompressed + ".bz2"
+	workingDirName          = "kusari-dir"
 )
 
 var (
 	metaName   string
 	patchName  string
 	tarballDir string
+	workingDir string
 )
 
 func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
@@ -58,20 +60,26 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 	}
 
 	// Create a temporary working directory
-	wd, err := os.MkdirTemp(os.TempDir(), "kusari-")
+	tempDir, err := os.MkdirTemp(os.TempDir(), "kusari-")
 	if err != nil {
-		return fmt.Errorf("failed to create working directory: %w", err)
+		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
-	metaName = filepath.Join(wd, metaFile)
-	patchName = filepath.Join(wd, patchFile)
-	tarballDir = filepath.Join(wd, tarballDirName)
+	// Create the path inside it for our metadata and patch files
+	workingDir = filepath.Join(tempDir, workingDirName)
+	err = os.Mkdir(workingDir, os.FileMode(0700))
+	if err != nil {
+		return fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	tarballDir = tempDir
+	metaName = filepath.Join(tarballDir, workingDirName, metaFile)
+	patchName = filepath.Join(tarballDir, workingDirName, patchFile)
 
 	// Set up signal handling to clean up after ourselves
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		<-c
-		cleanupWorkingDirectory(wd)
+		cleanupWorkingDirectory(tempDir)
 		os.Exit(1)
 	}()
 
@@ -79,7 +87,7 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return fmt.Errorf("failed to change directory: %w", err)
 	}
 	defer func() {
-		cleanupWorkingDirectory(wd)
+		cleanupWorkingDirectory(tempDir)
 	}()
 
 	if err := createMeta(rev); err != nil {
@@ -136,8 +144,8 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 	return nil
 }
 
-func cleanupWorkingDirectory(wd string) {
-	_ = os.RemoveAll(wd)
+func cleanupWorkingDirectory(tempDir string) {
+	_ = os.RemoveAll(tempDir)
 }
 
 func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string) error {
