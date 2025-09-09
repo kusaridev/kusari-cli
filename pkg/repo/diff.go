@@ -15,7 +15,7 @@ func generateDiff(rev string) error {
 	if err := validateRev(rev); err != nil {
 		return err
 	}
-	output, err := exec.Command("git", "diff", rev).Output()
+	output, err := exec.Command("git", "diff", "--binary", rev).Output()
 	if err != nil {
 		return fmt.Errorf("failed to run git diff: %w", err)
 	}
