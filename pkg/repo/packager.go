@@ -26,10 +26,9 @@ func packageDirectory() error {
 		}
 	}
 	outFile := filepath.Join(tarballDir, tarballNameUncompressed)
-	dirExclude := fmt.Sprintf("--exclude=%s", workingDirName)
 	// Write the repo contents to the tarball, uncompressed so that we can append to it
 	// tar -cf ./kusari-archive/kusari-inspector.tar.bz2 --dereference --exclude=.git .
-	if err := exec.Command("tar", "-cf", outFile, "--dereference", dirExclude, "--exclude=.git", ".").Run(); err != nil {
+	if err := exec.Command("tar", "-cf", outFile, "--dereference", "--exclude=.git", ".").Run(); err != nil {
 		return fmt.Errorf("error taring source code: %w", err)
 	}
 	// Append our Inspector files
