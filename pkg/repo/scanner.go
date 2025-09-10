@@ -39,6 +39,18 @@ var (
 )
 
 func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
+	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, nil)
+}
+
+// scanMock facilitates use of mock values for testing
+type scanMock struct {
+	fileUploader       func(presignedURL, filePath string) error
+	presignedURLGetter func(apiEndpoint string, jwtToken string, filePath string) (string, error)
+	token              string
+}
+
+func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool,
+	mock *scanMock) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
 		fmt.Fprintf(os.Stderr, " rev: %s\n", rev)
@@ -46,13 +58,23 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		fmt.Fprintf(os.Stderr, " consoleUrl: %s\n", consoleUrl)
 	}
 
-	token, err := auth.LoadToken("kusari")
-	if err != nil {
-		return fmt.Errorf("failed to load auth token: %w", err)
-	}
+	fileUploader := uploadFileToS3
+	presignedURLGetter := getPresignedURL
+	var accessToken string
+	if mock != nil {
+		fileUploader = mock.fileUploader
+		presignedURLGetter = mock.presignedURLGetter
+		accessToken = mock.token
+	} else {
+		token, err := auth.LoadToken("kusari")
+		if err != nil {
+			return fmt.Errorf("failed to load auth token: %w", err)
+		}
 
-	if err := auth.CheckTokenExpiry(token); err != nil {
-		return err
+		if err := auth.CheckTokenExpiry(token); err != nil {
+			return err
+		}
+		accessToken = token.AccessToken
 	}
 
 	if err := validateDirectory(dir); err != nil {
@@ -111,14 +133,14 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return err
 	}
 
-	presignedUrl, err := getPresignedURL(*apiEndpoint, token.AccessToken, tarballName)
+	presignedUrl, err := presignedURLGetter(*apiEndpoint, accessToken, tarballName)
 	if err != nil {
 		return fmt.Errorf("failed to get presigned URL: %w", err)
 	}
 
 	fmt.Fprint(os.Stderr, "Uploading package repo...\n")
 
-	if err := uploadFileToS3(presignedUrl, filepath.Join(tarballDir, tarballName)); err != nil {
+	if err := fileUploader(presignedUrl, filepath.Join(tarballDir, tarballName)); err != nil {
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
 
@@ -139,7 +161,7 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
-		return queryForResult(platformUrl, epoch, token.AccessToken, consoleFullUrl)
+		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl)
 	}
 	return nil
 }
