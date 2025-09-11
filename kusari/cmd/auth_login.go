@@ -29,6 +29,8 @@ var logincmd = &cobra.Command{
 
 func login() *cobra.Command {
 	logincmd.RunE = func(cmd *cobra.Command, args []string) error {
+		cmd.SilenceUsage = true
+
 		redirectPort := port.GenerateRandomPortOrDefault()
 		redirectUrl := fmt.Sprintf("http://localhost:%s/callback", redirectPort)
 

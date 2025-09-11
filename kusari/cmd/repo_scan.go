@@ -20,6 +20,8 @@ func init() {
 
 func scan() *cobra.Command {
 	scancmd.RunE = func(cmd *cobra.Command, args []string) error {
+		cmd.SilenceUsage = true
+
 		dir := args[0]
 		ref := args[1]
 

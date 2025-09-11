@@ -17,6 +17,8 @@ func init() {
 
 func generateConfig() *cobra.Command {
 	generatecmd.RunE = func(cmd *cobra.Command, args []string) error {
+		cmd.SilenceUsage = true
+
 		return configuration.GenerateConfig(forceWrite)
 	}
 
