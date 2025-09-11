@@ -284,6 +284,9 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 					s.FinalMSG = prefix
 					s.Stop()
 					fmt.Fprintln(os.Stderr)
+					if results[0].StatusMeta.Details != "" {
+						fmt.Fprintf(os.Stderr, "Error: %s\n", results[0].StatusMeta.Details)
+					}
 					return errors.New("processing failed after uploading")
 				}
 			}
