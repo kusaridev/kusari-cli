@@ -5,6 +5,7 @@ package repo
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -270,13 +271,21 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 					return -1
 				})
 
-				prefix := results[0].StatusMeta.Status
+				status := results[0].StatusMeta.Status
 
-				if len(prefix) >= 1 {
+				prefix := status
+				if len(status) >= 1 {
 					prefix = strings.ToUpper(results[0].StatusMeta.Status[:1]) + results[0].StatusMeta.Status[1:]
 				}
 
 				s.Prefix = prefix + " "
+
+				if status == "failed" {
+					s.FinalMSG = prefix
+					s.Stop()
+					fmt.Fprintln(os.Stderr)
+					return errors.New("processing failed after uploading")
+				}
 			}
 		}
 
