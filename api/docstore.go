@@ -14,9 +14,10 @@ type UserInspectorResult struct {
 }
 
 type StatusMeta struct {
-	SortEpoch string `json:"sort"`      // the sort key will be "epoch|status|value", this is the epoch
-	Status    string `json:"status"`    // processing, uploaded, etc
-	UpdatedAt string `json:"updatedAt"` // Insertion time
+	SortEpoch string `json:"sort"`              // the sort key will be "epoch|status|value", this is the epoch
+	Status    string `json:"status"`            // processing, uploaded, etc
+	Details   string `json:"details,omitempty"` // detailed message
+	UpdatedAt string `json:"updatedAt"`         // Insertion time
 }
 
 // WorkspaceApp represents the workspace-gh-app table structure
