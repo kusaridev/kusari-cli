@@ -59,6 +59,14 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		fmt.Fprintf(os.Stderr, " consoleUrl: %s\n", consoleUrl)
 	}
 
+	// Check to see if the directory has a .git directory. If it does not, it is not the root of
+	// the repo and the scan will probably fail during analysis.
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	if os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "No .git directory found in %s\n  Directory must be root of repo\n", dir)
+		os.Exit(1)
+	}
+
 	fileUploader := uploadFileToS3
 	presignedURLGetter := getPresignedURL
 	var accessToken string
