@@ -11,6 +11,7 @@ func KusariConfiguration() *cobra.Command {
 	}
 
 	cmd.AddCommand(generateConfig())
+	cmd.AddCommand(updateConfig())
 
 	return cmd
 }
