@@ -18,6 +18,7 @@ func GenerateConfig(forceWrite bool) error {
 		ContainerVersionPinningCheckEnabled:    true,
 		StatusCheckName:                        "Kusari Inspector",
 		PostCommentOnFailure:                   true,
+		PostCommentOnSuccess:                   false,
 	}
 
 	// check to see if the config file already exists
