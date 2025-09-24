@@ -69,7 +69,7 @@ func uploadFileToS3(presignedURL, filePath string) error {
 }
 
 // GetPresignedUrl utilizes authorized client to obtain the presigned URL to upload to S3
-func getPresignedURL(apiEndpoint string, jwtToken string, filePath string) (string, error) {
+func getPresignedURL(apiEndpoint string, jwtToken string, filePath string, authorizedClient HttpClient) (string, error) {
 
 	// Prepare the payload for the presigned URL request
 	payload := map[string]string{
@@ -80,19 +80,29 @@ func getPresignedURL(apiEndpoint string, jwtToken string, filePath string) (stri
 		return "", fmt.Errorf("error creating JSON payload: %w", err)
 	}
 
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-	// Build request
+	var client *http.Client
+
 	req, err := http.NewRequest("POST", apiEndpoint, bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return "", fmt.Errorf("failed to POST to %s, with error: %w", apiEndpoint, err)
 	}
 
-	// Add Authorization header with Bearer token
-	req.Header.Set("Authorization", "Bearer "+jwtToken)
 	req.Header.Set("Accept", "application/json")
+
+	if authorizedClient != nil {
+		if value, ok := authorizedClient.(*http.Client); ok {
+			client = value
+		} else {
+			return "", fmt.Errorf("failed to use authorizedClient with type assertion error")
+		}
+	} else {
+		// Create HTTP client with timeout
+		client = &http.Client{
+			Timeout: 10 * time.Second,
+		}
+		// Add Authorization header with Bearer token
+		req.Header.Set("Authorization", "Bearer "+jwtToken)
+	}
 
 	// Make request
 	resp, err := client.Do(req)

@@ -4,6 +4,7 @@
 package repo
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/kusaridev/kusari-cli/api"
 	"github.com/kusaridev/kusari-cli/pkg/auth"
 	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
+	"golang.org/x/oauth2/clientcredentials"
 )
 
 const (
@@ -39,24 +41,35 @@ var (
 	workingDir string
 )
 
-func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, nil)
+type HttpClient interface {
+	Do(req *http.Request) (*http.Response, error)
+	Post(url string, contentType string, body io.Reader) (resp *http.Response, err error)
+}
+
+func Scan(ctx context.Context, dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, clientId, clientSecret, tokenEndpoint string) error {
+	return scan(ctx, dir, rev, platformUrl, consoleUrl, verbose, wait, nil, clientId, clientSecret, tokenEndpoint)
 }
 
 // scanMock facilitates use of mock values for testing
 type scanMock struct {
 	fileUploader       func(presignedURL, filePath string) error
-	presignedURLGetter func(apiEndpoint string, jwtToken string, filePath string) (string, error)
+	presignedURLGetter func(apiEndpoint string, jwtToken string, filePath string, authorizedClient HttpClient) (string, error)
 	token              string
 }
 
-func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool,
-	mock *scanMock) error {
+func scan(ctx context.Context, dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool,
+	mock *scanMock, clientId, clientSecret, tokenEndpoint string) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
 		fmt.Fprintf(os.Stderr, " rev: %s\n", rev)
 		fmt.Fprintf(os.Stderr, " platformUrl: %s\n", platformUrl)
 		fmt.Fprintf(os.Stderr, " consoleUrl: %s\n", consoleUrl)
+	}
+
+	var authorizedClient HttpClient = nil
+	if clientSecret != "" {
+		// Get authorized client
+		authorizedClient = getAuthorizedClient(ctx, clientId, clientSecret, tokenEndpoint)
 	}
 
 	// Check to see if the directory has a .git directory. If it does not, it is not the root of
@@ -142,7 +155,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return err
 	}
 
-	presignedUrl, err := presignedURLGetter(*apiEndpoint, accessToken, tarballName)
+	presignedUrl, err := presignedURLGetter(*apiEndpoint, accessToken, tarballName, authorizedClient)
 	if err != nil {
 		return fmt.Errorf("failed to get presigned URL: %w", err)
 	}
@@ -350,4 +363,15 @@ func removeImageLines(content string) string {
 	result = regexp.MustCompile(`\n{3,}`).ReplaceAllString(result, "\n\n")
 
 	return strings.TrimSpace(result)
+}
+
+// getAuthorizedClient utilizes oauth2 client credential flow to obtain an authorized client
+func getAuthorizedClient(ctx context.Context, clientID, clientSecret, tokenURL string) HttpClient {
+	config := &clientcredentials.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		TokenURL:     tokenURL,
+	}
+
+	return config.Client(ctx)
 }

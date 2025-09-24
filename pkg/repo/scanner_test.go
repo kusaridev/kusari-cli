@@ -6,6 +6,7 @@ package repo
 import (
 	"archive/tar"
 	"compress/bzip2"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -20,6 +21,7 @@ import (
 )
 
 func TestScan_ArchiveFormat(t *testing.T) {
+	ctx := context.Background()
 	// Create a temporary test directory with git repo
 	testDir := t.TempDir()
 
@@ -54,14 +56,14 @@ func TestScan_ArchiveFormat(t *testing.T) {
 
 			return nil
 		},
-		presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath string) (string, error) {
+		presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath string, authorizedClient HttpClient) (string, error) {
 			return "https://s3.example.com/upload?epoch=1234567890", nil
 		},
 		token: "token",
 	}
 
 	// Run the scan with dependencies injection
-	err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, mock)
+	err := scan(ctx, testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, mock, "", "", "")
 	require.NoError(t, err)
 
 	// Verify upload was called
@@ -93,12 +95,24 @@ func verifyArchiveFormat(t *testing.T, archivePath, testDir string) {
 		}
 		require.NoError(t, err)
 
+		// Skip macOS resource fork files
+		if strings.HasPrefix(filepath.Base(header.Name), "._") {
+			continue
+		}
+
 		// Check for expected files
 		switch {
 		case strings.HasSuffix(header.Name, "kusari-inspector.json"):
 			foundMeta = true
+			t.Logf("Header name: %s, size: %d, mode: %o", header.Name, header.Size, header.Mode)
 			data, err := io.ReadAll(tarReader)
 			require.NoError(t, err)
+
+			// Debug: Print the data
+			t.Logf("JSON data length: %d", len(data))
+			t.Logf("JSON data (first 100 bytes): %q", string(data[:min(100, len(data))]))
+			t.Logf("JSON data (hex): %x", data[:min(50, len(data))])
+
 			require.NoError(t, json.Unmarshal(data, &metaContent))
 
 			// Verify metadata content
