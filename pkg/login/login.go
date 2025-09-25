@@ -10,7 +10,7 @@ import (
 	"github.com/kusaridev/kusari-cli/pkg/auth"
 )
 
-func Login(ctx context.Context, clientId string, redirectUrl string, authEndpoint string, redirectPort string, consoleUrl string, verbose bool) error {
+func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl string, verbose bool) error {
 	if verbose {
 		fmt.Printf(" AuthEndpoint: %s\n", authEndpoint)
 		fmt.Printf(" ConsoleUrl: %s\n", consoleUrl)
@@ -19,7 +19,7 @@ func Login(ctx context.Context, clientId string, redirectUrl string, authEndpoin
 		fmt.Println()
 	}
 
-	_, err := auth.Authenticate(ctx, clientId, redirectUrl, authEndpoint, redirectPort, consoleUrl)
+	_, err := auth.Authenticate(ctx, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl)
 	if err != nil {
 		return err
 	}
