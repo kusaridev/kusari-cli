@@ -19,7 +19,8 @@ import (
 // Test generating a new file when none exists
 func TestGenerate(t *testing.T) {
 	// Get the current directory so that we can change back to it later
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
 	// Create a temporary test directory
 	testDir := t.TempDir()
 	sourceFile := filepath.Join(cwd, "testdata", "config-default.yaml")
@@ -37,11 +38,11 @@ func TestGenerate(t *testing.T) {
 // Test generating a new file when one exists
 func TestGenerateWithExisting(t *testing.T) {
 	// Get the current directory so that we can change back to it later
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
 	// Create a temporary test directory
 	testDir := t.TempDir()
 	// Copy the test file
-	fmt.Fprintf(os.Stdout, "cwd is %s\n", cwd)
 	sourceFile := filepath.Join(cwd, "testdata", "config-default.yaml")
 	destFile := filepath.Join(testDir, "kusari.yaml")
 	require.NoError(t, runCommand("cp", sourceFile, destFile))
@@ -63,7 +64,8 @@ func TestGenerateWithExisting(t *testing.T) {
 // Test that update-config produces a default config file when none already exists
 func TestUpdateWithNoFile(t *testing.T) {
 	// Get the current directory so that we can change back to it later
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
 	// Create a temporary test directory
 	testDir := t.TempDir()
 	sourceFile := filepath.Join(cwd, "testdata", "config-default.yaml")
@@ -85,11 +87,11 @@ func TestUpdateWithNoFile(t *testing.T) {
 // Test that the update function doesn't change user configs
 func TestUpdateWithChanges(t *testing.T) {
 	// Get the current directory so that we can change back to it later
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
 	// Create a temporary test directory
 	testDir := t.TempDir()
 	// Copy the test file
-	fmt.Fprintf(os.Stdout, "cwd is %s\n", cwd)
 	sourceFile := filepath.Join(cwd, "testdata", "config-changed.yaml")
 	destFile := filepath.Join(testDir, "kusari.yaml")
 	require.NoError(t, runCommand("cp", sourceFile, destFile))
@@ -110,11 +112,11 @@ func TestUpdateWithChanges(t *testing.T) {
 // Test that the update function adds missing configs
 func TestUpdateAddMissing(t *testing.T) {
 	// Get the current directory so that we can change back to it later
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
 	// Create a temporary test directory
 	testDir := t.TempDir()
 	// Copy the test file
-	fmt.Fprintf(os.Stdout, "cwd is %s\n", cwd)
 	sourceFile := filepath.Join(cwd, "testdata", "config-missing.yaml")
 	destFile := filepath.Join(testDir, "kusari.yaml")
 	desiredFile := filepath.Join(cwd, "testdata", "config-default.yaml")
@@ -124,7 +126,6 @@ func TestUpdateAddMissing(t *testing.T) {
 	// Write the file
 	require.NoError(t, UpdateConfig())
 
-	runCommand("diff", desiredFile, destFile)
 	// Check to make sure all of the missing configs were added
 	require.True(t, compareHashes(desiredFile, destFile))
 
@@ -149,7 +150,7 @@ func computeFileHash(filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close() // Ensure the file is closed
+	defer file.Close() //nolint:errcheck
 
 	hasher := sha256.New()
 
