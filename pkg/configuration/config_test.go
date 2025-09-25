@@ -32,7 +32,7 @@ func TestGenerate(t *testing.T) {
 	require.NoError(t, GenerateConfig(false))
 	require.True(t, compareHashes(sourceFile, destFile))
 
-	os.Chdir(cwd)
+	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test generating a new file when one exists
@@ -58,7 +58,7 @@ func TestGenerateWithExisting(t *testing.T) {
 	// Make sure they match!
 	require.True(t, compareHashes(sourceFile, destFile))
 
-	os.Chdir(cwd)
+	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test that update-config produces a default config file when none already exists
@@ -81,7 +81,7 @@ func TestUpdateWithNoFile(t *testing.T) {
 	// Make sure the new file matches the test data
 	require.True(t, compareHashes(sourceFile, destFile))
 
-	os.Chdir(cwd)
+	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test that the update function doesn't change user configs
@@ -106,7 +106,7 @@ func TestUpdateWithChanges(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(readContent), expectedConfig)
 
-	os.Chdir(cwd)
+	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test that the update function adds missing configs
@@ -129,7 +129,7 @@ func TestUpdateAddMissing(t *testing.T) {
 	// Check to make sure all of the missing configs were added
 	require.True(t, compareHashes(desiredFile, destFile))
 
-	os.Chdir(cwd)
+	require.NoError(t, os.Chdir(cwd))
 }
 
 //
