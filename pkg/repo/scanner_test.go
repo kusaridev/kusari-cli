@@ -54,14 +54,17 @@ func TestScan_ArchiveFormat(t *testing.T) {
 
 			return nil
 		},
-		presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath string) (string, error) {
+		presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath, workspace string) (string, error) {
 			return "https://s3.example.com/upload?epoch=1234567890", nil
+		},
+		defaultWorkspaceGetter: func(apiEndpoint string, jwtToken string) (string, error) {
+			return "1f961986-c9f3-4760-9d55-1298136cbe2a", nil
 		},
 		token: "token",
 	}
 
 	// Run the scan with dependencies injection
-	err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, mock)
+	err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, false, mock)
 	require.NoError(t, err)
 
 	// Verify upload was called

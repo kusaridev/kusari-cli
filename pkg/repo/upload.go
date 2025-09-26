@@ -69,7 +69,7 @@ func uploadFileToS3(presignedURL, filePath string) error {
 }
 
 // GetPresignedUrl utilizes authorized client to obtain the presigned URL to upload to S3
-func getPresignedURL(apiEndpoint string, jwtToken string, filePath string) (string, error) {
+func getPresignedURL(apiEndpoint string, jwtToken string, filePath, workspace string) (string, error) {
 
 	// Prepare the payload for the presigned URL request
 	payload := map[string]string{
@@ -93,6 +93,7 @@ func getPresignedURL(apiEndpoint string, jwtToken string, filePath string) (stri
 	// Add Authorization header with Bearer token
 	req.Header.Set("Authorization", "Bearer "+jwtToken)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Kusari-Workspace", workspace)
 
 	// Make request
 	resp, err := client.Do(req)
@@ -134,4 +135,65 @@ func getPresignedURL(apiEndpoint string, jwtToken string, filePath string) (stri
 	presignedUrl := result.PresignedUrl
 
 	return presignedUrl, nil
+}
+
+// getAPIDefaultWorkspace utilizes authorized client to get the workspace associated with the API key (for ci workflows)
+func getAPIDefaultWorkspace(apiEndpoint string, jwtToken string) (string, error) {
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	// Build request
+	req, err := http.NewRequest("GET", apiEndpoint, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to GET to %s, with error: %w", apiEndpoint, err)
+	}
+	fmt.Print(jwtToken)
+	// Add Authorization header with Bearer token
+	req.Header.Set("Authorization", "Bearer "+jwtToken)
+	req.Header.Set("Accept", "application/json")
+
+	// Make request
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to GET to %s, with error: %w", apiEndpoint, err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return "", fmt.Errorf("getAPIDefaultWorkspace failed with unauthorized request: %d", resp.StatusCode)
+		case http.StatusForbidden:
+			// Handle the HTTP 403 case by suggesting the user login
+			return "", fmt.Errorf("getAPIDefaultWorkspace failed with forbidden (%d). Try `kusari auth login`", resp.StatusCode)
+		default:
+			// otherwise return an error
+			return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		}
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body with error: %w", err)
+	}
+
+	type userInfoResponse struct {
+		Workspaces []string `json:"workspaces"`
+	}
+	var result userInfoResponse
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return "", fmt.Errorf("failed to unmarshal the results with body: %s with error: %w", string(body), err)
+	}
+
+	if len(result.Workspaces) == 1 {
+		return result.Workspaces[0], nil
+	} else if len(result.Workspaces) == 0 {
+		return "", fmt.Errorf("workspaces not found")
+	} else {
+		return "", fmt.Errorf("returned result contained multiple workspaces")
+	}
 }
