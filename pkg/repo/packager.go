@@ -19,7 +19,7 @@ import (
 )
 
 // PackageDirectory creates a zip file from a directory
-func packageDirectory() error {
+func packageDirectory(full bool) error {
 	if err := os.Mkdir(tarballDir, 0700); err != nil {
 		if !errors.Is(err, syscall.EEXIST) {
 			return fmt.Errorf("failed to make Kusari directory: %w", err)
@@ -32,7 +32,12 @@ func packageDirectory() error {
 		return fmt.Errorf("error taring source code: %w", err)
 	}
 	// Append our Inspector files
-	if err := exec.Command("tar", "-C", workingDir, "--append", "-f", outFile, metaFile, patchFile).Run(); err != nil {
+	args := []string{"-C", workingDir, "--append", "-f", outFile, metaFile}
+	if !full {
+		args = append(args, patchFile)
+	}
+
+	if err := exec.Command("tar", args...).Run(); err != nil {
 		return fmt.Errorf("error tarring Inspector metadata: %w", err)
 	}
 	// Compress it
@@ -43,7 +48,7 @@ func packageDirectory() error {
 	return nil
 }
 
-func createMeta(rev string) error {
+func createMeta(rev string, full bool) error {
 	repoDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get repo directory: %w", err)
@@ -75,6 +80,11 @@ func createMeta(rev string) error {
 		DiffCmd:       rev,
 		Remote:        strings.TrimSpace(string(remote)),
 		GitDirty:      len(status) != 0,
+	}
+	if full {
+		meta.ScanType = "full"
+	} else {
+		meta.ScanType = "diff"
 	}
 
 	metab, err := json.Marshal(meta)

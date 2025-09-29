@@ -64,7 +64,7 @@ func TestScan_ArchiveFormat(t *testing.T) {
 	}
 
 	// Run the scan with dependencies injection
-	err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, mock)
+	err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, false, mock)
 	require.NoError(t, err)
 
 	// Verify upload was called
