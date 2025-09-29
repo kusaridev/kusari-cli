@@ -10,4 +10,5 @@ type BundleMeta struct {
 	DiffCmd       string `json:"diff_cmd"`
 	Remote        string `json:"remote"`
 	GitDirty      bool   `json:"git_dirty"`
+	ScanType      string `json:"scan_type,omitempty"`
 }
