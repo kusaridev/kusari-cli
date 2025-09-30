@@ -43,7 +43,7 @@ func packageDirectory() error {
 	return nil
 }
 
-func createMeta(rev string) error {
+func createMeta(rev string, full bool) error {
 	repoDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get repo directory: %w", err)
@@ -75,6 +75,11 @@ func createMeta(rev string) error {
 		DiffCmd:       rev,
 		Remote:        strings.TrimSpace(string(remote)),
 		GitDirty:      len(status) != 0,
+	}
+	if full {
+		meta.ScanType = "full"
+	} else {
+		meta.ScanType = "diff"
 	}
 
 	metab, err := json.Marshal(meta)
