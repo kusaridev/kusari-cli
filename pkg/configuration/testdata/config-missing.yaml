@@ -1,0 +1,2 @@
+github_action_version_pinning_check_enabled: true
+post_comment_on_failure: true
