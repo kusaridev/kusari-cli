@@ -43,6 +43,9 @@ func UpdateConfig() error {
 	_, err := os.Stat(ConfigFilename)
 	if errors.Is(err, os.ErrNotExist) {
 		return GenerateConfig(false)
+	} else if err != nil {
+		// Handle other failure cases
+		return fmt.Errorf("failed to check for config file %s: %w", ConfigFilename, err)
 	}
 
 	// Read the config file to get existing values
@@ -56,7 +59,10 @@ func UpdateConfig() error {
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	updatedConfig := mergeConfigs(DefaultConfig, existingConfig)
+	updatedConfig, err := mergeConfigs(DefaultConfig, existingConfig)
+	if err != nil {
+		return fmt.Errorf("error merging configs: %w", err)
+	}
 
 	cfgYaml, err := yaml.Marshal(updatedConfig)
 	if err != nil {
@@ -67,7 +73,7 @@ func UpdateConfig() error {
 }
 
 // A function to compare the configs and merge them together
-func mergeConfigs(defaultConfig configuration.Config, existingConfig map[string]interface{}) configuration.Config {
+func mergeConfigs(defaultConfig configuration.Config, existingConfig map[string]interface{}) (configuration.Config, error) {
 	result := defaultConfig
 
 	// Use reflection to iterate over all struct fields
@@ -91,10 +97,14 @@ func mergeConfigs(defaultConfig configuration.Config, existingConfig map[string]
 				case reflect.Bool:
 					if boolVal, ok := val.(bool); ok {
 						resultFieldValue.SetBool(boolVal)
+					} else {
+						return defaultConfig, fmt.Errorf("could not parse %s as a boolean", yamlTag)
 					}
 				case reflect.String:
 					if stringVal, ok := val.(string); ok {
 						resultFieldValue.SetString(stringVal)
+					} else {
+						return defaultConfig, fmt.Errorf("could not parse %s as a string", yamlTag)
 					}
 				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 					// YAML can parse numbers as int, int64, or sometimes float64
@@ -105,15 +115,19 @@ func mergeConfigs(defaultConfig configuration.Config, existingConfig map[string]
 						resultFieldValue.SetInt(v)
 					case float64:
 						resultFieldValue.SetInt(int64(v))
+					default: // We should never get here
+						return defaultConfig, fmt.Errorf("could not parse %s as an integer", yamlTag)
 					}
 				case reflect.Float32, reflect.Float64:
 					if floatVal, ok := val.(float64); ok {
 						resultFieldValue.SetFloat(floatVal)
 					}
+				default: // We should never get here
+					return defaultConfig, fmt.Errorf("could not parse %s as a %s", yamlTag, resultFieldValue.Kind())
 				}
 			}
 		}
 	}
 
-	return result
+	return result, nil
 }
