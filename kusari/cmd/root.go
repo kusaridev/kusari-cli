@@ -23,7 +23,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 
 	// Set environment variable prefix (optional)
-	viper.SetEnvPrefix("CLI") // Will look for CLI_CONSOLE_URL, CLI_VERBOSE, etc.
+	viper.SetEnvPrefix("KUSARI") // Will look for KUSARI_CONSOLE_URL, KUSARI_VERBOSE, etc.
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
 
