@@ -21,9 +21,9 @@ func init() {
 	scancmd.Flags().BoolVarP(&ci, "ci", "c", false, "kusari cli running in a pipeline")
 
 	// Bind flags to viper
-	mustBindPFlag("platform-url", scancmd.PersistentFlags().Lookup("platform-url"))
-	mustBindPFlag("wait", scancmd.PersistentFlags().Lookup("wait"))
-	mustBindPFlag("ci", scancmd.PersistentFlags().Lookup("ci"))
+	mustBindPFlag("platform-url", scancmd.Flags().Lookup("platform-url"))
+	mustBindPFlag("wait", scancmd.Flags().Lookup("wait"))
+	mustBindPFlag("ci", scancmd.Flags().Lookup("ci"))
 
 }
 

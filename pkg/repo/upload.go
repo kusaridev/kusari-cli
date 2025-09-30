@@ -148,7 +148,6 @@ func getAPIDefaultWorkspace(apiEndpoint string, jwtToken string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("failed to GET to %s, with error: %w", apiEndpoint, err)
 	}
-	fmt.Print(jwtToken)
 	// Add Authorization header with Bearer token
 	req.Header.Set("Authorization", "Bearer "+jwtToken)
 	req.Header.Set("Accept", "application/json")

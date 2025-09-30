@@ -15,7 +15,7 @@ var (
 func init() {
 	generatecmd.Flags().BoolVarP(&forceWrite, "force", "f", false, "Force creation when file exists")
 	// Bind flags to viper
-	mustBindPFlag("force", generatecmd.PersistentFlags().Lookup("force"))
+	mustBindPFlag("force", generatecmd.Flags().Lookup("force"))
 }
 
 func generateConfig() *cobra.Command {

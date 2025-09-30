@@ -24,9 +24,9 @@ func init() {
 	logincmd.Flags().StringVarP(&clientSecret, "client-secret", "s", "", "OAuth client secret ")
 
 	// Bind flags to viper
-	mustBindPFlag("auth-endpoint", logincmd.PersistentFlags().Lookup("auth-endpoint"))
-	mustBindPFlag("client-id", logincmd.PersistentFlags().Lookup("client-id"))
-	mustBindPFlag("client-secret", logincmd.PersistentFlags().Lookup("client-secret"))
+	mustBindPFlag("auth-endpoint", logincmd.Flags().Lookup("auth-endpoint"))
+	mustBindPFlag("client-id", logincmd.Flags().Lookup("client-id"))
+	mustBindPFlag("client-secret", logincmd.Flags().Lookup("client-secret"))
 }
 
 var logincmd = &cobra.Command{
