@@ -39,18 +39,19 @@ var (
 	workingDir string
 )
 
-func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, nil)
+func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait, ci bool) error {
+	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, ci, nil)
 }
 
 // scanMock facilitates use of mock values for testing
 type scanMock struct {
-	fileUploader       func(presignedURL, filePath string) error
-	presignedURLGetter func(apiEndpoint string, jwtToken string, filePath string) (string, error)
-	token              string
+	fileUploader           func(presignedURL, filePath string) error
+	presignedURLGetter     func(apiEndpoint string, jwtToken string, filePath, workspace string) (string, error)
+	defaultWorkspaceGetter func(apiEndpoint string, jwtToken string) (string, error)
+	token                  string
 }
 
-func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool,
+func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait, ci bool,
 	mock *scanMock) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
@@ -69,10 +70,12 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	fileUploader := uploadFileToS3
 	presignedURLGetter := getPresignedURL
+	defaultWorkspaceGetter := getAPIDefaultWorkspace
 	var accessToken string
 	if mock != nil {
 		fileUploader = mock.fileUploader
 		presignedURLGetter = mock.presignedURLGetter
+		defaultWorkspaceGetter = mock.defaultWorkspaceGetter
 		accessToken = mock.token
 	} else {
 		token, err := auth.LoadToken("kusari")
@@ -137,12 +140,26 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return fmt.Errorf("failed to package directory: %w", err)
 	}
 
+	var workspace string
+	// if running in a pipeline/workflow we need to get the workspace associated with the API key
+	if ci {
+		userEndpoint, err := urlBuilder.Build(platformUrl, "/user")
+		if err != nil {
+			return err
+		}
+		var workspaceGetterErr error
+		workspace, workspaceGetterErr = defaultWorkspaceGetter(*userEndpoint, accessToken)
+		if workspaceGetterErr != nil {
+			return fmt.Errorf("failed defaultWorkspaceGetter: %w", workspaceGetterErr)
+		}
+	}
+
 	apiEndpoint, err := urlBuilder.Build(platformUrl, "inspector/presign/bundle-upload")
 	if err != nil {
 		return err
 	}
 
-	presignedUrl, err := presignedURLGetter(*apiEndpoint, accessToken, tarballName)
+	presignedUrl, err := presignedURLGetter(*apiEndpoint, accessToken, tarballName, workspace)
 	if err != nil {
 		return fmt.Errorf("failed to get presigned URL: %w", err)
 	}
@@ -170,7 +187,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
-		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl)
+		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl, workspace)
 	}
 	return nil
 }
@@ -179,7 +196,7 @@ func cleanupWorkingDirectory(tempDir string) {
 	_ = os.RemoveAll(tempDir)
 }
 
-func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string) error {
+func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string, workspace string) error {
 	maxAttempts := 750
 	attempt := 0
 	sleepDuration := time.Second
@@ -212,6 +229,7 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-Kusari-Workspace", workspace)
 
 		resp, err := client.Do(req)
 		if err != nil {

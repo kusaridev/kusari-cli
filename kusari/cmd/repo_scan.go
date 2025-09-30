@@ -11,11 +11,13 @@ import (
 var (
 	platformUrl string
 	wait        bool
+	ci          bool
 )
 
 func init() {
 	scancmd.Flags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
 	scancmd.Flags().BoolVarP(&wait, "wait", "w", true, "wait for results")
+	scancmd.Flags().BoolVarP(&ci, "ci", "c", false, "kusari cli running in a pipeline")
 }
 
 func scan() *cobra.Command {
@@ -25,7 +27,7 @@ func scan() *cobra.Command {
 		dir := args[0]
 		ref := args[1]
 
-		return repo.Scan(dir, ref, platformUrl, consoleUrl, verbose, wait)
+		return repo.Scan(dir, ref, platformUrl, consoleUrl, verbose, wait, ci)
 	}
 
 	return scancmd

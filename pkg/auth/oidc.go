@@ -13,9 +13,10 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 )
 
-func Authenticate(ctx context.Context, clientId string, redirectUrl string, authEndpoint string, redirectPort string, consoleUrl string) (*oauth2.Token, error) {
+func Authenticate(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl string) (*oauth2.Token, error) {
 	baseURL, err := url.Parse(consoleUrl)
 	if err != nil {
 		return nil, err
@@ -23,57 +24,75 @@ func Authenticate(ctx context.Context, clientId string, redirectUrl string, auth
 	consoleAnalysisUrl := baseURL.JoinPath("analysis").String()
 
 	oauth2Config := oauthConfig(clientId, redirectUrl, authEndpoint)
-	// Generate and use state to prevent CSRF attacks
-	state, err := generateRandomString(32)
-	if err != nil {
-		return nil, NewAuthErrorWithCause(ErrAuthFlow, "failed to generate state", err)
-	}
 
-	// use PKCE to protect the auth code exchange
-	codeVerifier := oauth2.GenerateVerifier()
-
-	// Get code.
-	l, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", redirectPort))
-	if err != nil {
-		return nil, NewAuthErrorWithCause(ErrNetworkError, "failed to listen", err)
-	}
-	var callbackRes = make(chan callbackResult)
-	go func() {
-		defer func() {
-			_ = l.Close()
-		}()
-		err := http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handleCallbackv2(w, r, state, callbackRes, consoleAnalysisUrl)
-		}))
-		if err != nil {
-			log.Printf("Error listening for auth callback: %v", err)
+	var token *oauth2.Token
+	if clientSecret != "" {
+		var tokenErr error
+		config := &clientcredentials.Config{
+			ClientID:     clientId,
+			ClientSecret: clientSecret,
+			TokenURL:     oauth2Config.Endpoint.TokenURL,
 		}
-	}()
+		token, tokenErr = config.Token(ctx)
+		if tokenErr != nil {
+			log.Fatalf("Failed to exchange token: %v", err)
+			return nil, NewAuthErrorWithCause(ErrAuthFlow, "failed to exchange token", err)
+		}
+	} else {
+		// Generate and use state to prevent CSRF attacks
+		state, err := generateRandomString(32)
+		if err != nil {
+			return nil, NewAuthErrorWithCause(ErrAuthFlow, "failed to generate state", err)
+		}
 
-	challengeOption := oauth2.S256ChallengeOption(codeVerifier)
-	authURL := oauth2Config.AuthCodeURL(state, challengeOption)
+		// use PKCE to protect the auth code exchange
+		codeVerifier := oauth2.GenerateVerifier()
 
-	fmt.Println("Attempting to automatically open the login page in your default browser.")
-	fmt.Printf("If the browser does not open or you wish to use a different device to authorize this request, open the following URL:\n\n%s\n\n", authURL)
-	fmt.Printf("Waiting for authentication...\n\n")
+		// Get code.
+		l, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", redirectPort))
+		if err != nil {
+			return nil, NewAuthErrorWithCause(ErrNetworkError, "failed to listen", err)
+		}
+		var callbackRes = make(chan callbackResult)
+		go func() {
+			defer func() {
+				_ = l.Close()
+			}()
+			err := http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handleCallbackv2(w, r, state, callbackRes, consoleAnalysisUrl)
+			}))
+			if err != nil {
+				log.Printf("Error listening for auth callback: %v", err)
+			}
+		}()
 
-	if err := OpenBrowser(authURL); err != nil {
-		fmt.Printf("Failed to open browser automatically. Please visit the login page manually.")
-	}
+		challengeOption := oauth2.S256ChallengeOption(codeVerifier)
+		authURL := oauth2Config.AuthCodeURL(state, challengeOption)
 
-	cs := <-callbackRes
-	//get code done
-	if cs.Error != nil {
-		return nil, cs.Error
-	}
+		fmt.Println("Attempting to automatically open the login page in your default browser.")
+		fmt.Printf("If the browser does not open or you wish to use a different device to authorize this request, open the following URL:\n\n%s\n\n", authURL)
+		fmt.Printf("Waiting for authentication...\n\n")
 
-	code := cs.Code
+		if err := OpenBrowser(authURL); err != nil {
+			fmt.Printf("Failed to open browser automatically. Please visit the login page manually.")
+		}
 
-	authUrlOption := oauth2.SetAuthURLParam("code_verifier", codeVerifier)
-	token, err := oauth2Config.Exchange(ctx, code, authUrlOption)
-	if err != nil {
-		log.Fatalf("Failed to exchange token: %v", err)
-		return nil, err
+		cs := <-callbackRes
+		//get code done
+		if cs.Error != nil {
+			return nil, cs.Error
+		}
+
+		code := cs.Code
+
+		authUrlOption := oauth2.SetAuthURLParam("code_verifier", codeVerifier)
+		var tokenErr error
+
+		token, tokenErr = oauth2Config.Exchange(ctx, code, authUrlOption)
+		if tokenErr != nil {
+			log.Fatalf("Failed to exchange token: %v", tokenErr)
+			return nil, tokenErr
+		}
 	}
 
 	provider := oauth2Config.Endpoint.TokenURL

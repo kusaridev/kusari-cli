@@ -14,11 +14,13 @@ import (
 var (
 	clientId     string
 	authEndpoint string
+	clientSecret string
 )
 
 func init() {
 	logincmd.Flags().StringVarP(&authEndpoint, "auth-endpoint", "p", "https://auth.us.kusari.cloud/", "authentication endpoint URL")
 	logincmd.Flags().StringVarP(&clientId, "client-id", "c", "4lnk6jccl3hc4lkcudai5lt36u", "OAuth2 client ID")
+	logincmd.Flags().StringVarP(&clientSecret, "client-secret", "s", "", "OAuth client secret ")
 }
 
 var logincmd = &cobra.Command{
@@ -34,7 +36,7 @@ func login() *cobra.Command {
 		redirectPort := port.GenerateRandomPortOrDefault()
 		redirectUrl := fmt.Sprintf("http://localhost:%s/callback", redirectPort)
 
-		return l.Login(cmd.Context(), clientId, redirectUrl, authEndpoint, redirectPort, consoleUrl, verbose)
+		return l.Login(cmd.Context(), clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, verbose)
 	}
 
 	return logincmd
