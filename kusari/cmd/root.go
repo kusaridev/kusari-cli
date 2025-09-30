@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -27,8 +28,8 @@ func init() {
 	viper.AutomaticEnv()
 
 	// Bind flags to viper
-	viper.BindPFlag("console-url", rootCmd.PersistentFlags().Lookup("console-url"))
-	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	mustBindPFlag("console-url", rootCmd.PersistentFlags().Lookup("console-url"))
+	mustBindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 }
 
 func initConfig() {
@@ -63,4 +64,10 @@ func Execute() error {
 	rootCmd.AddCommand(KusariConfiguration())
 
 	return rootCmd.Execute()
+}
+
+func mustBindPFlag(key string, flag *pflag.Flag) {
+	if err := viper.BindPFlag(key, flag); err != nil {
+		panic(fmt.Sprintf("failed to bind flag %s: %v", key, err))
+	}
 }

@@ -21,9 +21,10 @@ func init() {
 	scancmd.Flags().BoolVarP(&ci, "ci", "c", false, "kusari cli running in a pipeline")
 
 	// Bind flags to viper
-	viper.BindPFlag("platform-url", scancmd.PersistentFlags().Lookup("platform-url"))
-	viper.BindPFlag("wait", scancmd.PersistentFlags().Lookup("wait"))
-	viper.BindPFlag("ci", scancmd.PersistentFlags().Lookup("ci"))
+	mustBindPFlag("platform-url", scancmd.PersistentFlags().Lookup("platform-url"))
+	mustBindPFlag("wait", scancmd.PersistentFlags().Lookup("wait"))
+	mustBindPFlag("ci", scancmd.PersistentFlags().Lookup("ci"))
+
 }
 
 func scan() *cobra.Command {
