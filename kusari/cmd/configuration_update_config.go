@@ -21,7 +21,7 @@ func updateConfig() *cobra.Command {
 }
 
 var updatecmd = &cobra.Command{
-	Use:   "update-config",
+	Use:   "update",
 	Short: fmt.Sprintf("Update %s config file", configuration.ConfigFilename),
 	Long: fmt.Sprintf("Update a %s config file for kusari-cli "+
 		"with new values.", configuration.ConfigFilename),
