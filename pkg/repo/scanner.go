@@ -152,8 +152,6 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return fmt.Errorf("failed defaultWorkspaceGetter: %w", workspaceGetterErr)
 	}
 
-	fmt.Printf("workspace: %s \n", workspace)
-
 	apiEndpoint, err := urlBuilder.Build(platformUrl, "inspector/presign/bundle-upload")
 	if err != nil {
 		return err
