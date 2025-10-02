@@ -29,7 +29,7 @@ func generateConfig() *cobra.Command {
 }
 
 var generatecmd = &cobra.Command{
-	Use:   "generate-config",
+	Use:   "generate",
 	Short: fmt.Sprintf("Generate %s config file", configuration.ConfigFilename),
 	Long: fmt.Sprintf("Generate a %s config file for kusari-cli "+
 		"with default values.", configuration.ConfigFilename),
@@ -37,4 +37,5 @@ var generatecmd = &cobra.Command{
 		// Update from viper (this gets env vars + config + flags)
 		forceWrite = viper.GetBool("force")
 	},
+	Aliases: []string{"generate-config"}, // alias to help existing users. Drop for 1.0
 }
