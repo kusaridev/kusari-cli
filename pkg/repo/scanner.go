@@ -39,8 +39,8 @@ var (
 	workingDir string
 )
 
-func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait, ci bool) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, ci, nil)
+func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose, wait bool) error {
+	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, nil)
 }
 
 // scanMock facilitates use of mock values for testing
@@ -51,7 +51,7 @@ type scanMock struct {
 	token                  string
 }
 
-func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait, ci bool,
+func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose, wait bool,
 	mock *scanMock) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
@@ -142,16 +142,14 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	var workspace string
 	// if running in a pipeline/workflow we need to get the workspace associated with the API key
-	if ci {
-		userEndpoint, err := urlBuilder.Build(platformUrl, "/user")
-		if err != nil {
-			return err
-		}
-		var workspaceGetterErr error
-		workspace, workspaceGetterErr = defaultWorkspaceGetter(*userEndpoint, accessToken)
-		if workspaceGetterErr != nil {
-			return fmt.Errorf("failed defaultWorkspaceGetter: %w", workspaceGetterErr)
-		}
+	userEndpoint, err := urlBuilder.Build(platformUrl, "/user")
+	if err != nil {
+		return err
+	}
+	var workspaceGetterErr error
+	workspace, workspaceGetterErr = defaultWorkspaceGetter(*userEndpoint, accessToken)
+	if workspaceGetterErr != nil {
+		return fmt.Errorf("failed defaultWorkspaceGetter: %w", workspaceGetterErr)
 	}
 
 	apiEndpoint, err := urlBuilder.Build(platformUrl, "inspector/presign/bundle-upload")
