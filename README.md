@@ -56,14 +56,14 @@ Will scan my `~/git/guac` repository and compare the working tree with the
 Kusari Inspector results will be stored and displayed in the [Kusari
 Console](https://console.us.kusari.cloud/analysis/cli).
 
-### `kusari repo full-scan`
+### `kusari repo risk-check`
 
-Scans a repository using [Kusari
-Inspector](https://www.kusari.dev/inspector). This does a light weight scan on
+Scans a repository for risks using [Kusari
+Inspector](https://www.kusari.dev/inspector). This does a risk check on
 the full repository.  Usage:
 
 ```
-kusari repo full-scan <directory>
+kusari repo risk-check <directory>
 ```
 
 Where `<directory>` is the directory of the git repository you wish to scan.
@@ -72,10 +72,10 @@ Where `<directory>` is the directory of the git repository you wish to scan.
 Examples:
 
 ```
-kusari repo full-scan ~/git/guac
+kusari repo risk-check ~/git/guac
 ```
 
-Will perform a light scan on my full `~/git/guac` repository.
+Will perform a risk check on my full `~/git/guac` repository.
 
 Kusari Inspector results will be stored and displayed in the [Kusari
 Console](https://console.us.kusari.cloud/analysis/cli).
