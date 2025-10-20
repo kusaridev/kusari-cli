@@ -43,7 +43,7 @@ func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, nil)
 }
 
-func FullScan(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
+func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
 	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, nil)
 }
 

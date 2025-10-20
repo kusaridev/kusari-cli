@@ -15,7 +15,7 @@ func Repo() *cobra.Command {
 	}
 
 	cmd.AddCommand(scan())
-	cmd.AddCommand(fullscan())
+	cmd.AddCommand(riskcheck())
 
 	return cmd
 }
