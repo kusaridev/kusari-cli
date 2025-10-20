@@ -39,8 +39,12 @@ var (
 	workingDir string
 )
 
-func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose, wait bool) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, nil)
+func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
+	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, nil)
+}
+
+func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
+	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, nil)
 }
 
 // scanMock facilitates use of mock values for testing
@@ -51,7 +55,7 @@ type scanMock struct {
 	token                  string
 }
 
-func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose, wait bool,
+func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, full bool,
 	mock *scanMock) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
@@ -124,19 +128,21 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		cleanupWorkingDirectory(tempDir)
 	}()
 
-	if err := createMeta(rev); err != nil {
-		return fmt.Errorf("failed to package directory: %w", err)
+	if err := createMeta(rev, full); err != nil {
+		return fmt.Errorf("failed to create meta file: %w", err)
 	}
 
 	fmt.Fprint(os.Stderr, "Generating diff...\n")
 
-	if err := generateDiff(rev); err != nil {
-		return fmt.Errorf("failed to generate diff: %w", err)
+	if !full {
+		if err := generateDiff(rev); err != nil {
+			return fmt.Errorf("failed to generate diff: %w", err)
+		}
 	}
 
 	fmt.Fprint(os.Stderr, "Packaging directory...\n")
 
-	if err := packageDirectory(); err != nil {
+	if err := packageDirectory(full); err != nil {
 		return fmt.Errorf("failed to package directory: %w", err)
 	}
 
