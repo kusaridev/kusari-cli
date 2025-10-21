@@ -55,7 +55,7 @@ func TestScan_ArchiveFormat(t *testing.T) {
 
 				return nil
 			},
-			presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath, workspace string) (string, error) {
+			presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath, workspace string, full bool) (string, error) {
 				return "https://s3.example.com/upload?epoch=1234567890", nil
 			},
 			defaultWorkspaceGetter: func(apiEndpoint string, jwtToken string) (string, error) {

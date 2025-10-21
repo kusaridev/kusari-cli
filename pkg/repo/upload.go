@@ -69,11 +69,16 @@ func uploadFileToS3(presignedURL, filePath string) error {
 }
 
 // GetPresignedUrl utilizes authorized client to obtain the presigned URL to upload to S3
-func getPresignedURL(apiEndpoint string, jwtToken string, filePath, workspace string) (string, error) {
+func getPresignedURL(apiEndpoint string, jwtToken string, filePath, workspace string, full bool) (string, error) {
+	scanType := "diff"
+	if full {
+		scanType = "full"
+	}
 
 	// Prepare the payload for the presigned URL request
 	payload := map[string]string{
 		"filename": filePath,
+		"type":     scanType,
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {

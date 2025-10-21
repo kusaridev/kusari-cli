@@ -50,7 +50,7 @@ func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, 
 // scanMock facilitates use of mock values for testing
 type scanMock struct {
 	fileUploader           func(presignedURL, filePath string) error
-	presignedURLGetter     func(apiEndpoint string, jwtToken string, filePath, workspace string) (string, error)
+	presignedURLGetter     func(apiEndpoint string, jwtToken string, filePath, workspace string, full bool) (string, error)
 	defaultWorkspaceGetter func(apiEndpoint string, jwtToken string) (string, error)
 	token                  string
 }
@@ -163,7 +163,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return err
 	}
 
-	presignedUrl, err := presignedURLGetter(*apiEndpoint, accessToken, tarballName, workspace)
+	presignedUrl, err := presignedURLGetter(*apiEndpoint, accessToken, tarballName, workspace, full)
 	if err != nil {
 		return fmt.Errorf("failed to get presigned URL: %w", err)
 	}
