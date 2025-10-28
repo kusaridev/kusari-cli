@@ -128,7 +128,7 @@ func ClearTokens() error {
 
 func CheckTokenExpiry(token *oauth2.Token) error {
 	if token.Expiry.Before(time.Now()) {
-		return NewAuthError(ErrTokenExpired, "Token is expired")
+		return NewAuthError(ErrTokenExpired, "Token is expired. Re-run `kusari auth login`")
 	}
 	return nil
 }
