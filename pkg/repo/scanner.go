@@ -132,9 +132,8 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return fmt.Errorf("failed to create meta file: %w", err)
 	}
 
-	fmt.Fprint(os.Stderr, "Generating diff...\n")
-
 	if !full {
+		fmt.Fprint(os.Stderr, "Generating diff...\n")
 		if err := generateDiff(rev); err != nil {
 			return fmt.Errorf("failed to generate diff: %w", err)
 		}
