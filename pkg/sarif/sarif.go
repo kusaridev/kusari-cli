@@ -39,11 +39,13 @@ type SarifRule struct {
 }
 
 type SarifResult struct {
-	RuleID     string          `json:"ruleId"`
-	Level      string          `json:"level,omitempty"` // "error", "warning", "note", "none"
-	Message    SarifMessage    `json:"message"`
-	Locations  []SarifLocation `json:"locations,omitempty"`
-	Properties map[string]any  `json:"properties,omitempty"`
+	RuleID     string                        `json:"ruleId"`
+	Level      string                        `json:"level,omitempty"` // "error", "warning", "note", "none"
+	Message    SarifMessage                  `json:"message"`
+	Help       SarifMultiformatMessageString `json:"help,omitempty"`
+	HelpUri    string                        `json:"helpUri,omitempty"`
+	Locations  []SarifLocation               `json:"locations,omitempty"`
+	Properties map[string]any                `json:"properties,omitempty"`
 }
 
 type SarifMessage struct {
@@ -83,7 +85,7 @@ type SarifArtifactContent struct {
 }
 
 // ConvertToSARIF converts SecurityAnalysis to SARIF format
-func ConvertToSARIF(analysis *api.SecurityAnalysis) (string, error) {
+func ConvertToSARIF(analysis *api.SecurityAnalysis, consoleUrl string) (string, error) {
 	sarifLog := SarifLog{
 		Version: "2.1.0",
 		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -130,7 +132,7 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis) (string, error) {
 	}
 
 	// Determine the main message text and markdown
-	messageText, messageMarkdown := buildMessage(analysis)
+	messageText, messageMarkdown := buildMessage(analysis, consoleUrl)
 
 	// Add overall analysis result
 	overallResult := SarifResult{
@@ -140,6 +142,10 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis) (string, error) {
 			Text:     messageText,
 			Markdown: messageMarkdown,
 		},
+		Help: SarifMultiformatMessageString{
+			Text: "View your full detailed results here",
+		},
+		HelpUri: consoleUrl,
 		Properties: map[string]interface{}{
 			"should_proceed":  analysis.ShouldProceed,
 			"failed_analysis": analysis.FailedAnalysis,
@@ -212,7 +218,7 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis) (string, error) {
 
 // buildMessage creates the message text and markdown from the analysis
 // Handles cases where recommendation might be empty
-func buildMessage(analysis *api.SecurityAnalysis) (text string, markdown string) {
+func buildMessage(analysis *api.SecurityAnalysis, consoleUrl string) (text string, markdown string) {
 	// Determine what to use as the main message
 	if analysis.Recommendation != "" && analysis.Justification != "" {
 		text = analysis.Recommendation
@@ -228,6 +234,11 @@ func buildMessage(analysis *api.SecurityAnalysis) (text string, markdown string)
 		// Fallback message if both are empty
 		text = "Analysis completed"
 		markdown = "**Analysis:** Completed"
+	}
+
+	// Add console URL link if provided
+	if consoleUrl != "" {
+		markdown = fmt.Sprintf("%s\n\n[View your full detailed results here](%s)", markdown, consoleUrl)
 	}
 
 	return text, markdown

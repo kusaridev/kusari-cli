@@ -9,9 +9,12 @@ import (
 )
 
 func TestConvertToSARIF(t *testing.T) {
+	testConsoleUrl := "https://console.kusari.dev/analysis/abc123"
+
 	tests := []struct {
 		name          string
 		analysis      *api.SecurityAnalysis
+		consoleUrl    string
 		wantErr       bool
 		validateFn    func(*testing.T, string)
 		expectedLevel string
@@ -24,6 +27,7 @@ func TestConvertToSARIF(t *testing.T) {
 				ShouldProceed:  true,
 				HealthScore:    5,
 			},
+			consoleUrl:    testConsoleUrl,
 			wantErr:       false,
 			expectedLevel: "note",
 			validateFn: func(t *testing.T, output string) {
@@ -52,6 +56,14 @@ func TestConvertToSARIF(t *testing.T) {
 				if result.Message.Text != "Code looks good" {
 					t.Errorf("Expected message 'Code looks good', got %s", result.Message.Text)
 				}
+
+				if result.HelpUri != testConsoleUrl {
+					t.Errorf("Expected helpUri '%s', got '%s'", testConsoleUrl, result.HelpUri)
+				}
+
+				if result.Help.Text != "View your full detailed results here" {
+					t.Errorf("Expected help text 'View your full detailed results here', got '%s'", result.Help.Text)
+				}
 			},
 		},
 		{
@@ -76,6 +88,7 @@ func TestConvertToSARIF(t *testing.T) {
 					},
 				},
 			},
+			consoleUrl:    testConsoleUrl,
 			wantErr:       false,
 			expectedLevel: "error",
 			validateFn: func(t *testing.T, output string) {
@@ -121,6 +134,7 @@ func TestConvertToSARIF(t *testing.T) {
 					{Content: "Remove deprecated package xyz"},
 				},
 			},
+			consoleUrl:    testConsoleUrl,
 			wantErr:       false,
 			expectedLevel: "warning",
 			validateFn: func(t *testing.T, output string) {
@@ -175,6 +189,7 @@ func TestConvertToSARIF(t *testing.T) {
 					{Content: "Update vulnerable package"},
 				},
 			},
+			consoleUrl:    testConsoleUrl,
 			wantErr:       false,
 			expectedLevel: "error",
 			validateFn: func(t *testing.T, output string) {
@@ -214,6 +229,7 @@ func TestConvertToSARIF(t *testing.T) {
 				FailedAnalysis: true,
 				HealthScore:    0,
 			},
+			consoleUrl:    testConsoleUrl,
 			wantErr:       false,
 			expectedLevel: "error",
 			validateFn: func(t *testing.T, output string) {
@@ -239,6 +255,7 @@ func TestConvertToSARIF(t *testing.T) {
 				FailedAnalysis:                false,
 				HealthScore:                   0,
 			},
+			consoleUrl:    testConsoleUrl,
 			wantErr:       false,
 			expectedLevel: "note",
 			validateFn: func(t *testing.T, output string) {
@@ -290,7 +307,8 @@ func TestConvertToSARIF(t *testing.T) {
 				Justification:  "Test",
 				ShouldProceed:  true,
 			},
-			wantErr: false,
+			consoleUrl: testConsoleUrl,
+			wantErr:    false,
 			validateFn: func(t *testing.T, output string) {
 				var sarif SarifLog
 				if err := json.Unmarshal([]byte(output), &sarif); err != nil {
@@ -331,14 +349,15 @@ func TestConvertToSARIF(t *testing.T) {
 			},
 		},
 		{
-			name: "markdown message formatting",
+			name: "markdown message formatting with console URL",
 			analysis: &api.SecurityAnalysis{
 				Recommendation: "Proceed with caution",
 				Justification:  "Minor issues detected",
 				ShouldProceed:  true,
 				HealthScore:    4,
 			},
-			wantErr: false,
+			consoleUrl: testConsoleUrl,
+			wantErr:    false,
 			validateFn: func(t *testing.T, output string) {
 				var sarif SarifLog
 				if err := json.Unmarshal([]byte(output), &sarif); err != nil {
@@ -346,7 +365,7 @@ func TestConvertToSARIF(t *testing.T) {
 				}
 
 				result := sarif.Runs[0].Results[0]
-				expectedMarkdown := "**Recommendation:** Proceed with caution\n\n**Justification:** Minor issues detected"
+				expectedMarkdown := "**Recommendation:** Proceed with caution\n\n**Justification:** Minor issues detected\n\n[View your full detailed results here](" + testConsoleUrl + ")"
 				if result.Message.Markdown != expectedMarkdown {
 					t.Errorf("Expected markdown:\n%s\n\nGot:\n%s", expectedMarkdown, result.Message.Markdown)
 				}
@@ -367,7 +386,8 @@ func TestConvertToSARIF(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
+			consoleUrl: testConsoleUrl,
+			wantErr:    false,
 			validateFn: func(t *testing.T, output string) {
 				var sarif SarifLog
 				if err := json.Unmarshal([]byte(output), &sarif); err != nil {
@@ -412,7 +432,8 @@ func TestConvertToSARIF(t *testing.T) {
 				Justification:  "No issues",
 				ShouldProceed:  true,
 			},
-			wantErr: false,
+			consoleUrl: testConsoleUrl,
+			wantErr:    false,
 			validateFn: func(t *testing.T, output string) {
 				// Verify it's valid JSON
 				var jsonObj interface{}
@@ -426,11 +447,41 @@ func TestConvertToSARIF(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "empty console URL",
+			analysis: &api.SecurityAnalysis{
+				Recommendation: "Test",
+				Justification:  "Test",
+				ShouldProceed:  true,
+			},
+			consoleUrl: "",
+			wantErr:    false,
+			validateFn: func(t *testing.T, output string) {
+				var sarif SarifLog
+				if err := json.Unmarshal([]byte(output), &sarif); err != nil {
+					t.Fatalf("Failed to parse SARIF output: %v", err)
+				}
+
+				result := sarif.Runs[0].Results[0]
+				// HelpUri should be empty
+				if result.HelpUri != "" {
+					t.Errorf("Expected empty helpUri, got '%s'", result.HelpUri)
+				}
+				// Help text should still be present
+				if result.Help.Text != "View your full detailed results here" {
+					t.Errorf("Expected help text even with empty URL, got '%s'", result.Help.Text)
+				}
+				// Markdown should not contain the link
+				if strings.Contains(result.Message.Markdown, "[View your full detailed results here]") {
+					t.Error("Markdown should not contain link when URL is empty")
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := ConvertToSARIF(tt.analysis)
+			output, err := ConvertToSARIF(tt.analysis, tt.consoleUrl)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ConvertToSARIF() error = %v, wantErr %v", err, tt.wantErr)
@@ -456,53 +507,80 @@ func TestConvertToSARIF(t *testing.T) {
 }
 
 func TestBuildMessage(t *testing.T) {
+	testConsoleUrl := "https://console.kusari.dev/analysis/test123"
+
 	tests := []struct {
 		name             string
 		analysis         *api.SecurityAnalysis
+		consoleUrl       string
 		expectedText     string
 		expectedMarkdown string
 	}{
 		{
-			name: "both recommendation and justification present",
+			name: "both recommendation and justification present with URL",
 			analysis: &api.SecurityAnalysis{
 				Recommendation: "Fix the issues",
 				Justification:  "Security vulnerabilities found",
 			},
+			consoleUrl:       testConsoleUrl,
 			expectedText:     "Fix the issues",
-			expectedMarkdown: "**Recommendation:** Fix the issues\n\n**Justification:** Security vulnerabilities found",
+			expectedMarkdown: "**Recommendation:** Fix the issues\n\n**Justification:** Security vulnerabilities found\n\n[View your full detailed results here](https://console.kusari.dev/analysis/test123)",
 		},
 		{
-			name: "only recommendation present",
+			name: "only recommendation present with URL",
 			analysis: &api.SecurityAnalysis{
 				Recommendation: "Proceed with deployment",
 				Justification:  "",
 			},
+			consoleUrl:       testConsoleUrl,
 			expectedText:     "Proceed with deployment",
-			expectedMarkdown: "**Recommendation:** Proceed with deployment",
+			expectedMarkdown: "**Recommendation:** Proceed with deployment\n\n[View your full detailed results here](https://console.kusari.dev/analysis/test123)",
 		},
 		{
-			name: "only justification present",
+			name: "only justification present with URL",
 			analysis: &api.SecurityAnalysis{
 				Recommendation: "",
 				Justification:  "No pinned version dependency changes, code issues or exposed secrets detected!",
 			},
+			consoleUrl:       testConsoleUrl,
 			expectedText:     "No pinned version dependency changes, code issues or exposed secrets detected!",
-			expectedMarkdown: "**Analysis:** No pinned version dependency changes, code issues or exposed secrets detected!",
+			expectedMarkdown: "**Analysis:** No pinned version dependency changes, code issues or exposed secrets detected!\n\n[View your full detailed results here](https://console.kusari.dev/analysis/test123)",
 		},
 		{
-			name: "both empty - fallback message",
+			name: "both empty - fallback message with URL",
 			analysis: &api.SecurityAnalysis{
 				Recommendation: "",
 				Justification:  "",
 			},
+			consoleUrl:       testConsoleUrl,
 			expectedText:     "Analysis completed",
-			expectedMarkdown: "**Analysis:** Completed",
+			expectedMarkdown: "**Analysis:** Completed\n\n[View your full detailed results here](https://console.kusari.dev/analysis/test123)",
+		},
+		{
+			name: "both recommendation and justification without URL",
+			analysis: &api.SecurityAnalysis{
+				Recommendation: "Fix the issues",
+				Justification:  "Security vulnerabilities found",
+			},
+			consoleUrl:       "",
+			expectedText:     "Fix the issues",
+			expectedMarkdown: "**Recommendation:** Fix the issues\n\n**Justification:** Security vulnerabilities found",
+		},
+		{
+			name: "only recommendation without URL",
+			analysis: &api.SecurityAnalysis{
+				Recommendation: "Proceed with deployment",
+				Justification:  "",
+			},
+			consoleUrl:       "",
+			expectedText:     "Proceed with deployment",
+			expectedMarkdown: "**Recommendation:** Proceed with deployment",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			text, markdown := buildMessage(tt.analysis)
+			text, markdown := buildMessage(tt.analysis, tt.consoleUrl)
 
 			if text != tt.expectedText {
 				t.Errorf("Expected text:\n%s\n\nGot:\n%s", tt.expectedText, text)
@@ -594,6 +672,8 @@ func TestGetLevel(t *testing.T) {
 
 func TestSARIFStructureCompliance(t *testing.T) {
 	// Test that the output structure complies with SARIF 2.1.0 schema
+	testConsoleUrl := "https://console.kusari.dev/analysis/compliance-test"
+
 	analysis := &api.SecurityAnalysis{
 		Recommendation: "Test recommendation",
 		Justification:  "Test justification",
@@ -609,7 +689,7 @@ func TestSARIFStructureCompliance(t *testing.T) {
 		},
 	}
 
-	output, err := ConvertToSARIF(analysis)
+	output, err := ConvertToSARIF(analysis, testConsoleUrl)
 	if err != nil {
 		t.Fatalf("ConvertToSARIF() failed: %v", err)
 	}
@@ -655,6 +735,28 @@ func TestSARIFStructureCompliance(t *testing.T) {
 			if result.Message.Text == "" {
 				t.Errorf("Result %d has empty message text", i)
 			}
+		}
+	})
+
+	t.Run("security-analysis result has help URI and help text", func(t *testing.T) {
+		var securityAnalysisResult *SarifResult
+		for i, result := range sarif.Runs[0].Results {
+			if result.RuleID == "security-analysis" {
+				securityAnalysisResult = &sarif.Runs[0].Results[i]
+				break
+			}
+		}
+
+		if securityAnalysisResult == nil {
+			t.Fatal("security-analysis result not found")
+		}
+
+		if securityAnalysisResult.HelpUri != testConsoleUrl {
+			t.Errorf("Expected helpUri '%s', got '%s'", testConsoleUrl, securityAnalysisResult.HelpUri)
+		}
+
+		if securityAnalysisResult.Help.Text != "View your full detailed results here" {
+			t.Errorf("Expected help text 'View your full detailed results here', got '%s'", securityAnalysisResult.Help.Text)
 		}
 	})
 }
