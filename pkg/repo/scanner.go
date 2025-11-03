@@ -268,7 +268,7 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 					// Check output format
 					if outputFormat == "sarif" {
 						// Output sarif format
-						sarifOutput, err := sarif.ConvertToSARIF(results[0].Analysis.RawLLMAnalysis)
+						sarifOutput, err := sarif.ConvertToSARIF(results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
 						if err != nil {
 							return fmt.Errorf("failed to convert to SARIF: %w", err)
 						}
