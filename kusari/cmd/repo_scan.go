@@ -20,7 +20,7 @@ var (
 func init() {
 	scancmd.Flags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
 	scancmd.Flags().BoolVarP(&wait, "wait", "w", true, "wait for results")
-	scancmd.Flags().StringVarP(&outputFormat, "output-format", "", "markdown", "output format (markdown or SARIF)")
+	scancmd.Flags().StringVarP(&outputFormat, "output-format", "", "markdown", "output format (markdown or sarif)")
 
 	// Bind flags to viper
 	mustBindPFlag("platform-url", scancmd.Flags().Lookup("platform-url"))
@@ -33,8 +33,8 @@ func scan() *cobra.Command {
 		cmd.SilenceUsage = true
 
 		// Validate output format
-		if outputFormat != "markdown" && outputFormat != "SARIF" {
-			return fmt.Errorf("invalid output format: %s (must be 'markdown' or 'SARIF')", outputFormat)
+		if outputFormat != "markdown" && outputFormat != "sarif" {
+			return fmt.Errorf("invalid output format: %s (must be 'markdown' or 'sarif')", outputFormat)
 		}
 
 		dir := args[0]

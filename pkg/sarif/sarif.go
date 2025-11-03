@@ -35,15 +35,15 @@ type SarifRule struct {
 	ShortDescription SarifMultiformatMessageString `json:"shortDescription,omitempty"`
 	FullDescription  SarifMultiformatMessageString `json:"fullDescription,omitempty"`
 	Help             SarifMultiformatMessageString `json:"help,omitempty"`
-	Properties       map[string]interface{}        `json:"properties,omitempty"`
+	Properties       map[string]any                `json:"properties,omitempty"`
 }
 
 type SarifResult struct {
-	RuleID     string                 `json:"ruleId"`
-	Level      string                 `json:"level,omitempty"` // "error", "warning", "note", "none"
-	Message    SarifMessage           `json:"message"`
-	Locations  []SarifLocation        `json:"locations,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
+	RuleID     string          `json:"ruleId"`
+	Level      string          `json:"level,omitempty"` // "error", "warning", "note", "none"
+	Message    SarifMessage    `json:"message"`
+	Locations  []SarifLocation `json:"locations,omitempty"`
+	Properties map[string]any  `json:"properties,omitempty"`
 }
 
 type SarifMessage struct {
@@ -178,7 +178,8 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis) (string, error) {
 					},
 				},
 			},
-			Properties: map[string]interface{}{
+			Properties: map[string]any{
+				"type":        "code",
 				"line_number": mitigation.LineNumber,
 			},
 		}
@@ -193,7 +194,7 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis) (string, error) {
 			Message: SarifMessage{
 				Text: mitigation.Content,
 			},
-			Properties: map[string]interface{}{
+			Properties: map[string]any{
 				"type": "dependency",
 			},
 		}
@@ -203,7 +204,7 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis) (string, error) {
 	// Convert to JSON
 	jsonBytes, err := json.MarshalIndent(sarifLog, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal SARIF: %w", err)
+		return "", fmt.Errorf("failed to marshal sarif: %w", err)
 	}
 
 	return string(jsonBytes), nil
