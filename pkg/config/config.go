@@ -23,6 +23,7 @@ type Config struct {
 	RefreshToken string    `json:"refresh_token,omitempty"`
 	TokenExpiry  time.Time `json:"token_expiry,omitempty"`
 	Verbose      bool      `json:"verbose,omitempty"`
+	OutputFormat string    `json:"output_format,omitempty"`
 }
 
 // Manager handles configuration persistence

@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/kusaridev/kusari-cli/api"
 	"github.com/kusaridev/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/pkg/sarif"
 	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
 )
 
@@ -39,12 +40,13 @@ var (
 	workingDir string
 )
 
-func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, nil)
+func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string) error {
+	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, nil)
 }
 
 func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
-	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, nil)
+	// default to outputformat "markdown" for now for risk check as it will link to console
+	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", nil)
 }
 
 // scanMock facilitates use of mock values for testing
@@ -55,13 +57,14 @@ type scanMock struct {
 	token                  string
 }
 
-func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, full bool,
+func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, full bool, outputFormat string,
 	mock *scanMock) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
 		fmt.Fprintf(os.Stderr, " rev: %s\n", rev)
 		fmt.Fprintf(os.Stderr, " platformUrl: %s\n", platformUrl)
 		fmt.Fprintf(os.Stderr, " consoleUrl: %s\n", consoleUrl)
+		fmt.Fprintf(os.Stderr, " outputFormat: %s\n", outputFormat)
 	}
 
 	// Check to see if the directory has a .git directory. If it does not, it is not the root of
@@ -190,7 +193,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
-		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl, workspace)
+		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl, workspace, outputFormat)
 	}
 	return nil
 }
@@ -199,7 +202,7 @@ func cleanupWorkingDirectory(tempDir string) {
 	_ = os.RemoveAll(tempDir)
 }
 
-func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string, workspace string) error {
+func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string, workspace, outputFormat string) error {
 	maxAttempts := 750
 	attempt := 0
 	sleepDuration := time.Second
@@ -261,6 +264,19 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 					// Stop spinner before outputting results
 					s.FinalMSG = "✓ Analysis complete!\n"
 					s.Stop()
+
+					// Check output format
+					if outputFormat == "sarif" {
+						// Output sarif format
+						sarifOutput, err := sarif.ConvertToSARIF(results[0].Analysis.RawLLMAnalysis)
+						if err != nil {
+							return fmt.Errorf("failed to convert to SARIF: %w", err)
+						}
+
+						fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
+						fmt.Print(sarifOutput) // stdout
+						return nil
+					}
 
 					// Clean and format results for stdout
 					rawContent := results[0].Analysis.Results

@@ -36,9 +36,32 @@ type WorkspaceInspectorResult struct {
 }
 
 type Analysis struct {
-	Proceed bool   `docstore:"proceed" json:"proceed"`
-	Results string `docstore:"results" json:"results"` // markdown content
+	Proceed        bool              `docstore:"proceed" json:"proceed"`
+	Results        string            `docstore:"results" json:"results"` // markdown content
+	RawLLMAnalysis *SecurityAnalysis `docstore:"rawLLMAnalysis" json:"rawLLMAnalysis"`
 	// Add other analysis fields as needed
+}
+
+// Structured output types
+type CodeMitigationItem struct {
+	LineNumber int    `docstore:"line_number" json:"line_number"`
+	Path       string `docstore:"path" json:"path"`
+	Content    string `docstore:"content" json:"content"`
+	Code       string `docstore:"code" json:"code,omitempty"`
+}
+
+type DependencyMitigationItem struct {
+	Content string `docstore:"content" json:"content"`
+}
+
+type SecurityAnalysis struct {
+	Recommendation                string                     `docstore:"recommendation" json:"recommendation"`
+	Justification                 string                     `docstore:"justification" json:"justification"`
+	RequiredCodeMitigations       []CodeMitigationItem       `docstore:"code_mitigations" json:"code_mitigations,omitempty"`
+	RequiredDependencyMitigations []DependencyMitigationItem `docstore:"dependency_mitigations" json:"dependency_mitigations,omitempty"`
+	ShouldProceed                 bool                       `docstore:"should_proceed" json:"should_proceed"`
+	FailedAnalysis                bool                       `docstore:"failed_analysis" json:"failed_analysis"`
+	HealthScore                   int                        `docstore:"health_score" json:"health_score"` // 0-5 scale for full repo scans
 }
 
 type Meta struct {
