@@ -176,12 +176,12 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
 
-	workspaceID, userID, epoch, err := urlBuilder.GetIDsFromUrl(presignedUrl)
+	workspaceID, userID, epoch, isMachine, err := urlBuilder.GetIDsFromUrl(presignedUrl)
 	if err != nil {
 		return err
 	}
 
-	sortString := urlBuilder.CreateSortString(userID, epoch, full)
+	sortString := urlBuilder.CreateSortString(userID, epoch, full, isMachine)
 
 	consoleFullUrl, err := urlBuilder.Build(consoleUrl, "workspaces", workspaceID, "analysis", sortString, "result")
 	if err != nil {
