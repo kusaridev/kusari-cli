@@ -176,12 +176,14 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
 
-	epoch, err := urlBuilder.GetEpochFromUrl(presignedUrl)
+	workspaceID, userID, epoch, err := urlBuilder.GetIDsFromUrl(presignedUrl)
 	if err != nil {
 		return err
 	}
 
-	consoleFullUrl, err := urlBuilder.Build(consoleUrl, "analysis/users", *epoch, "result")
+	sortString := urlBuilder.CreateSortString(userID, epoch, full)
+
+	consoleFullUrl, err := urlBuilder.Build(consoleUrl, "workspaces", workspaceID, "analysis", sortString, "result")
 	if err != nil {
 		return err
 	}
@@ -202,7 +204,7 @@ func cleanupWorkingDirectory(tempDir string) {
 	_ = os.RemoveAll(tempDir)
 }
 
-func queryForResult(platformUrl string, epoch *string, accessToken string, consoleFullUrl *string, workspace, outputFormat string) error {
+func queryForResult(platformUrl string, epoch string, accessToken string, consoleFullUrl *string, workspace, outputFormat string) error {
 	maxAttempts := 750
 	attempt := 0
 	sleepDuration := time.Second
@@ -225,7 +227,7 @@ func queryForResult(platformUrl string, epoch *string, accessToken string, conso
 		// Build URL
 		fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s&op=beginswith",
 			strings.TrimSuffix(platformUrl, "/"),
-			*epoch)
+			epoch)
 
 		// Create HTTP client
 		req, err := http.NewRequest("GET", fullURL, nil)
