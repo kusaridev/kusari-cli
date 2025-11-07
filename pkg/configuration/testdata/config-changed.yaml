@@ -3,3 +3,4 @@ container_version_pinning_check_enabled: true
 status_check_name: Kusari Inspectormatic
 post_comment_on_failure: true
 post_comment_on_success: false
+full_code_review_enabled: false

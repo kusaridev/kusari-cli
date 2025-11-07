@@ -20,6 +20,7 @@ var DefaultConfig = configuration.Config{
 	StatusCheckName:                        "Kusari Inspector",
 	PostCommentOnFailure:                   true,
 	PostCommentOnSuccess:                   false,
+	FullCodeReviewEnabled:                  true,
 }
 
 func GenerateConfig(forceWrite bool) error {
