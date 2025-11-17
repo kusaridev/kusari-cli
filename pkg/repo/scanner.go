@@ -131,7 +131,8 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		cleanupWorkingDirectory(tempDir)
 	}()
 
-	if err := createMeta(rev, full); err != nil {
+	meta, err := createMeta(rev, full)
+	if err != nil {
 		return fmt.Errorf("failed to create meta file: %w", err)
 	}
 
@@ -183,9 +184,19 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	sortString := urlBuilder.CreateSortString(userID, epoch, full, isMachine)
 
-	consoleFullUrl, err := urlBuilder.Build(consoleUrl, "workspaces", workspaceID, "analysis", sortString, "result")
-	if err != nil {
-		return err
+	var consoleFullUrl *string
+	var consoleUrlErr error
+	if !full {
+		consoleFullUrl, consoleUrlErr = urlBuilder.Build(consoleUrl, "workspaces", workspaceID, "analysis", sortString, "result")
+		if consoleUrlErr != nil {
+			return consoleUrlErr
+		}
+	} else {
+		// /workspaces/{{workspaceID}}/risk-check/{{repo}}/{{sortKey}}/result
+		consoleFullUrl, consoleUrlErr = urlBuilder.Build(consoleUrl, "workspaces", workspaceID, "risk-check", meta.DirName, sortString, "result")
+		if consoleUrlErr != nil {
+			return consoleUrlErr
+		}
 	}
 
 	fmt.Fprint(os.Stderr, "Upload successful, your scan is processing!\n")

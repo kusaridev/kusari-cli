@@ -48,18 +48,18 @@ func packageDirectory(full bool) error {
 	return nil
 }
 
-func createMeta(rev string, full bool) error {
+func createMeta(rev string, full bool) (*api.BundleMeta, error) {
 	repoDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get repo directory: %w", err)
+		return nil, fmt.Errorf("failed to get repo directory: %w", err)
 	}
 
 	branch, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
-		return fmt.Errorf("failed to run git rev-parse: %w", err)
+		return nil, fmt.Errorf("failed to run git rev-parse: %w", err)
 	}
 	if len(branch) == 0 {
-		return fmt.Errorf("git rev-parse command produced no output")
+		return nil, fmt.Errorf("git rev-parse command produced no output")
 	}
 
 	remote, err := exec.Command("git", "remote", "get-url", "origin").Output()
@@ -70,7 +70,7 @@ func createMeta(rev string, full bool) error {
 
 	status, err := exec.Command("git", "status", "--porcelain").Output()
 	if err != nil {
-		return fmt.Errorf("failed to run git status: %w", err)
+		return nil, fmt.Errorf("failed to run git status: %w", err)
 	}
 
 	meta := &api.BundleMeta{
@@ -89,19 +89,19 @@ func createMeta(rev string, full bool) error {
 
 	metab, err := json.Marshal(meta)
 	if err != nil {
-		return fmt.Errorf("failed to marshal json meta: %w", err)
+		return nil, fmt.Errorf("failed to marshal json meta: %w", err)
 	}
 
 	f, err := os.Create(metaName)
 	if err != nil {
-		return fmt.Errorf("failed to open meta file: %w", err)
+		return nil, fmt.Errorf("failed to open meta file: %w", err)
 	}
 	defer func() {
 		_ = f.Close()
 	}()
 	if _, err := io.Copy(f, bytes.NewReader(metab)); err != nil {
-		return fmt.Errorf("failed to write meta file: %w", err)
+		return nil, fmt.Errorf("failed to write meta file: %w", err)
 	}
 
-	return nil
+	return meta, nil
 }
