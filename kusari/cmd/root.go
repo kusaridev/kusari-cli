@@ -61,6 +61,7 @@ func Execute() error {
 
 	rootCmd.AddCommand(Auth())
 	rootCmd.AddCommand(Repo())
+	rootCmd.AddCommand(Platform())
 	rootCmd.AddCommand(KusariConfiguration())
 
 	return rootCmd.Execute()
