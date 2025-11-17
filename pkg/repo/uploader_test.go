@@ -176,7 +176,7 @@ func TestUploadBlob(t *testing.T) {
 				}
 				w.WriteHeader(tt.serverStatus)
 				if tt.serverResponse != "" {
-					w.Write([]byte(tt.serverResponse))
+					_, _ = w.Write([]byte(tt.serverResponse))
 				}
 			}))
 			defer server.Close()
@@ -281,9 +281,9 @@ func TestGetPresignedUrlForUpload(t *testing.T) {
 				if tt.serverResp != nil {
 					switch v := tt.serverResp.(type) {
 					case string:
-						w.Write([]byte(v))
+						_, _ = w.Write([]byte(v))
 					case map[string]string:
-						json.NewEncoder(w).Encode(v)
+						_ = json.NewEncoder(w).Encode(v)
 					}
 				}
 			}))
@@ -357,7 +357,7 @@ func TestMakePicoRequest(t *testing.T) {
 
 				w.WriteHeader(tt.serverStatus)
 				if tt.serverResp != "" {
-					w.Write([]byte(tt.serverResp))
+					_, _ = w.Write([]byte(tt.serverResp))
 				}
 			}))
 			defer server.Close()
@@ -380,7 +380,7 @@ func TestMakePicoRequest(t *testing.T) {
 				if resp == nil {
 					t.Error("Expected response, got nil")
 				} else {
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 					if resp.StatusCode != tt.serverStatus {
 						t.Errorf("Expected status %d, got %d", tt.serverStatus, resp.StatusCode)
 					}
@@ -456,7 +456,7 @@ func TestUploadSingleFile(t *testing.T) {
 			presignServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/presign") {
 					w.WriteHeader(http.StatusOK)
-					json.NewEncoder(w).Encode(map[string]string{
+					_ = json.NewEncoder(w).Encode(map[string]string{
 						"presignedUrl": uploadServer.URL,
 					})
 				} else {
@@ -560,7 +560,7 @@ func TestUploadDirectory(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasSuffix(r.URL.Path, "/presign") {
 					w.WriteHeader(http.StatusOK)
-					json.NewEncoder(w).Encode(map[string]string{
+					_ = json.NewEncoder(w).Encode(map[string]string{
 						"presignedUrl": serverURL + "/upload",
 					})
 				} else {
@@ -694,7 +694,7 @@ func TestCheckSBOMsForBlockedPackages(t *testing.T) {
 
 				if found {
 					w.WriteHeader(resp.status)
-					w.Write([]byte(resp.body))
+					_, _ = w.Write([]byte(resp.body))
 				} else {
 					w.WriteHeader(http.StatusNotFound)
 				}
