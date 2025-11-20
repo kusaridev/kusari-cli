@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
@@ -206,7 +207,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
-		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl, workspace, outputFormat)
+		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl, workspace, outputFormat, full)
 	}
 	return nil
 }
@@ -215,7 +216,7 @@ func cleanupWorkingDirectory(tempDir string) {
 	_ = os.RemoveAll(tempDir)
 }
 
-func queryForResult(platformUrl string, epoch string, accessToken string, consoleFullUrl *string, workspace, outputFormat string) error {
+func queryForResult(platformUrl string, epoch string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool) error {
 	maxAttempts := 750
 	attempt := 0
 	sleepDuration := time.Second
@@ -277,6 +278,11 @@ func queryForResult(platformUrl string, epoch string, accessToken string, consol
 					// Stop spinner before outputting results
 					s.FinalMSG = "✓ Analysis complete!\n"
 					s.Stop()
+
+					if full {
+						printFullScanResults(results[0].Analysis)
+						return nil
+					}
 
 					// Check output format
 					if outputFormat == "sarif" {
@@ -400,4 +406,58 @@ func removeImageLines(content string) string {
 	result = regexp.MustCompile(`\n{3,}`).ReplaceAllString(result, "\n\n")
 
 	return strings.TrimSpace(result)
+}
+
+func printFullScanResults(a *api.Analysis) {
+	sb := new(strings.Builder)
+
+	fmt.Fprintf(sb, "## Overall Score: %d/5\n", a.Score)
+	fmt.Fprintf(sb, "%s\n\n", a.Results)
+
+	keys := slices.Collect(maps.Keys(a.Health))
+	slices.Sort(keys)
+
+	for _, key := range keys {
+		fmt.Fprintf(sb, "### %s Score: %d/5\n", titleize(key), a.Health[key].Score)
+		for _, datum := range a.Health[key].Summary.Data {
+			fmt.Fprintf(sb, "#### %s:\n", datum.Label)
+			for _, value := range datum.Values {
+				fmt.Fprintln(sb, value)
+				fmt.Fprintln(sb)
+			}
+			fmt.Fprintln(sb)
+		}
+		for _, check := range a.Health[key].Checks {
+			fmt.Fprintf(sb, "#### %s: %v\n", check.Name, check.Pass)
+			fmt.Fprintf(sb, "##### %s:\n", check.Data.Label)
+			for _, value := range check.Data.Values {
+				fmt.Fprintln(sb, value)
+				fmt.Fprintln(sb)
+			}
+			fmt.Fprintln(sb)
+		}
+		fmt.Fprintln(sb)
+	}
+
+	cleanedContent := removeImageLines(sb.String())
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(100),
+	)
+	if err != nil {
+		fmt.Print(cleanedContent) // stdout
+		return
+	}
+
+	rendered, err := r.Render(cleanedContent)
+	if err != nil {
+		fmt.Print(cleanedContent) // stdout
+		return
+	}
+
+	fmt.Print(rendered) // stdout
+}
+
+func titleize(s string) string {
+	return strings.ToUpper(s[0:1]) + s[1:]
 }

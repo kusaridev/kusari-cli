@@ -39,8 +39,33 @@ type Analysis struct {
 	Proceed        bool              `docstore:"proceed" json:"proceed"`
 	Results        string            `docstore:"results" json:"results"` // markdown content
 	RawLLMAnalysis *SecurityAnalysis `docstore:"rawLLMAnalysis" json:"rawLLMAnalysis"`
+	Score          int               `dynamodbav:"score" docstore:"score" json:"score"`
+	Health         Health            `dynamodbav:"health" docstore:"health" json:"health"`
 	// Add other analysis fields as needed
 }
+
+type SubScan struct {
+	Score   int     `dynamodbav:"score" docstore:"score" json:"score"`
+	Summary Summary `dynamodbav:"summary" docstore:"summary" json:"summary"`
+	Checks  []Check `dynamodbav:"checks" docstore:"checks" json:"checks"`
+}
+
+type Summary struct {
+	Data []LabelWithValues `dynamodbav:"data" docstore:"data" json:"data"`
+}
+
+type Check struct {
+	Name string          `dynamodbav:"name" docstore:"name" json:"name"`
+	Pass bool            `dynamodbav:"pass" docstore:"pass" json:"pass"`
+	Data LabelWithValues `dynamodbav:"data" docstore:"data" json:"data"`
+}
+
+type LabelWithValues struct {
+	Label  string   `dynamodbav:"label" docstore:"label" json:"label"`
+	Values []string `dynamodbav:"values" docstore:"values" json:"values"`
+}
+
+type Health map[string]SubScan
 
 // Structured output types
 type CodeMitigationItem struct {
