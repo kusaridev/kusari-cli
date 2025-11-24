@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/kusaridev/kusari-cli/api"
+	"github.com/kusaridev/kusari-cli/pkg/login"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,8 +59,13 @@ func TestScan_ArchiveFormat(t *testing.T) {
 			presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath, workspace string, full bool) (string, error) {
 				return "https://example.com/workspace/test-workspace-id/user/human/test-user-id/diff/blob/123", nil
 			},
-			defaultWorkspaceGetter: func(apiEndpoint string, jwtToken string) (string, error) {
-				return "1f961986-c9f3-4760-9d55-1298136cbe2a", nil
+			defaultWorkspaceGetter: func(platformUrl string, jwtToken string) ([]login.Workspace, error) {
+				return []login.Workspace{
+					{
+						ID:          "1f961986-c9f3-4760-9d55-1298136cbe2a",
+						Description: "Test Workspace",
+					},
+				}, nil
 			},
 			token: "token",
 		}

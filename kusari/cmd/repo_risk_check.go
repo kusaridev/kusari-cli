@@ -9,7 +9,6 @@ import (
 )
 
 func init() {
-	riskcheckcmd.Flags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
 	riskcheckcmd.Flags().BoolVarP(&wait, "wait", "w", true, "wait for results")
 }
 

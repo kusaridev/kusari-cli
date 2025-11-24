@@ -12,18 +12,15 @@ import (
 )
 
 var (
-	platformUrl  string
 	wait         bool
 	outputFormat string
 )
 
 func init() {
-	scancmd.Flags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
 	scancmd.Flags().BoolVarP(&wait, "wait", "w", true, "wait for results")
 	scancmd.Flags().StringVarP(&outputFormat, "output-format", "", "markdown", "output format (markdown or sarif)")
 
 	// Bind flags to viper
-	mustBindPFlag("platform-url", scancmd.Flags().Lookup("platform-url"))
 	mustBindPFlag("wait", scancmd.Flags().Lookup("wait"))
 	mustBindPFlag("output-format", scancmd.Flags().Lookup("output-format"))
 }
@@ -55,7 +52,6 @@ var scancmd = &cobra.Command{
 	Args: cobra.ExactArgs(2),
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Update from viper (this gets env vars + config + flags)
-		platformUrl = viper.GetString("platform-url")
 		wait = viper.GetBool("wait")
 		outputFormat = viper.GetString("output-format")
 	},
