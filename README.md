@@ -20,6 +20,77 @@ For detailed information, see the [Kusari Documentation](https://docs.kusari.clo
 Logs into Kusari. Default parameters are good for most use cases. Access token
 is stored in `$HOME/.kusari/tokens.json`.
 
+#### Workspace Selection
+
+During your first login, you'll be prompted to select a workspace. Your selected
+workspace determines where your scan results will be stored.
+
+**Interactive Login (default):**
+```bash
+kusari auth login
+```
+
+If you have multiple workspaces, you'll see a prompt:
+```
+Available workspaces:
+  [1] Development Workspace
+  [2] Production Workspace
+
+Select a workspace (1-2):
+```
+
+If you only have one workspace, it will be auto-selected.
+
+**CI/CD Login (with client secret):**
+```bash
+kusari auth login --client-secret <secret> --client-id <id>
+```
+
+In CI/CD mode, the first available workspace is automatically selected without
+prompting, ensuring non-interactive execution.
+
+**Workspace Storage:**
+Your selected workspace is stored in `$HOME/.kusari/workspace.json` and is tied
+to your current platform and authentication endpoint. If you switch environments
+(e.g., from production to development), you'll be prompted to select a workspace
+for the new environment.
+
+**Switching Environments:**
+If you need to work with different Kusari environments (development, production, etc.),
+use the `--platform-url` and `--auth-endpoint` flags:
+
+```bash
+# Development environment
+kusari auth login --platform-url https://platform.api.dev.kusari.cloud/ \
+  --auth-endpoint https://auth.dev.kusari.cloud/
+
+# Production environment (default)
+kusari auth login
+```
+
+When you change environments, the CLI will detect the mismatch and prompt you to
+select a workspace for the new environment.
+
+### `kusari auth select-workspace`
+
+Change your active workspace without re-authenticating. This is useful when you
+need to switch between workspaces in the same environment.
+
+```bash
+kusari auth select-workspace
+```
+
+You'll be shown your current workspace and prompted to select a new one:
+```
+Current workspace: Development Workspace
+
+Available workspaces:
+  [1] Development Workspace
+  [2] Production Workspace
+
+Select a workspace (1-2):
+```
+
 ### `kusari repo scan`
 
 Scans a diff on a git repository using [Kusari
@@ -36,6 +107,14 @@ generate the set of changes. See [Git
 documentation](https://git-scm.com/docs/gitrevisions), for examples of git
 revisions. The revision must be a single revision to compare the working tree
 against, not a range.
+
+The scan will use your currently selected workspace, which will be displayed at
+the start of the scan:
+```
+Packaging directory...
+Using workspace: Development Workspace
+Uploading package repo...
+```
 
 Examples:
 
