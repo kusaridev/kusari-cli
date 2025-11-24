@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/kusaridev/kusari-cli/api"
 	"github.com/kusaridev/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/pkg/login"
 	"github.com/kusaridev/kusari-cli/pkg/sarif"
 	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
 )
@@ -54,7 +55,7 @@ func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, 
 type scanMock struct {
 	fileUploader           func(presignedURL, filePath string) error
 	presignedURLGetter     func(apiEndpoint string, jwtToken string, filePath, workspace string, full bool) (string, error)
-	defaultWorkspaceGetter func(apiEndpoint string, jwtToken string) (string, error)
+	defaultWorkspaceGetter func(platformUrl string, jwtToken string) ([]login.Workspace, error)
 	token                  string
 }
 
@@ -78,7 +79,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	fileUploader := uploadFileToS3
 	presignedURLGetter := getPresignedURL
-	defaultWorkspaceGetter := getAPIDefaultWorkspace
+	defaultWorkspaceGetter := login.FetchWorkspaces
 	var accessToken string
 	if mock != nil {
 		fileUploader = mock.fileUploader
@@ -151,15 +152,26 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 	}
 
 	var workspace string
-	// if running in a pipeline/workflow we need to get the workspace associated with the API key
-	userEndpoint, err := urlBuilder.Build(platformUrl, "/user")
+	var workspaceDescription string
+
+	// Load the stored workspace for the current platform
+	// Pass empty string for authEndpoint as it's not available during scans and only validated during login
+	storedWorkspace, err := auth.LoadWorkspace(platformUrl, "")
 	if err != nil {
-		return err
-	}
-	var workspaceGetterErr error
-	workspace, workspaceGetterErr = defaultWorkspaceGetter(*userEndpoint, accessToken)
-	if workspaceGetterErr != nil {
-		return fmt.Errorf("failed defaultWorkspaceGetter: %w", workspaceGetterErr)
+		// If no workspace is stored or platform changed, try to fetch and use first workspace
+		workspaces, workspaceGetterErr := defaultWorkspaceGetter(platformUrl, accessToken)
+		if workspaceGetterErr != nil {
+			return fmt.Errorf("failed to get workspaces: %w. Please run `kusari auth login` to select a workspace", workspaceGetterErr)
+		}
+
+		// Use the first workspace as fallback (for CI/CD workflows)
+		workspace = workspaces[0].ID
+		workspaceDescription = workspaces[0].Description
+		fmt.Fprintf(os.Stderr, "Using workspace: %s\n", workspaceDescription)
+	} else {
+		workspace = storedWorkspace.ID
+		workspaceDescription = storedWorkspace.Description
+		fmt.Fprintf(os.Stderr, "Using workspace: %s\n", workspaceDescription)
 	}
 
 	apiEndpoint, err := urlBuilder.Build(platformUrl, "inspector/presign/bundle-upload")

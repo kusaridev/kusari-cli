@@ -16,6 +16,7 @@ func Auth() *cobra.Command {
 	}
 
 	cmd.AddCommand(login())
+	cmd.AddCommand(selectWorkspace())
 
 	return cmd
 }

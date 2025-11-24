@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	configDirName = ".kusari"
-	tokenFileName = "tokens.json"
+	configDirName     = ".kusari"
+	tokenFileName     = "tokens.json"
+	workspaceFileName = "workspace.json"
 )
 
 // getConfigDir returns the configuration directory path
@@ -130,5 +131,99 @@ func CheckTokenExpiry(token *oauth2.Token) error {
 	if token.Expiry.Before(time.Now()) {
 		return NewAuthError(ErrTokenExpired, "Token is expired. Re-run `kusari auth login`")
 	}
+	return nil
+}
+
+// WorkspaceInfo stores the selected workspace details
+type WorkspaceInfo struct {
+	ID           string `json:"id"`
+	Description  string `json:"description"`
+	PlatformUrl  string `json:"platformUrl"`  // Track which platform this workspace belongs to
+	AuthEndpoint string `json:"authEndpoint"` // Track which auth endpoint this workspace belongs to
+}
+
+// getWorkspaceFilePath returns the full path to the workspace file
+func getWorkspaceFilePath() (string, error) {
+	configDir, err := getConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, workspaceFileName), nil
+}
+
+// SaveWorkspace saves the selected workspace to disk
+func SaveWorkspace(workspace WorkspaceInfo) error {
+	configDir, err := getConfigDir()
+	if err != nil {
+		return err
+	}
+
+	// Create config directory if it doesn't exist
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return NewAuthErrorWithCause(ErrTokenStorage, "failed to create config directory", err)
+	}
+
+	workspacePath, err := getWorkspaceFilePath()
+	if err != nil {
+		return err
+	}
+
+	// Write workspace to file
+	data, err := json.MarshalIndent(workspace, "", "  ")
+	if err != nil {
+		return NewAuthErrorWithCause(ErrTokenStorage, "failed to marshal workspace", err)
+	}
+
+	if err := os.WriteFile(workspacePath, data, 0600); err != nil {
+		return NewAuthErrorWithCause(ErrTokenStorage, "failed to write workspace file", err)
+	}
+
+	return nil
+}
+
+// LoadWorkspace loads the selected workspace from disk and validates it matches the current platform and auth endpoint
+func LoadWorkspace(currentPlatformUrl, currentAuthEndpoint string) (*WorkspaceInfo, error) {
+	workspacePath, err := getWorkspaceFilePath()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(workspacePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, NewAuthError(ErrInvalidToken, "no workspace selected. Run `kusari auth login` to select a workspace.")
+		}
+		return nil, NewAuthErrorWithCause(ErrTokenStorage, "failed to read workspace file", err)
+	}
+
+	var workspace WorkspaceInfo
+	if err := json.Unmarshal(data, &workspace); err != nil {
+		return nil, NewAuthErrorWithCause(ErrTokenStorage, "failed to unmarshal workspace", err)
+	}
+
+	// Validate that the workspace matches the current platform URL
+	if workspace.PlatformUrl != "" && workspace.PlatformUrl != currentPlatformUrl {
+		return nil, NewAuthError(ErrInvalidToken, "workspace was configured for a different platform. Run `kusari auth login` to select a workspace for the current platform.")
+	}
+
+	// Validate that the workspace matches the current auth endpoint (only if provided)
+	if currentAuthEndpoint != "" && workspace.AuthEndpoint != "" && workspace.AuthEndpoint != currentAuthEndpoint {
+		return nil, NewAuthError(ErrInvalidToken, "workspace was configured for a different environment. Run `kusari auth login` to select a workspace for the current environment.")
+	}
+
+	return &workspace, nil
+}
+
+// ClearWorkspace removes the stored workspace
+func ClearWorkspace() error {
+	workspacePath, err := getWorkspaceFilePath()
+	if err != nil {
+		return err
+	}
+
+	if err := os.Remove(workspacePath); err != nil && !os.IsNotExist(err) {
+		return NewAuthErrorWithCause(ErrTokenStorage, "failed to remove workspace file", err)
+	}
+
 	return nil
 }

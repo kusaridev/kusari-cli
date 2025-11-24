@@ -13,13 +13,15 @@ import (
 )
 
 var (
-	consoleUrl string
-	verbose    bool
+	consoleUrl  string
+	platformUrl string
+	verbose     bool
 )
 
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVarP(&consoleUrl, "console-url", "", "https://console.us.kusari.cloud/", "console url")
+	rootCmd.PersistentFlags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 
 	// Set environment variable prefix (optional)
@@ -29,6 +31,7 @@ func init() {
 
 	// Bind flags to viper
 	mustBindPFlag("console-url", rootCmd.PersistentFlags().Lookup("console-url"))
+	mustBindPFlag("platform-url", rootCmd.PersistentFlags().Lookup("platform-url"))
 	mustBindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 }
 
@@ -53,6 +56,7 @@ var rootCmd = &cobra.Command{
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Update from viper (this gets env vars + config + flags)
 		consoleUrl = viper.GetString("console-url")
+		platformUrl = viper.GetString("platform-url")
 		verbose = viper.GetBool("verbose")
 	},
 }

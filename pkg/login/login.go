@@ -5,26 +5,82 @@ package login
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"time"
 
 	"github.com/kusaridev/kusari-cli/pkg/auth"
+	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
 )
 
-func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl string, verbose bool) error {
+func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, platformUrl string, verbose bool) error {
+	// Store authEndpoint for workspace validation
+	currentAuthEndpoint := authEndpoint
 	if verbose {
 		fmt.Printf(" AuthEndpoint: %s\n", authEndpoint)
 		fmt.Printf(" ConsoleUrl: %s\n", consoleUrl)
+		fmt.Printf(" PlatformUrl: %s\n", platformUrl)
 		fmt.Printf(" ClientId: %s\n", clientId)
 		fmt.Printf(" CallbackUrl: %s\n", redirectUrl)
 		fmt.Println()
 	}
 
-	_, err := auth.Authenticate(ctx, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl)
+	token, err := auth.Authenticate(ctx, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl)
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("Successfully logged in!")
+
+	// Check if there's a previously stored workspace for this platform and auth endpoint
+	previousWorkspace, _ := auth.LoadWorkspace(platformUrl, currentAuthEndpoint)
+	if previousWorkspace != nil {
+		fmt.Printf("\nYour current workspace is: %s\n", previousWorkspace.Description)
+		fmt.Println("To change workspaces, run: kusari auth select-workspace")
+		fmt.Println("\033[1m\033[34mFor more information, visit:\033[0m https://docs.kusari.cloud")
+		return nil
+	}
+
+	// No workspace stored - fetch available workspaces and prompt user to select
+	fmt.Println("\nNo workspace configured. Let's set one up.")
+	workspaces, err := FetchWorkspaces(platformUrl, token.AccessToken)
+	if err != nil {
+		return fmt.Errorf("failed to fetch workspaces: %w", err)
+	}
+
+	// Convert to auth.WorkspaceInfo format
+	authWorkspaces := make([]auth.WorkspaceInfo, len(workspaces))
+	for i, ws := range workspaces {
+		authWorkspaces[i] = auth.WorkspaceInfo{
+			ID:           ws.ID,
+			Description:  ws.Description,
+			PlatformUrl:  platformUrl,
+			AuthEndpoint: currentAuthEndpoint,
+		}
+	}
+
+	var selectedWorkspace *auth.WorkspaceInfo
+	// If client secret is provided (CI/CD mode), auto-select first workspace
+	if clientSecret != "" {
+		selectedWorkspace = &authWorkspaces[0]
+		fmt.Printf("Auto-selecting workspace for CI/CD: %s\n", selectedWorkspace.Description)
+	} else {
+		// Interactive mode - prompt user to select workspace
+		selectedWorkspace, err = auth.SelectWorkspace(authWorkspaces)
+		if err != nil {
+			return fmt.Errorf("failed to select workspace: %w", err)
+		}
+	}
+
+	// Save the selected workspace
+	if err := auth.SaveWorkspace(*selectedWorkspace); err != nil {
+		return fmt.Errorf("failed to save workspace: %w", err)
+	}
+
+	fmt.Printf("\nWorkspace '%s' has been set as your active workspace.\n", selectedWorkspace.Description)
+	fmt.Println("To change workspaces later, run: kusari auth select-workspace")
 
 	// ANSI escape codes:
 	// \033[1m = bold
@@ -32,4 +88,66 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 	// \033[0m = reset
 	fmt.Println("\033[1m\033[34mFor more information, visit:\033[0m https://docs.kusari.cloud")
 	return nil
+}
+
+// Workspace represents a workspace with its ID and description
+type Workspace struct {
+	ID          string `json:"id"`
+	Description string `json:"description"`
+}
+
+// FetchWorkspaces retrieves all workspaces for the authenticated user
+func FetchWorkspaces(platformUrl string, accessToken string) ([]Workspace, error) {
+
+	userEndpoint, err := urlBuilder.Build(platformUrl, "/user")
+	if err != nil {
+		return nil, fmt.Errorf("failed to build endpoint url: %w", err)
+	}
+	if userEndpoint == nil {
+		return nil, fmt.Errorf("failed to build endpoint url: %w", err)
+	}
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	req, err := http.NewRequest("GET", *userEndpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch workspaces: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch workspaces, status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	type userInfoResponse struct {
+		Workspaces []Workspace `json:"workspaces"`
+	}
+
+	var result userInfoResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal workspaces: %w", err)
+	}
+
+	if len(result.Workspaces) == 0 {
+		return nil, fmt.Errorf("no workspaces found for this user")
+	}
+
+	return result.Workspaces, nil
 }
