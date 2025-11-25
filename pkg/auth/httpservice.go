@@ -31,7 +31,16 @@ func handleCallbackv2(w http.ResponseWriter, r *http.Request, expectedState stri
 		return
 	}
 
-	tmpl := template.Must(template.New("success").Parse(getPostLoginHtml(redirectUrl)))
+	// If redirectUrl is empty, don't redirect - just show success message
+	// This happens for new users where we'll redirect from CLI after workspace selection
+	var htmlContent string
+	if redirectUrl == "" {
+		htmlContent = getSuccessHtml()
+	} else {
+		htmlContent = getPostLoginHtml(redirectUrl)
+	}
+
+	tmpl := template.Must(template.New("success").Parse(htmlContent))
 	if err := tmpl.Execute(w, nil); err != nil {
 		http.Error(w, "Internal template error", http.StatusInternalServerError)
 		return
