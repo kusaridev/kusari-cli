@@ -26,27 +26,28 @@ func getSuccessHtml() string {
     <title>Authentication Successful</title>
     <style>
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont,"DM Sans", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         display: flex;
         justify-content: center;
         align-items: center;
         height: 100vh;
         margin: 0;
-        background-color: #f5f5f5;
+        background-color: #0E0816;
       }
       .container {
         text-align: center;
         padding: 2rem;
-        background: white;
+        background: #190F27;
         border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
       }
       h1 {
-        color: #2d3748;
+        color: rgba(255, 255, 255, 0.7);
         margin-bottom: 1rem;
       }
       p {
-        color: #4a5568;
+        color: rgba(255, 255, 255, 0.5);
       }
     </style>
   </head>
