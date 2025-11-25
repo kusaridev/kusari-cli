@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/kusaridev/kusari-cli/pkg/auth"
@@ -27,15 +28,23 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 		fmt.Println()
 	}
 
-	token, err := auth.Authenticate(ctx, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl)
+	// Check if there's a previously stored workspace for this platform and auth endpoint
+	// This allows us to include the workspace in the redirect URL
+	workspaceId := ""
+	previousWorkspace, _ := auth.LoadWorkspace(platformUrl, currentAuthEndpoint)
+	if previousWorkspace != nil {
+		workspaceId = previousWorkspace.ID
+		fmt.Printf("\nUsing stored workspace: %s\n", previousWorkspace.Description)
+	}
+
+	token, err := auth.Authenticate(ctx, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, workspaceId)
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("Successfully logged in!")
 
-	// Check if there's a previously stored workspace for this platform and auth endpoint
-	previousWorkspace, _ := auth.LoadWorkspace(platformUrl, currentAuthEndpoint)
+	// If we already had a workspace, we're done
 	if previousWorkspace != nil {
 		fmt.Printf("\nYour current workspace is: %s\n", previousWorkspace.Description)
 		fmt.Println("To change workspaces, run: kusari auth select-workspace")
@@ -81,6 +90,23 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 
 	fmt.Printf("\nWorkspace '%s' has been set as your active workspace.\n", selectedWorkspace.Description)
 	fmt.Println("To change workspaces later, run: kusari auth select-workspace")
+
+	// Now that we have a workspace, redirect to the console with the workspace parameter
+	baseURL, err := urlBuilder.Build(consoleUrl, "/analysis")
+	if err == nil && baseURL != nil {
+		// Parse the URL and add workspace as query parameter
+		parsedURL, parseErr := url.Parse(*baseURL)
+		if parseErr == nil {
+			query := parsedURL.Query()
+			query.Set("workspaceId", selectedWorkspace.ID)
+			parsedURL.RawQuery = query.Encode()
+
+			fmt.Println("\nOpening console in your browser...")
+			if err := auth.OpenBrowser(parsedURL.String()); err != nil {
+				fmt.Printf("Failed to open browser automatically. Please visit: %s\n", parsedURL.String())
+			}
+		}
+	}
 
 	// ANSI escape codes:
 	// \033[1m = bold
@@ -147,6 +173,12 @@ func FetchWorkspaces(platformUrl string, accessToken string) ([]Workspace, error
 
 	if len(result.Workspaces) == 0 {
 		return nil, fmt.Errorf("no workspaces found for this user")
+	}
+
+	for i := range result.Workspaces {
+		if result.Workspaces[i].Description == "" {
+			result.Workspaces[i].Description = "My Workspace"
+		}
 	}
 
 	return result.Workspaces, nil

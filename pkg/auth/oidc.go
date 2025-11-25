@@ -16,12 +16,26 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 )
 
-func Authenticate(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl string) (*oauth2.Token, error) {
+func Authenticate(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, workspaceId string) (*oauth2.Token, error) {
 	baseURL, err := url.Parse(consoleUrl)
 	if err != nil {
 		return nil, err
 	}
-	consoleAnalysisUrl := baseURL.JoinPath("analysis").String()
+
+	var consoleAnalysisUrl string
+	// Only redirect from callback if we have a workspace
+	// For new users, we'll redirect from CLI after workspace selection
+	if workspaceId != "" {
+		analysisURL := baseURL.JoinPath("analysis")
+		query := analysisURL.Query()
+		query.Set("workspaceId", workspaceId)
+		analysisURL.RawQuery = query.Encode()
+		consoleAnalysisUrl = analysisURL.String()
+	} else {
+		// Empty string means don't redirect from callback handler
+		// We'll redirect from CLI after workspace selection
+		consoleAnalysisUrl = ""
+	}
 
 	oauth2Config := oauthConfig(clientId, redirectUrl, authEndpoint)
 
