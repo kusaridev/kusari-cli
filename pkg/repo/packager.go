@@ -19,10 +19,10 @@ import (
 )
 
 // PackageDirectory creates a zip file from a directory
-func packageDirectory(full bool) error {
+func packageDirectory(full bool) (int64, error) {
 	if err := os.Mkdir(tarballDir, 0700); err != nil {
 		if !errors.Is(err, syscall.EEXIST) {
-			return fmt.Errorf("failed to make Kusari directory: %w", err)
+			return 0, fmt.Errorf("failed to make Kusari directory: %w", err)
 		}
 	}
 	outFile := filepath.Join(tarballDir, tarballNameUncompressed)
@@ -31,7 +31,7 @@ func packageDirectory(full bool) error {
 	tc := exec.Command("tar", "-cf", outFile, "--dereference", "--exclude=.git", ".")
 	tc.Env = append(tc.Env, "COPYFILE_DISABLE=1")
 	if err := tc.Run(); err != nil {
-		return fmt.Errorf("error taring source code: %w", err)
+		return 0, fmt.Errorf("error taring source code: %w", err)
 	}
 	// Append our Inspector files
 	args := []string{"-C", workingDir, "--append", "-f", outFile, metaFile}
@@ -40,14 +40,19 @@ func packageDirectory(full bool) error {
 	}
 
 	if err := exec.Command("tar", args...).Run(); err != nil {
-		return fmt.Errorf("error tarring Inspector metadata: %w", err)
+		return 0, fmt.Errorf("error tarring Inspector metadata: %w", err)
 	}
 	// Compress it
 	if err := exec.Command("bzip2", outFile).Run(); err != nil {
-		return fmt.Errorf("error compressing file: %w", err)
+		return 0, fmt.Errorf("error compressing file: %w", err)
 	}
 
-	return nil
+	fi, err := os.Stat(outFile + ".bz2")
+	if err != nil {
+		return 0, fmt.Errorf("error stating file: %w", err)
+	}
+
+	return fi.Size(), nil
 }
 
 func createMeta(rev string, full bool) (*api.BundleMeta, error) {

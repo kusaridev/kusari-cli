@@ -56,7 +56,7 @@ func TestScan_ArchiveFormat(t *testing.T) {
 
 				return nil
 			},
-			presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath, workspace string, full bool) (string, error) {
+			presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath, workspace string, full bool, size int64) (string, error) {
 				return "https://example.com/workspace/test-workspace-id/user/human/test-user-id/diff/blob/123", nil
 			},
 			defaultWorkspaceGetter: func(platformUrl string, jwtToken string) ([]login.Workspace, error) {
