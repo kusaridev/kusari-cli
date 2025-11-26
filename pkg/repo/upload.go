@@ -69,16 +69,17 @@ func uploadFileToS3(presignedURL, filePath string) error {
 }
 
 // GetPresignedUrl utilizes authorized client to obtain the presigned URL to upload to S3
-func getPresignedURL(apiEndpoint string, jwtToken string, filePath, workspace string, full bool) (string, error) {
+func getPresignedURL(apiEndpoint string, jwtToken string, filePath, workspace string, full bool, size int64) (string, error) {
 	scanType := "diff"
 	if full {
 		scanType = "full"
 	}
 
 	// Prepare the payload for the presigned URL request
-	payload := map[string]string{
-		"filename": filePath,
-		"type":     scanType,
+	payload := map[string]any{
+		"filename":        filePath,
+		"type":            scanType,
+		"file_size_bytes": size,
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -116,6 +117,9 @@ func getPresignedURL(apiEndpoint string, jwtToken string, filePath, workspace st
 		case http.StatusForbidden:
 			// Handle the HTTP 403 case by suggesting the user login
 			return "", fmt.Errorf("GetPresignedUrl failed with forbidden (%d). Try `kusari auth login`", resp.StatusCode)
+		case http.StatusBadRequest:
+			body, _ := io.ReadAll(resp.Body)
+			return "", fmt.Errorf("GetPresignedUrl failed with bad request (%d). Body was: %s", resp.StatusCode, string(body))
 		default:
 			// otherwise return an error
 			return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
