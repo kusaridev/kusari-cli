@@ -69,7 +69,7 @@ func upload() *cobra.Command {
 var uploadcmd = &cobra.Command{
 	Use:   "upload",
 	Short: "Upload SBOM or OpenVEX files to Kusari platform",
-	Long: `Upload SBOM or OpenVEX files to Kusari platform using presigned S3 URLs.
+	Long: `Upload SBOM or OpenVEX files to Kusari platform.
 Can upload individual files or entire directories.
 
 Examples:
