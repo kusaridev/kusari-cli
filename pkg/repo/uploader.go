@@ -285,7 +285,7 @@ func uploadSingleFile(client *http.Client, accessToken, tenantEndpoint, filePath
 
 // getPresignedUrlForUpload utilizes authorized client to obtain the presigned URL to upload to S3
 func getPresignedUrlForUpload(client *http.Client, accessToken, tenantEndpoint string, payloadBytes []byte) (string, error) {
-	var payload map[string]string
+	var payload map[string]any
 	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
 		return "", fmt.Errorf("failed to unmarshal payload: %w", err)
 	}
