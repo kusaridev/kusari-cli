@@ -237,14 +237,14 @@ func TestGetPresignedUrlForUpload(t *testing.T) {
 			payload:       map[string]string{"filename": "test.json"},
 			serverStatus:  http.StatusUnauthorized,
 			expectError:   true,
-			errorContains: "try running 'kusari auth login'",
+			errorContains: "unauthorized request",
 		},
 		{
 			name:          "forbidden",
 			payload:       map[string]string{"filename": "test.json"},
 			serverStatus:  http.StatusForbidden,
 			expectError:   true,
-			errorContains: "try running 'kusari auth login'",
+			errorContains: "kusari auth login",
 		},
 		{
 			name:          "internal server error",
@@ -747,14 +747,14 @@ func TestUpload_ValidationErrors(t *testing.T) {
 			filePath:      "",
 			tenantURL:     "https://test.com",
 			expectError:   true,
-			errorContains: "file-path and tenant-endpoint are required",
+			errorContains: "file-path is required",
 		},
 		{
 			name:          "missing tenant endpoint",
 			filePath:      "/test/file.json",
 			tenantURL:     "",
 			expectError:   true,
-			errorContains: "file-path and tenant-endpoint are required",
+			errorContains: "tenant configuration missing",
 		},
 		{
 			name:          "OpenVEX missing tag",

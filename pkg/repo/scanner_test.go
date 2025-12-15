@@ -61,13 +61,13 @@ func TestScan_ArchiveFormat(t *testing.T) {
 			},
 			defaultWorkspaceGetter: func(platformUrl string, jwtToken string) ([]login.Workspace, map[string][]string, error) {
 				return []login.Workspace{
-					{
-						ID:          "1f961986-c9f3-4760-9d55-1298136cbe2a",
-						Description: "Test Workspace",
-					},
-				}, map[string][]string{
-					"1f961986-c9f3-4760-9d55-1298136cbe2a": {"test-tenant"},
-				}, nil
+						{
+							ID:          "1f961986-c9f3-4760-9d55-1298136cbe2a",
+							Description: "Test Workspace",
+						},
+					}, map[string][]string{
+						"1f961986-c9f3-4760-9d55-1298136cbe2a": {"test-tenant"},
+					}, nil
 			},
 			token: "token",
 		}
