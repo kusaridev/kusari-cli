@@ -140,6 +140,7 @@ type WorkspaceInfo struct {
 	Description  string `json:"description"`
 	PlatformUrl  string `json:"platformUrl"`  // Track which platform this workspace belongs to
 	AuthEndpoint string `json:"authEndpoint"` // Track which auth endpoint this workspace belongs to
+	Tenant       string `json:"tenant"`       // The tenant name (e.g., "demo")
 }
 
 // getWorkspaceFilePath returns the full path to the workspace file
@@ -201,13 +202,21 @@ func LoadWorkspace(currentPlatformUrl, currentAuthEndpoint string) (*WorkspaceIn
 		return nil, NewAuthErrorWithCause(ErrTokenStorage, "failed to unmarshal workspace", err)
 	}
 
+	// Normalize URLs by removing trailing slashes for comparison
+	normalizeURL := func(url string) string {
+		if url != "" && url[len(url)-1] == '/' {
+			return url[:len(url)-1]
+		}
+		return url
+	}
+
 	// Validate that the workspace matches the current platform URL
-	if workspace.PlatformUrl != "" && workspace.PlatformUrl != currentPlatformUrl {
+	if workspace.PlatformUrl != "" && normalizeURL(workspace.PlatformUrl) != normalizeURL(currentPlatformUrl) {
 		return nil, NewAuthError(ErrInvalidToken, "workspace was configured for a different platform. Run `kusari auth login` to select a workspace for the current platform.")
 	}
 
 	// Validate that the workspace matches the current auth endpoint (only if provided)
-	if currentAuthEndpoint != "" && workspace.AuthEndpoint != "" && workspace.AuthEndpoint != currentAuthEndpoint {
+	if currentAuthEndpoint != "" && workspace.AuthEndpoint != "" && normalizeURL(workspace.AuthEndpoint) != normalizeURL(currentAuthEndpoint) {
 		return nil, NewAuthError(ErrInvalidToken, "workspace was configured for a different environment. Run `kusari auth login` to select a workspace for the current environment.")
 	}
 

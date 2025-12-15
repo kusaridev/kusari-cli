@@ -126,9 +126,16 @@ func Upload(
 	verbose bool,
 ) error {
 	// Validate required configuration
-	if filePath == "" || tenantEndpoint == "" {
-		return fmt.Errorf("file-path and tenant-endpoint are required")
+	if filePath == "" {
+		return fmt.Errorf("file-path is required")
 	}
+
+	if tenantEndpoint == "" {
+		return fmt.Errorf("tenant configuration missing. Please provide --tenant flag (e.g., --tenant demo), ensure --platform-url matches your workspace (use --verbose to see details), or run 'kusari auth login'")
+	}
+
+	// Display the tenant endpoint being used
+	fmt.Printf("Using tenant endpoint: %s\n", tenantEndpoint)
 
 	if isOpenVex && (tag == "" || (softwareID == "" && sbomSubject == "")) {
 		return fmt.Errorf("when using OpenVEX, tag must be specified, and so must software-id or sbom-subject")

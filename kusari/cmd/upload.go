@@ -73,19 +73,25 @@ var uploadcmd = &cobra.Command{
 Can upload individual files or entire directories.
 
 Examples:
-  # Upload a single SBOM file
-  kusari platform upload --file-path sbom.json --tenant-endpoint https://tenant.api.kusari.cloud
+  # CI/CD: Upload using tenant name with API key (required in CI/CD)
+  kusari platform upload --file-path sbom.json --tenant demo
 
-  # Upload a directory of SBOMs
-  kusari platform upload --file-path ./sboms/ --tenant-endpoint https://tenant.api.kusari.cloud
+  # Interactive user: Upload using stored tenant from login
+  kusari platform upload --file-path sbom.json
 
-  # Upload an OpenVEX document with metadata
-  kusari platform upload --file-path report.json --tenant-endpoint https://tenant.api.kusari.cloud \
+  # CI/CD: Upload a directory of SBOMs
+  kusari platform upload --file-path ./sboms/ --tenant demo
+
+  # CI/CD: Upload an OpenVEX document with metadata
+  kusari platform upload --file-path report.json --tenant demo \
     --open-vex --tag govulncheck --software-id 12345
 
-  # Upload with blocked package checking
-  kusari platform upload --file-path sbom.json --tenant-endpoint https://tenant.api.kusari.cloud \
-    --check-blocked-packages`,
+  # CI/CD: Upload with blocked package checking
+  kusari platform upload --file-path sbom.json --tenant demo \
+    --check-blocked-packages
+
+  # Dev/Testing: Upload using full tenant endpoint (overrides --tenant)
+  kusari platform upload --file-path sbom.json --tenant-endpoint https://demo.api.dev.kusari.cloud`,
 	Args: cobra.NoArgs,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Update from viper (this gets env vars + config + flags)
