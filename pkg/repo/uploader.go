@@ -122,6 +122,8 @@ func Upload(
 	softwareID string,
 	sbomSubject string,
 	componentName string,
+	sbomSubjectNameOverride string,
+	sbomSubjectVersionOverride string,
 	checkBlockedPackages bool,
 	verbose bool,
 ) error {
@@ -176,11 +178,17 @@ func Upload(
 	if softwareID != "" {
 		uploadMeta["software_id"] = softwareID
 	}
-	if sbomSubject != "" {
+	if sbomSubject != "" { // only used for VEX
 		uploadMeta["sbom_subject"] = sbomSubject
 	}
 	if componentName != "" {
 		uploadMeta["component_name"] = componentName
+	}
+	if sbomSubjectNameOverride != "" { // only used for SBOM
+		uploadMeta["sbom_subject_name_override"] = sbomSubjectNameOverride
+	}
+	if sbomSubjectVersionOverride != "" { // only used for SBOM
+		uploadMeta["sbom_subject_version_override"] = sbomSubjectVersionOverride
 	}
 
 	var ssaus []sbomSubjectAndURI
@@ -319,25 +327,14 @@ func uploadBlob(client *http.Client, presignedUrl, filePath string, readFile []b
 		},
 	}
 
-	var docByte []byte
-	var err error
+	docWrapper := DocumentWrapper{
+		Document:       baseDoc,
+		UploadMetaData: &uploadMeta,
+	}
 
-	if len(uploadMeta) != 0 {
-		// Wrap it with additional metadata about the project
-		docWrapper := DocumentWrapper{
-			Document:       baseDoc,
-			UploadMetaData: &uploadMeta,
-		}
-
-		docByte, err = json.Marshal(docWrapper)
-		if err != nil {
-			return sbomSubjectAndURI{}, fmt.Errorf("failed marshal of document: %w", err)
-		}
-	} else {
-		docByte, err = json.Marshal(baseDoc)
-		if err != nil {
-			return sbomSubjectAndURI{}, fmt.Errorf("failed marshal of document: %w", err)
-		}
+	docByte, err := json.Marshal(docWrapper)
+	if err != nil {
+		return sbomSubjectAndURI{}, fmt.Errorf("failed marshal of document: %w", err)
 	}
 
 	// Upload using the shared function

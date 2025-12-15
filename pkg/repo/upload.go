@@ -127,14 +127,14 @@ func getPresignedURLWithOptions(opts presignedURLOptions) (string, error) {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
 		switch resp.StatusCode {
 		case http.StatusBadRequest:
-			body, _ := io.ReadAll(resp.Body)
 			return "", fmt.Errorf("GetPresignedUrl failed with bad request (%d). Body was: %s", resp.StatusCode, string(body))
 		case http.StatusUnauthorized, http.StatusForbidden:
-			return "", fmt.Errorf("presigned URL request failed with status %d (try running 'kusari auth login')", resp.StatusCode)
+			return "", fmt.Errorf("presigned URL request failed with status %d (try running 'kusari auth login'). Body was: %s", resp.StatusCode, string(body))
 		default:
-			return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			return "", fmt.Errorf("GetPresignedUrl failed with unexpected status code: %d. Body was: %s", resp.StatusCode, string(body))
 		}
 	}
 
