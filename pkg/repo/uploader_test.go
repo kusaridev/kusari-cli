@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kusaridev/kusari-cli/pkg/constants"
 )
 
 func TestGetHash(t *testing.T) {
@@ -474,7 +476,6 @@ func TestUploadSingleFile(t *testing.T) {
 				filePath,
 				tt.isOpenVex,
 				tt.uploadMeta,
-				false,
 			)
 
 			if tt.expectError {
@@ -573,7 +574,7 @@ func TestUploadDirectory(t *testing.T) {
 
 			client := server.Client()
 
-			ssaus, err := uploadDirectory(client, "test-token", server.URL, tmpDir, tt.uploadMeta, false)
+			ssaus, err := uploadDirectory(client, "test-token", server.URL, tmpDir, tt.uploadMeta)
 
 			if tt.expectError {
 				if err == nil {
@@ -704,7 +705,7 @@ func TestCheckSBOMsForBlockedPackages(t *testing.T) {
 			client := server.Client()
 			ctx := context.Background()
 
-			blocked, err := checkSBOMsForBlockedPackages(ctx, client, "test-token", server.URL, tt.ssaus, false)
+			blocked, err := checkSBOMsForBlockedPackages(ctx, client, "test-token", server.URL, tt.ssaus)
 
 			if tt.expectError {
 				if err == nil {
@@ -783,6 +784,7 @@ func TestUpload_ValidationErrors(t *testing.T) {
 			err := Upload(
 				tt.filePath,
 				tt.tenantURL,
+				constants.DefaultPlatformURL,
 				"",
 				"",
 				tt.isOpenVex,
@@ -790,7 +792,6 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				tt.softwareID,
 				tt.sbomSubject,
 				"",
-				false,
 				false,
 			)
 

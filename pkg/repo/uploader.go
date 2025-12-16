@@ -15,9 +15,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+	"text/tabwriter"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/kusaridev/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/pkg/constants"
+	"github.com/kusaridev/kusari-cli/pkg/login"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -83,6 +88,7 @@ type DocumentWrapper struct {
 type sbomSubjectAndURI struct {
 	subject string
 	uri     string
+	docRef  string
 }
 
 type softwareIDAndSbomID struct {
@@ -93,6 +99,23 @@ type softwareIDAndSbomID struct {
 type blockedPackages struct {
 	Blocked         bool     `json:"blocked"`
 	BlockedPackages []string `json:"blocked_packages"`
+}
+
+type StatusMeta struct {
+	Status       string `json:"status"`        // started, processing, success, failed
+	UserMessage  string `json:"user_message"`  // customer-facing message
+	InternalMeta string `json:"internal_meta"` // internal metadata/details
+	UpdatedAt    string `json:"updated_at"`    // timestamp in milliseconds
+}
+
+// IngestionStatusItem represents an item in the pico-ingestion-status DynamoDB table
+type IngestionStatusItem struct {
+	Workspace    string     `json:"workspace"`     // partition key
+	Sort         string     `json:"sort"`          // sort key
+	DocumentType string     `json:"document_type"` // SBOM, VEX, etc.
+	DocumentName string     `json:"document_name"` // Name of the ingested document
+	TTL          int64      `json:"ttl"`           // TTL in Unix epoch seconds
+	StatusMeta   StatusMeta `json:"statusMeta"`
 }
 
 type cdxSBOM struct {
@@ -115,6 +138,7 @@ type spdxSBOM struct {
 func Upload(
 	filePath string,
 	tenantEndpoint string,
+	platformUrl string,
 	alias string,
 	docType string,
 	isOpenVex bool,
@@ -123,7 +147,6 @@ func Upload(
 	sbomSubject string,
 	componentName string,
 	checkBlockedPackages bool,
-	verbose bool,
 ) error {
 	// Validate required configuration
 	if filePath == "" {
@@ -131,7 +154,7 @@ func Upload(
 	}
 
 	if tenantEndpoint == "" {
-		return fmt.Errorf("tenant configuration missing. Please provide --tenant flag (e.g., --tenant demo), ensure --platform-url matches your workspace (use --verbose to see details), or run 'kusari auth login'")
+		return fmt.Errorf("tenant configuration missing. Please provide --tenant flag (e.g., --tenant demo), or --tenant-endpoint if working in developement, or run 'kusari auth login'")
 	}
 
 	// Display the tenant endpoint being used
@@ -153,6 +176,31 @@ func Upload(
 	}
 
 	accessToken := token.AccessToken
+
+	// Set default platform URL if not provided
+	if platformUrl == "" {
+		platformUrl = constants.DefaultPlatformURL
+	}
+
+	// Get workspace
+	var workspace string
+	var workspaceDescription string
+	storedWorkspace, err := auth.LoadWorkspace(platformUrl, "")
+	if err != nil {
+		// If no workspace is stored, try to fetch and use first workspace
+		workspaces, _, workspaceGetterErr := login.FetchWorkspaces(platformUrl, accessToken)
+		if workspaceGetterErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to get workspaces: %v\n", workspaceGetterErr)
+		} else if len(workspaces) > 0 {
+			workspace = workspaces[0].ID
+			workspaceDescription = workspaces[0].Description
+			fmt.Fprintf(os.Stderr, "Using workspace: %s\n", workspaceDescription)
+		}
+	} else {
+		workspace = storedWorkspace.ID
+		workspaceDescription = storedWorkspace.Description
+		fmt.Fprintf(os.Stderr, "Using workspace: %s\n", workspaceDescription)
+	}
 
 	// Create HTTP client
 	client := &http.Client{
@@ -194,28 +242,97 @@ func Upload(
 
 	// Upload based on file type
 	if fileInfo.IsDir() {
-		if verbose {
-			fmt.Printf("Uploading directory: %s\n", filePath)
-		}
-		ssaus, err = uploadDirectory(client, accessToken, tenantEndpoint, filePath, uploadMeta, verbose)
+		fmt.Printf("Uploading directory: %s\n", filePath)
+		ssaus, err = uploadDirectory(client, accessToken, tenantEndpoint, filePath, uploadMeta)
 		if err != nil {
 			return fmt.Errorf("directory upload failed: %w", err)
 		}
 	} else {
-		if verbose {
-			fmt.Printf("Uploading file: %s\n", filePath)
-		}
-		ssau, err := uploadSingleFile(client, accessToken, tenantEndpoint, filePath, isOpenVex, uploadMeta, verbose)
+		fmt.Printf("Uploading file: %s\n", filePath)
+		ssau, err := uploadSingleFile(client, accessToken, tenantEndpoint, filePath, isOpenVex, uploadMeta)
 		if err != nil {
 			return fmt.Errorf("single file upload failed: %w", err)
 		}
 		ssaus = []sbomSubjectAndURI{ssau}
 	}
 
-	fmt.Println("Upload completed successfully")
+	// Extract tenant name from tenant endpoint
+	tenantName := ""
+	if parsedURL, err := url.Parse(tenantEndpoint); err == nil {
+		hostname := parsedURL.Hostname()
+		// Extract subdomain (e.g., "parth" from "parth.api.dev.kusari.cloud")
+		if idx := strings.Index(hostname, "."); idx != -1 {
+			tenantName = hostname[:idx]
+		} else {
+			tenantName = hostname
+		}
+	}
+
+	// Query ingestion status for each uploaded document
+	if workspace != "" && tenantName != "" {
+		type ingestionResult struct {
+			docRef       string
+			documentName string
+			status       string
+			err          error
+		}
+
+		results := make([]ingestionResult, 0, len(ssaus))
+
+		for _, ssau := range ssaus {
+			if ssau.docRef == "" {
+				continue
+			}
+
+			result, err := queryForIngestionStatus(platformUrl, tenantName, ssau.docRef, accessToken, workspace)
+			if err != nil {
+				results = append(results, ingestionResult{
+					docRef: ssau.docRef,
+					status: "failed",
+					err:    err,
+				})
+				continue
+			}
+
+			if result != nil && result.DocumentName != "" {
+				results = append(results, ingestionResult{
+					docRef:       ssau.docRef,
+					documentName: result.DocumentName,
+					status:       result.StatusMeta.Status,
+				})
+			}
+		}
+
+		// Display results in a table if multiple documents, or simple output for single document
+		if len(results) > 1 {
+			fmt.Fprintf(os.Stderr, "\nIngestion Results:\n")
+			w := tabwriter.NewWriter(os.Stderr, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "STATUS\tDOCUMENT NAME\tDOCUMENT REF")
+			fmt.Fprintln(w, "------\t-------------\t------------")
+			for _, r := range results {
+				statusSymbol := "✓"
+				if r.status == "failed" || r.err != nil {
+					statusSymbol = "✗"
+				}
+				docName := r.documentName
+				if docName == "" {
+					docName = "-"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\n", statusSymbol, docName, r.docRef)
+			}
+			w.Flush()
+		} else if len(results) == 1 {
+			r := results[0]
+			if r.err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to check ingestion status for %s: %v\n", r.docRef, r.err)
+			} else if r.documentName != "" {
+				fmt.Fprintf(os.Stderr, "Successfully ingested: %s\n", r.documentName)
+			}
+		}
+	}
 
 	if checkBlockedPackages {
-		blocked, err := checkSBOMsForBlockedPackages(context.Background(), client, accessToken, tenantEndpoint, ssaus, verbose)
+		blocked, err := checkSBOMsForBlockedPackages(context.Background(), client, accessToken, tenantEndpoint, ssaus)
 		if err != nil {
 			return fmt.Errorf("error checking for blocked packages: %w", err)
 		}
@@ -229,7 +346,7 @@ func Upload(
 }
 
 // uploadDirectory uses filepath.Walk to walk through the directory and upload the files that are found
-func uploadDirectory(client *http.Client, accessToken, tenantEndpoint, dirPath string, uploadMeta map[string]string, verbose bool) ([]sbomSubjectAndURI, error) {
+func uploadDirectory(client *http.Client, accessToken, tenantEndpoint, dirPath string, uploadMeta map[string]string) ([]sbomSubjectAndURI, error) {
 	var ssaus []sbomSubjectAndURI
 
 	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
@@ -237,10 +354,8 @@ func uploadDirectory(client *http.Client, accessToken, tenantEndpoint, dirPath s
 			return err
 		}
 		if !info.IsDir() {
-			if verbose {
-				fmt.Printf("  Uploading: %s\n", path)
-			}
-			ssau, err := uploadSingleFile(client, accessToken, tenantEndpoint, path, false, uploadMeta, verbose)
+			fmt.Printf("  Uploading: %s\n", path)
+			ssau, err := uploadSingleFile(client, accessToken, tenantEndpoint, path, false, uploadMeta)
 			if err != nil {
 				return fmt.Errorf("uploadSingleFile failed with error: %w", err)
 			}
@@ -254,7 +369,7 @@ func uploadDirectory(client *http.Client, accessToken, tenantEndpoint, dirPath s
 
 // uploadSingleFile creates a presigned URL for the filepath and calls uploadBlob to upload the actual file
 func uploadSingleFile(client *http.Client, accessToken, tenantEndpoint, filePath string, isOpenVex bool,
-	uploadMeta map[string]string, verbose bool) (sbomSubjectAndURI, error) {
+	uploadMeta map[string]string) (sbomSubjectAndURI, error) {
 	// check that the file is not empty
 	checkFile, err := os.Stat(filePath)
 	if err != nil {
@@ -262,9 +377,7 @@ func uploadSingleFile(client *http.Client, accessToken, tenantEndpoint, filePath
 	}
 	// if file is empty, do not upload and return nil
 	if checkFile.Size() == 0 {
-		if verbose {
-			fmt.Printf("  Skipping empty file: %s\n", filePath)
-		}
+		fmt.Printf("  Skipping empty file: %s\n", filePath)
 		return sbomSubjectAndURI{}, nil
 	}
 
@@ -315,6 +428,8 @@ func uploadBlob(client *http.Client, presignedUrl, filePath string, readFile []b
 		doctype = DocumentOpenVEX
 	}
 
+	docRef := getDocRef(readFile)
+
 	baseDoc := &Document{
 		Blob:   readFile,
 		Type:   doctype,
@@ -322,7 +437,7 @@ func uploadBlob(client *http.Client, presignedUrl, filePath string, readFile []b
 		SourceInformation: SourceInformation{
 			Collector:   "Kusari-CLI",
 			Source:      fmt.Sprintf("file:///%s", filePath),
-			DocumentRef: getDocRef(readFile),
+			DocumentRef: docRef,
 		},
 	}
 
@@ -362,22 +477,22 @@ func uploadBlob(client *http.Client, presignedUrl, filePath string, readFile []b
 	var cdx cdxSBOM
 	if err := json.Unmarshal(readFile, &cdx); err == nil { // inverted error check
 		if cdx.BOMFormat == "CycloneDX" && cdx.Metadata.Component.Name != "" && cdx.SerialNumber != "" {
-			return sbomSubjectAndURI{subject: cdx.Metadata.Component.Name, uri: cdx.SerialNumber}, nil
+			return sbomSubjectAndURI{subject: cdx.Metadata.Component.Name, uri: cdx.SerialNumber, docRef: docRef}, nil
 		}
 	}
 
 	var spdx spdxSBOM
 	if err := json.Unmarshal(readFile, &spdx); err == nil { // inverted error check
 		if spdx.SPDXID == "SPDXRef-DOCUMENT" && spdx.Name != "" && spdx.DocumentNamespace != "" {
-			return sbomSubjectAndURI{subject: spdx.Name, uri: spdx.DocumentNamespace + "#DOCUMENT"}, nil
+			return sbomSubjectAndURI{subject: spdx.Name, uri: spdx.DocumentNamespace + "#DOCUMENT", docRef: docRef}, nil
 		}
 	}
 
-	return sbomSubjectAndURI{}, nil
+	return sbomSubjectAndURI{docRef: docRef}, nil
 }
 
 // checkSBOMsForBlockedPackages checks if uploaded SBOMs contain any blocked packages
-func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, ssaus []sbomSubjectAndURI, verbose bool) (bool, error) {
+func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, ssaus []sbomSubjectAndURI) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
@@ -416,9 +531,7 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 
 					break
 				} else if res.StatusCode == 404 {
-					if verbose {
-						fmt.Printf("  Waiting for SBOM to be ingested (subject: %s)...\n", ssau.subject)
-					}
+					fmt.Printf("  Waiting for SBOM to be ingested (subject: %s)...\n", ssau.subject)
 					time.Sleep(time.Second)
 				} else {
 					return fmt.Errorf("unexpected response status code for IDs: %d", res.StatusCode)
@@ -489,6 +602,106 @@ func makePicoRequest(ctx context.Context, client *http.Client, accessToken, tena
 	}
 
 	return res, nil
+}
+
+// queryForIngestionStatus polls the ingestion status endpoint until a result is found or timeout
+func queryForIngestionStatus(platformUrl, tenantName, docRef, accessToken, workspace string) (*IngestionStatusItem, error) {
+	maxAttempts := 150 // 150 attempts * 2 seconds = 5 minutes max
+	attempt := 0
+	sleepDuration := 2 * time.Second
+
+	// Create spinner for stderr
+	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+	s.Writer = os.Stderr
+	s.Prefix = "Checking ingestion status... "
+	s.FinalMSG = "✓ Ingestion complete!\n"
+	s.Start()
+
+	// Ensure spinner stops no matter what
+	defer s.Stop()
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	for attempt < maxAttempts {
+		attempt++
+
+		fullURL := fmt.Sprintf("%s/ingestion/status?tenantName=%s&docRef=%s",
+			strings.TrimSuffix(platformUrl, "/"),
+			url.QueryEscape(tenantName),
+			url.QueryEscape(docRef))
+
+		req, err := http.NewRequest("GET", fullURL, nil)
+		if err != nil {
+			time.Sleep(sleepDuration)
+			continue
+		}
+
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-Kusari-Workspace", workspace)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			time.Sleep(sleepDuration)
+			continue
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				time.Sleep(sleepDuration)
+				continue
+			}
+
+			var results []IngestionStatusItem
+			if err := json.Unmarshal(body, &results); err != nil {
+				time.Sleep(sleepDuration)
+				continue
+			}
+
+			if len(results) > 0 {
+				status := results[0].StatusMeta.Status
+				userMsg := results[0].StatusMeta.UserMessage
+
+				switch status {
+				case "success":
+					s.FinalMSG = "✓ Ingestion successful!\n"
+					s.Stop()
+					if userMsg != "" {
+						fmt.Fprintf(os.Stderr, "%s\n", userMsg)
+					}
+					return &results[0], nil
+				case "failed":
+					s.FinalMSG = "✗ Ingestion failed!\n"
+					s.Stop()
+					if userMsg != "" {
+						fmt.Fprintf(os.Stderr, "Error: %s\n", userMsg)
+					}
+					return nil, fmt.Errorf("ingestion failed: %s", userMsg)
+				default:
+					// Update spinner prefix with current status
+					prefix := status
+					if len(status) >= 1 {
+						prefix = strings.ToUpper(status[:1]) + status[1:]
+					}
+					if userMsg != "" {
+						s.Prefix = prefix + ": " + userMsg + "... "
+					} else {
+						s.Prefix = prefix + "... "
+					}
+				}
+			}
+		}
+		resp.Body.Close()
+
+		time.Sleep(sleepDuration)
+	}
+
+	// If we get here, we timed out
+	s.FinalMSG = "✗ Ingestion status check timed out\n"
+	s.Stop()
+	return nil, fmt.Errorf("ingestion status not found after %d attempts", maxAttempts)
 }
 
 // getDocRef returns the Document Reference of a blob; i.e. the blob store key for this blob.

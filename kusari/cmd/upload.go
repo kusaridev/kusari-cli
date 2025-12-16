@@ -51,6 +51,7 @@ func upload() *cobra.Command {
 		return repo.Upload(
 			uploadFilePath,
 			platformTenantEndpoint,
+			platformUrl,
 			uploadAlias,
 			uploadDocumentType,
 			uploadOpenVex,
@@ -59,7 +60,6 @@ func upload() *cobra.Command {
 			uploadSbomSubject,
 			uploadComponentName,
 			uploadCheckBlocked,
-			verbose,
 		)
 	}
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kusaridev/kusari-cli/pkg/constants"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -20,8 +21,8 @@ var (
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	rootCmd.PersistentFlags().StringVarP(&consoleUrl, "console-url", "", "https://console.us.kusari.cloud/", "console url")
-	rootCmd.PersistentFlags().StringVarP(&platformUrl, "platform-url", "", "https://platform.api.us.kusari.cloud/", "platform url")
+	rootCmd.PersistentFlags().StringVarP(&consoleUrl, "console-url", "", constants.DefaultConsoleURL, "console url")
+	rootCmd.PersistentFlags().StringVarP(&platformUrl, "platform-url", "", constants.DefaultPlatformURL, "platform url")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 
 	// Set environment variable prefix (optional)
