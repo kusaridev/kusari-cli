@@ -431,7 +431,7 @@ func getPresignedUrlForUpload(client *http.Client, accessToken, tenantEndpoint s
 
 	return getPresignedURLWithOptions(presignedURLOptions{
 		client:      client,
-		apiEndpoint: tenantEndpoint + "/presign",
+		apiEndpoint: tenantEndpoint + "/ingestion/presign",
 		jwtToken:    accessToken,
 		payload:     payload,
 		workspace:   "", // No workspace header for SBOM uploads
