@@ -19,7 +19,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/briandowns/spinner"
 	"github.com/kusaridev/kusari-cli/pkg/auth"
 	"github.com/kusaridev/kusari-cli/pkg/constants"
 	"github.com/kusaridev/kusari-cli/pkg/login"
@@ -274,41 +273,61 @@ func Upload(
 			docRef       string
 			documentName string
 			status       string
+			userMessage  string
 			err          error
 		}
 
-		results := make([]ingestionResult, 0, len(ssaus))
-
+		// Filter out empty docRefs
+		validSSaus := make([]sbomSubjectAndURI, 0, len(ssaus))
 		for _, ssau := range ssaus {
-			if ssau.docRef == "" {
-				continue
-			}
-
-			result, err := queryForIngestionStatus(platformUrl, tenantName, ssau.docRef, accessToken, workspace)
-			if err != nil {
-				results = append(results, ingestionResult{
-					docRef: ssau.docRef,
-					status: "failed",
-					err:    err,
-				})
-				continue
-			}
-
-			if result != nil && result.DocumentName != "" {
-				results = append(results, ingestionResult{
-					docRef:       ssau.docRef,
-					documentName: result.DocumentName,
-					status:       result.StatusMeta.Status,
-				})
+			if ssau.docRef != "" {
+				validSSaus = append(validSSaus, ssau)
 			}
 		}
 
-		// Display results in a table if multiple documents, or simple output for single document
-		if len(results) > 1 {
+		if len(validSSaus) > 0 {
+			fmt.Fprintf(os.Stderr, "\nChecking ingestion status for %d document(s)...\n", len(validSSaus))
+
+			results := make([]ingestionResult, len(validSSaus))
+			g, ctx := errgroup.WithContext(context.Background())
+			g.SetLimit(5) // Limit to 5 concurrent queries
+
+			// Query all documents in parallel
+			for i, ssau := range validSSaus {
+				i, ssau := i, ssau // Capture loop variables
+				g.Go(func() error {
+					result, err := queryForIngestionStatusQuiet(ctx, platformUrl, tenantName, ssau.docRef, accessToken, workspace)
+					if err != nil {
+						results[i] = ingestionResult{
+							docRef: ssau.docRef,
+							status: "failed",
+							err:    err,
+						}
+						return nil // Don't fail the whole group on individual errors
+					}
+
+					if result != nil {
+						results[i] = ingestionResult{
+							docRef:       ssau.docRef,
+							documentName: result.DocumentName,
+							status:       result.StatusMeta.Status,
+							userMessage:  result.StatusMeta.UserMessage,
+						}
+					}
+					return nil
+				})
+			}
+
+			// Wait for all queries to complete
+			if err := g.Wait(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: error during ingestion status check: %v\n", err)
+			}
+
+			// Display results in a table
 			fmt.Fprintf(os.Stderr, "\nIngestion Results:\n")
 			w := tabwriter.NewWriter(os.Stderr, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "STATUS\tDOCUMENT NAME\tDOCUMENT REF")
-			fmt.Fprintln(w, "------\t-------------\t------------")
+			_, _ = fmt.Fprintln(w, "STATUS\tDOCUMENT NAME\tDOCUMENT REF\tMESSAGE")
+			_, _ = fmt.Fprintln(w, "------\t-------------\t------------\t-------")
 			for _, r := range results {
 				statusSymbol := "✓"
 				if r.status == "failed" || r.err != nil {
@@ -318,16 +337,16 @@ func Upload(
 				if docName == "" {
 					docName = "-"
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\n", statusSymbol, docName, r.docRef)
+				message := r.userMessage
+				if r.err != nil {
+					message = r.err.Error()
+				}
+				if message == "" {
+					message = "-"
+				}
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", statusSymbol, docName, r.docRef, message)
 			}
-			w.Flush()
-		} else if len(results) == 1 {
-			r := results[0]
-			if r.err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to check ingestion status for %s: %v\n", r.docRef, r.err)
-			} else if r.documentName != "" {
-				fmt.Fprintf(os.Stderr, "Successfully ingested: %s\n", r.documentName)
-			}
+			_ = w.Flush()
 		}
 	}
 
@@ -604,25 +623,23 @@ func makePicoRequest(ctx context.Context, client *http.Client, accessToken, tena
 	return res, nil
 }
 
-// queryForIngestionStatus polls the ingestion status endpoint until a result is found or timeout
-func queryForIngestionStatus(platformUrl, tenantName, docRef, accessToken, workspace string) (*IngestionStatusItem, error) {
+// queryForIngestionStatusQuiet polls the ingestion status endpoint without a spinner
+// This version is suitable for parallel execution
+func queryForIngestionStatusQuiet(ctx context.Context, platformUrl, tenantName, docRef, accessToken, workspace string) (*IngestionStatusItem, error) {
 	maxAttempts := 150 // 150 attempts * 2 seconds = 5 minutes max
 	attempt := 0
 	sleepDuration := 2 * time.Second
 
-	// Create spinner for stderr
-	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-	s.Writer = os.Stderr
-	s.Prefix = "Checking ingestion status... "
-	s.FinalMSG = "✓ Ingestion complete!\n"
-	s.Start()
-
-	// Ensure spinner stops no matter what
-	defer s.Stop()
-
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	for attempt < maxAttempts {
+		// Check if context is cancelled
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		attempt++
 
 		fullURL := fmt.Sprintf("%s/ingestion/status?tenantName=%s&docRef=%s",
@@ -630,7 +647,7 @@ func queryForIngestionStatus(platformUrl, tenantName, docRef, accessToken, works
 			url.QueryEscape(tenantName),
 			url.QueryEscape(docRef))
 
-		req, err := http.NewRequest("GET", fullURL, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
 		if err != nil {
 			time.Sleep(sleepDuration)
 			continue
@@ -648,7 +665,7 @@ func queryForIngestionStatus(platformUrl, tenantName, docRef, accessToken, works
 
 		if resp.StatusCode == http.StatusOK {
 			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			resp.Body.Close() //nolint:errcheck
 			if err != nil {
 				time.Sleep(sleepDuration)
 				continue
@@ -662,45 +679,28 @@ func queryForIngestionStatus(platformUrl, tenantName, docRef, accessToken, works
 
 			if len(results) > 0 {
 				status := results[0].StatusMeta.Status
-				userMsg := results[0].StatusMeta.UserMessage
 
 				switch status {
 				case "success":
-					s.FinalMSG = "✓ Ingestion successful!\n"
-					s.Stop()
-					if userMsg != "" {
-						fmt.Fprintf(os.Stderr, "%s\n", userMsg)
-					}
 					return &results[0], nil
 				case "failed":
-					s.FinalMSG = "✗ Ingestion failed!\n"
-					s.Stop()
-					if userMsg != "" {
-						fmt.Fprintf(os.Stderr, "Error: %s\n", userMsg)
-					}
+					userMsg := results[0].StatusMeta.UserMessage
 					return nil, fmt.Errorf("ingestion failed: %s", userMsg)
 				default:
-					// Update spinner prefix with current status
-					prefix := status
-					if len(status) >= 1 {
-						prefix = strings.ToUpper(status[:1]) + status[1:]
-					}
-					if userMsg != "" {
-						s.Prefix = prefix + ": " + userMsg + "... "
-					} else {
-						s.Prefix = prefix + "... "
-					}
+					// Still processing, continue polling
 				}
 			}
 		}
-		resp.Body.Close()
+		resp.Body.Close() //nolint:errcheck
 
-		time.Sleep(sleepDuration)
+		// Sleep with context awareness
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(sleepDuration):
+		}
 	}
 
-	// If we get here, we timed out
-	s.FinalMSG = "✗ Ingestion status check timed out\n"
-	s.Stop()
 	return nil, fmt.Errorf("ingestion status not found after %d attempts", maxAttempts)
 }
 
