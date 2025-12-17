@@ -28,11 +28,11 @@ import (
 // Document describes the input for a processor to run. This input can
 // come from a collector or from the processor itself (run recursively).
 type Document struct {
-	Blob              []byte            `json:"blob"`
-	Type              DocumentType      `json:"type"`
-	Format            FormatType        `json:"format"`
-	Encoding          EncodingType      `json:"encoding"`
-	SourceInformation SourceInformation `json:"source_information"`
+	Blob              []byte
+	Type              DocumentType
+	Format            FormatType
+	Encoding          EncodingType
+	SourceInformation SourceInformation
 }
 
 // DocumentType describes the type of the document contents for schema checks
@@ -71,11 +71,11 @@ var EncodingExts = map[string]EncodingType{
 // SourceInformation provides additional information about where the document comes from
 type SourceInformation struct {
 	// Collector describes the name of the collector providing this information
-	Collector string `json:"collector"`
+	Collector string
 	// Source describes the source which the collector got this information
-	Source string `json:"source"`
+	Source string
 	// DocumentRef describes the location of the document in the blob store
-	DocumentRef string `json:"document_ref"`
+	DocumentRef string
 }
 
 // DocumentWrapper holds extra fields without modifying processor.Document
