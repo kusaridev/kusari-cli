@@ -25,7 +25,7 @@ func init() {
 	uploadcmd.Flags().StringVarP(&uploadFilePath, "file-path", "f", "", "Path to file or directory to upload (required)")
 	uploadcmd.Flags().StringVarP(&uploadAlias, "alias", "a", "", "Alias that supersedes the subject in Kusari platform (optional)")
 	uploadcmd.Flags().StringVarP(&uploadDocumentType, "document-type", "d", "", "Type of the document (image or build) sbom (optional)")
-	uploadcmd.Flags().BoolVar(&uploadOpenVex, "open-vex", false, "Indicate that this is an OpenVEX document (optional, only works with files)")
+	uploadcmd.Flags().BoolVar(&uploadOpenVex, "openvex", false, "Indicate that this is an OpenVEX document (optional, only works with files)")
 	uploadcmd.Flags().StringVar(&uploadTag, "tag", "", "Tag value to set in the document wrapper upload meta (optional, e.g. govulncheck)")
 	uploadcmd.Flags().StringVar(&uploadSoftwareID, "software-id", "", "Kusari Platform Software ID value to set in the document wrapper upload meta (optional)")
 	uploadcmd.Flags().StringVar(&uploadSbomSubject, "sbom-subject", "", "Kusari Platform Software sbom subject substring value to set in the document wrapper upload meta (optional)")
@@ -36,7 +36,7 @@ func init() {
 	mustBindPFlag("file-path", uploadcmd.Flags().Lookup("file-path"))
 	mustBindPFlag("alias", uploadcmd.Flags().Lookup("alias"))
 	mustBindPFlag("document-type", uploadcmd.Flags().Lookup("document-type"))
-	mustBindPFlag("open-vex", uploadcmd.Flags().Lookup("open-vex"))
+	mustBindPFlag("openvex", uploadcmd.Flags().Lookup("openvex"))
 	mustBindPFlag("tag", uploadcmd.Flags().Lookup("tag"))
 	mustBindPFlag("software-id", uploadcmd.Flags().Lookup("software-id"))
 	mustBindPFlag("sbom-subject", uploadcmd.Flags().Lookup("sbom-subject"))
@@ -84,7 +84,7 @@ Examples:
 
   # CI/CD: Upload an OpenVEX document with metadata
   kusari platform upload --file-path report.json --tenant demo \
-    --open-vex --tag govulncheck --software-id 12345
+    --openvex --tag govulncheck --software-id 12345
 
   # CI/CD: Upload with blocked package checking
   kusari platform upload --file-path sbom.json --tenant demo \
@@ -98,7 +98,7 @@ Examples:
 		uploadFilePath = viper.GetString("file-path")
 		uploadAlias = viper.GetString("alias")
 		uploadDocumentType = viper.GetString("document-type")
-		uploadOpenVex = viper.GetBool("open-vex")
+		uploadOpenVex = viper.GetBool("openvex")
 		uploadTag = viper.GetString("tag")
 		uploadSoftwareID = viper.GetString("software-id")
 		uploadSbomSubject = viper.GetString("sbom-subject")
