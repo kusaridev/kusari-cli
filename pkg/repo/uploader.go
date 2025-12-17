@@ -171,6 +171,10 @@ func Upload(
 		return fmt.Errorf("OpenVEX can't be used with directories, only single files")
 	}
 
+	if fileInfo.IsDir() && (sbomSubjectNameOverride != "" || sbomSubjectVersionOverride != "") {
+		return fmt.Errorf("cannot override SBOM subject with directories, only single files")
+	}
+
 	// Build upload metadata
 	uploadMeta := map[string]string{}
 	if alias != "" {
