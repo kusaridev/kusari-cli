@@ -10,15 +10,17 @@ import (
 )
 
 var (
-	uploadFilePath      string
-	uploadAlias         string
-	uploadDocumentType  string
-	uploadOpenVex       bool
-	uploadTag           string
-	uploadSoftwareID    string
-	uploadSbomSubject   string
-	uploadComponentName string
-	uploadCheckBlocked  bool
+	uploadFilePath                   string
+	uploadAlias                      string
+	uploadDocumentType               string
+	uploadOpenVex                    bool
+	uploadTag                        string
+	uploadSoftwareID                 string
+	uploadSbomSubject                string
+	uploadComponentName              string
+	uploadCheckBlocked               bool
+	uploadSbomSubjectNameOverride    string
+	uploadSbomSubjectVersionOverride string
 )
 
 func init() {
@@ -28,9 +30,11 @@ func init() {
 	uploadcmd.Flags().BoolVar(&uploadOpenVex, "openvex", false, "Indicate that this is an OpenVEX document (optional, only works with files)")
 	uploadcmd.Flags().StringVar(&uploadTag, "tag", "", "Tag value to set in the document wrapper upload meta (optional, e.g. govulncheck)")
 	uploadcmd.Flags().StringVar(&uploadSoftwareID, "software-id", "", "Kusari Platform Software ID value to set in the document wrapper upload meta (optional)")
-	uploadcmd.Flags().StringVar(&uploadSbomSubject, "sbom-subject", "", "Kusari Platform Software sbom subject substring value to set in the document wrapper upload meta (optional)")
+	uploadcmd.Flags().StringVar(&uploadSbomSubject, "sbom-subject", "", "Kusari Platform Software sbom subject substring value to set in the document wrapper upload meta (optional, for OpenVEX docs only)")
 	uploadcmd.Flags().StringVar(&uploadComponentName, "component-name", "", "Kusari Platform component name (optional)")
 	uploadcmd.Flags().BoolVar(&uploadCheckBlocked, "check-blocked-packages", false, "Check if any of the SBOMs uses a package contained in the blocked package list")
+	uploadcmd.Flags().StringVar(&uploadSbomSubjectNameOverride, "sbom-subject-name-override", "", "SBOM Subject Name override (optional, for SBOMs only)")
+	uploadcmd.Flags().StringVar(&uploadSbomSubjectVersionOverride, "sbom-subject-version-override", "", "SBOM Subject Version override (optional, from SBOMs only)")
 
 	// Bind flags to viper
 	mustBindPFlag("file-path", uploadcmd.Flags().Lookup("file-path"))
@@ -42,6 +46,8 @@ func init() {
 	mustBindPFlag("sbom-subject", uploadcmd.Flags().Lookup("sbom-subject"))
 	mustBindPFlag("component-name", uploadcmd.Flags().Lookup("component-name"))
 	mustBindPFlag("check-blocked-packages", uploadcmd.Flags().Lookup("check-blocked-packages"))
+	mustBindPFlag("sbom-subject-name-override", uploadcmd.Flags().Lookup("sbom-subject-name-override"))
+	mustBindPFlag("sbom-subject-version-override", uploadcmd.Flags().Lookup("sbom-subject-version-override"))
 }
 
 func upload() *cobra.Command {
@@ -59,6 +65,8 @@ func upload() *cobra.Command {
 			uploadSoftwareID,
 			uploadSbomSubject,
 			uploadComponentName,
+			uploadSbomSubjectNameOverride,
+			uploadSbomSubjectVersionOverride,
 			uploadCheckBlocked,
 		)
 	}
@@ -104,5 +112,7 @@ Examples:
 		uploadSbomSubject = viper.GetString("sbom-subject")
 		uploadComponentName = viper.GetString("component-name")
 		uploadCheckBlocked = viper.GetBool("check-blocked-packages")
+		uploadSbomSubjectNameOverride = viper.GetString("sbom-subject-name-override")
+		uploadSbomSubjectVersionOverride = viper.GetString("sbom-subject-version-override")
 	},
 }

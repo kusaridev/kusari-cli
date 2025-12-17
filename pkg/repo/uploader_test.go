@@ -792,6 +792,8 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				tt.softwareID,
 				tt.sbomSubject,
 				"",
+				"",
+				"",
 				false,
 			)
 
