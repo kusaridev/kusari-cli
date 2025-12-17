@@ -29,7 +29,7 @@ var selectWorkspaceCmd = &cobra.Command{
 		}
 
 		// Fetch available workspaces
-		workspaces, err := l.FetchWorkspaces(platformUrl, token.AccessToken)
+		workspaces, workspaceTenants, err := l.FetchWorkspaces(platformUrl, token.AccessToken)
 		if err != nil {
 			return fmt.Errorf("failed to fetch workspaces: %w", err)
 		}
@@ -49,6 +49,9 @@ var selectWorkspaceCmd = &cobra.Command{
 		currentWorkspace, err := auth.LoadWorkspace(platformUrl, authEndpoint)
 		if err == nil {
 			fmt.Printf("Current workspace: %s\n", currentWorkspace.Description)
+			if currentWorkspace.Tenant != "" {
+				fmt.Printf("Current tenant: %s\n", currentWorkspace.Tenant)
+			}
 		}
 
 		// Prompt user to select workspace
@@ -57,12 +60,24 @@ var selectWorkspaceCmd = &cobra.Command{
 			return fmt.Errorf("failed to select workspace: %w", err)
 		}
 
+		// Get tenants for selected workspace from the map and prompt for tenant selection
+		if tenants, ok := workspaceTenants[selectedWorkspace.ID]; ok && len(tenants) > 0 {
+			selectedTenant, err := auth.SelectTenant(tenants)
+			if err != nil {
+				return fmt.Errorf("failed to select tenant: %w", err)
+			}
+			selectedWorkspace.Tenant = selectedTenant
+		}
+
 		// Save the selected workspace
 		if err := auth.SaveWorkspace(*selectedWorkspace); err != nil {
 			return fmt.Errorf("failed to save workspace: %w", err)
 		}
 
 		fmt.Printf("\nWorkspace '%s' has been set as your active workspace.\n", selectedWorkspace.Description)
+		if selectedWorkspace.Tenant != "" {
+			fmt.Printf("Tenant '%s' has been set as your active tenant.\n", selectedWorkspace.Tenant)
+		}
 		return nil
 	},
 }

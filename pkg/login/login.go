@@ -54,32 +54,57 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 
 	// No workspace stored - fetch available workspaces and prompt user to select
 	fmt.Println("\nNo workspace configured. Let's set one up.")
-	workspaces, err := FetchWorkspaces(platformUrl, token.AccessToken)
+	workspaces, workspaceTenants, err := FetchWorkspaces(platformUrl, token.AccessToken)
 	if err != nil {
 		return fmt.Errorf("failed to fetch workspaces: %w", err)
 	}
 
-	// Convert to auth.WorkspaceInfo format
-	authWorkspaces := make([]auth.WorkspaceInfo, len(workspaces))
-	for i, ws := range workspaces {
-		authWorkspaces[i] = auth.WorkspaceInfo{
-			ID:           ws.ID,
-			Description:  ws.Description,
+	// Convert to auth.WorkspaceInfo format and select workspace
+	var selectedWorkspace *auth.WorkspaceInfo
+
+	// If client secret is provided (CI/CD mode), auto-select first workspace and tenant
+	if clientSecret != "" {
+		firstWorkspace := &workspaces[0]
+		selectedTenant := ""
+		// Get tenants for first workspace from the map
+		if tenants, ok := workspaceTenants[firstWorkspace.ID]; ok && len(tenants) > 0 {
+			selectedTenant = tenants[0]
+		}
+		selectedWorkspace = &auth.WorkspaceInfo{
+			ID:           firstWorkspace.ID,
+			Description:  firstWorkspace.Description,
 			PlatformUrl:  platformUrl,
 			AuthEndpoint: currentAuthEndpoint,
+			Tenant:       selectedTenant,
 		}
-	}
-
-	var selectedWorkspace *auth.WorkspaceInfo
-	// If client secret is provided (CI/CD mode), auto-select first workspace
-	if clientSecret != "" {
-		selectedWorkspace = &authWorkspaces[0]
 		fmt.Printf("Auto-selecting workspace for CI/CD: %s\n", selectedWorkspace.Description)
+		if selectedTenant != "" {
+			fmt.Printf("Auto-selecting tenant: %s\n", selectedTenant)
+		}
 	} else {
 		// Interactive mode - prompt user to select workspace
+		authWorkspaces := make([]auth.WorkspaceInfo, len(workspaces))
+		for i, ws := range workspaces {
+			authWorkspaces[i] = auth.WorkspaceInfo{
+				ID:           ws.ID,
+				Description:  ws.Description,
+				PlatformUrl:  platformUrl,
+				AuthEndpoint: currentAuthEndpoint,
+			}
+		}
+
 		selectedWorkspace, err = auth.SelectWorkspace(authWorkspaces)
 		if err != nil {
 			return fmt.Errorf("failed to select workspace: %w", err)
+		}
+
+		// Get tenants for selected workspace from the map
+		if tenants, ok := workspaceTenants[selectedWorkspace.ID]; ok && len(tenants) > 0 {
+			selectedTenant, err := auth.SelectTenant(tenants)
+			if err != nil {
+				return fmt.Errorf("failed to select tenant: %w", err)
+			}
+			selectedWorkspace.Tenant = selectedTenant
 		}
 	}
 
@@ -89,7 +114,13 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 	}
 
 	fmt.Printf("\nWorkspace '%s' has been set as your active workspace.\n", selectedWorkspace.Description)
+	if selectedWorkspace.Tenant != "" {
+		fmt.Printf("Tenant '%s' has been set as your active tenant.\n", selectedWorkspace.Tenant)
+	}
 	fmt.Println("To change workspaces later, run: kusari auth select-workspace")
+	if selectedWorkspace.Tenant != "" {
+		fmt.Println("To change tenants later, run: kusari auth select-tenant")
+	}
 
 	// Now that we have a workspace, redirect to the console with the workspace parameter
 	baseURL, err := urlBuilder.Build(consoleUrl, "/analysis")
@@ -122,15 +153,15 @@ type Workspace struct {
 	Description string `json:"description"`
 }
 
-// FetchWorkspaces retrieves all workspaces for the authenticated user
-func FetchWorkspaces(platformUrl string, accessToken string) ([]Workspace, error) {
+// FetchWorkspaces retrieves all workspaces and workspace-tenant mapping for the authenticated user
+func FetchWorkspaces(platformUrl string, accessToken string) ([]Workspace, map[string][]string, error) {
 
 	userEndpoint, err := urlBuilder.Build(platformUrl, "/user")
 	if err != nil {
-		return nil, fmt.Errorf("failed to build endpoint url: %w", err)
+		return nil, nil, fmt.Errorf("failed to build endpoint url: %w", err)
 	}
 	if userEndpoint == nil {
-		return nil, fmt.Errorf("failed to build endpoint url: %w", err)
+		return nil, nil, fmt.Errorf("failed to build endpoint url: %w", err)
 	}
 
 	client := &http.Client{
@@ -139,7 +170,7 @@ func FetchWorkspaces(platformUrl string, accessToken string) ([]Workspace, error
 
 	req, err := http.NewRequest("GET", *userEndpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -147,32 +178,34 @@ func FetchWorkspaces(platformUrl string, accessToken string) ([]Workspace, error
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch workspaces: %w", err)
+		return nil, nil, fmt.Errorf("failed to fetch workspaces: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch workspaces, status code: %d", resp.StatusCode)
+		return nil, nil, fmt.Errorf("failed to fetch workspaces, status code: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	type userInfoResponse struct {
-		Workspaces []Workspace `json:"workspaces"`
+		Workspaces       []Workspace         `json:"workspaces"`
+		Groups           []string            `json:"groups"`
+		WorkspaceTenants map[string][]string `json:"workspaceTenants"`
 	}
 
 	var result userInfoResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal workspaces: %w", err)
+		return nil, nil, fmt.Errorf("failed to unmarshal workspaces: %w", err)
 	}
 
 	if len(result.Workspaces) == 0 {
-		return nil, fmt.Errorf("no workspaces found for this user")
+		return nil, nil, fmt.Errorf("no workspaces found for this user")
 	}
 
 	for i := range result.Workspaces {
@@ -181,5 +214,5 @@ func FetchWorkspaces(platformUrl string, accessToken string) ([]Workspace, error
 		}
 	}
 
-	return result.Workspaces, nil
+	return result.Workspaces, result.WorkspaceTenants, nil
 }

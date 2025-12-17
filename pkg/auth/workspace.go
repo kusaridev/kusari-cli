@@ -51,3 +51,44 @@ func SelectWorkspace(workspaces []WorkspaceInfo) (*WorkspaceInfo, error) {
 		return selected, nil
 	}
 }
+
+// SelectTenant prompts the user to select a tenant from a list
+func SelectTenant(tenants []string) (string, error) {
+	if len(tenants) == 0 {
+		return "", fmt.Errorf("no tenants available")
+	}
+
+	// If there's only one tenant, auto-select it
+	if len(tenants) == 1 {
+		fmt.Printf("You only have one tenant available: %s\n", tenants[0])
+		fmt.Println("Auto-selecting this tenant.")
+		return tenants[0], nil
+	}
+
+	// Display available tenants
+	fmt.Println("\nAvailable tenants:")
+	for i, tenant := range tenants {
+		fmt.Printf("  [%d] %s\n", i+1, tenant)
+	}
+
+	// Prompt user for selection
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Printf("\nSelect a tenant (1-%d): ", len(tenants))
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return "", fmt.Errorf("failed to read input: %w", err)
+		}
+
+		input = strings.TrimSpace(input)
+		selection, err := strconv.Atoi(input)
+		if err != nil || selection < 1 || selection > len(tenants) {
+			fmt.Printf("Invalid selection. Please enter a number between 1 and %d.\n", len(tenants))
+			continue
+		}
+
+		selected := tenants[selection-1]
+		fmt.Printf("Selected tenant: %s\n", selected)
+		return selected, nil
+	}
+}

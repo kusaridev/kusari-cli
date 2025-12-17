@@ -55,7 +55,7 @@ func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, 
 type scanMock struct {
 	fileUploader           func(presignedURL, filePath string) error
 	presignedURLGetter     func(apiEndpoint string, jwtToken string, filePath, workspace string, full bool, size int64) (string, error)
-	defaultWorkspaceGetter func(platformUrl string, jwtToken string) ([]login.Workspace, error)
+	defaultWorkspaceGetter func(platformUrl string, jwtToken string) ([]login.Workspace, map[string][]string, error)
 	token                  string
 }
 
@@ -160,7 +160,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 	storedWorkspace, err := auth.LoadWorkspace(platformUrl, "")
 	if err != nil {
 		// If no workspace is stored or platform changed, try to fetch and use first workspace
-		workspaces, workspaceGetterErr := defaultWorkspaceGetter(platformUrl, accessToken)
+		workspaces, _, workspaceGetterErr := defaultWorkspaceGetter(platformUrl, accessToken)
 		if workspaceGetterErr != nil {
 			return fmt.Errorf("failed to get workspaces: %w. Please run `kusari auth login` to select a workspace", workspaceGetterErr)
 		}
