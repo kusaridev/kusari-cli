@@ -28,32 +28,17 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 		fmt.Println()
 	}
 
-	// Check if there's a previously stored workspace for this platform and auth endpoint
-	// This allows us to include the workspace in the redirect URL
-	workspaceId := ""
-	previousWorkspace, _ := auth.LoadWorkspace(platformUrl, currentAuthEndpoint)
-	if previousWorkspace != nil {
-		workspaceId = previousWorkspace.ID
-		fmt.Printf("\nUsing stored workspace: %s\n", previousWorkspace.Description)
-	}
-
-	token, err := auth.Authenticate(ctx, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, workspaceId)
+	// Always authenticate without a pre-selected workspace
+	// This ensures we fetch fresh workspace information each time
+	token, err := auth.Authenticate(ctx, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, "")
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("Successfully logged in!")
 
-	// If we already had a workspace, we're done
-	if previousWorkspace != nil {
-		fmt.Printf("\nYour current workspace is: %s\n", previousWorkspace.Description)
-		fmt.Println("To change workspaces, run: kusari auth select-workspace")
-		fmt.Println("\033[1m\033[34mFor more information, visit:\033[0m https://docs.kusari.cloud")
-		return nil
-	}
-
-	// No workspace stored - fetch available workspaces and prompt user to select
-	fmt.Println("\nNo workspace configured. Let's set one up.")
+	// Always fetch fresh workspaces and prompt user to select
+	fmt.Println("\nFetching your workspaces...")
 	workspaces, workspaceTenants, err := FetchWorkspaces(platformUrl, token.AccessToken)
 	if err != nil {
 		return fmt.Errorf("failed to fetch workspaces: %w", err)
