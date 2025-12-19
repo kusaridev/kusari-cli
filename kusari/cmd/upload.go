@@ -101,7 +101,7 @@ Examples:
   # Dev/Testing: Upload using full tenant endpoint (overrides --tenant)
   kusari platform upload --file-path sbom.json --tenant-endpoint https://demo.api.dev.kusari.cloud`,
 	Args: cobra.NoArgs,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PreRun: func(cmd *cobra.Command, args []string) {
 		// Update from viper (this gets env vars + config + flags)
 		uploadFilePath = viper.GetString("file-path")
 		uploadAlias = viper.GetString("alias")

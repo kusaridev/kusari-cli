@@ -190,7 +190,7 @@ func FetchWorkspaces(platformUrl string, accessToken string) ([]Workspace, map[s
 	}
 
 	if len(result.Workspaces) == 0 {
-		return nil, nil, fmt.Errorf("no workspaces found for this user")
+		return nil, nil, fmt.Errorf("no workspaces found for this user - please login to https://console.us.kusari.cloud/ to automatically create a workspace")
 	}
 
 	for i := range result.Workspaces {
