@@ -108,18 +108,21 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 	}
 
 	// Now that we have a workspace, redirect to the console with the workspace parameter
-	baseURL, err := urlBuilder.Build(consoleUrl, "/analysis")
-	if err == nil && baseURL != nil {
-		// Parse the URL and add workspace as query parameter
-		parsedURL, parseErr := url.Parse(*baseURL)
-		if parseErr == nil {
-			query := parsedURL.Query()
-			query.Set("workspaceId", selectedWorkspace.ID)
-			parsedURL.RawQuery = query.Encode()
+	// Only open browser in interactive mode (not CI/CD with client secret)
+	if clientSecret == "" {
+		baseURL, err := urlBuilder.Build(consoleUrl, "/analysis")
+		if err == nil && baseURL != nil {
+			// Parse the URL and add workspace as query parameter
+			parsedURL, parseErr := url.Parse(*baseURL)
+			if parseErr == nil {
+				query := parsedURL.Query()
+				query.Set("workspaceId", selectedWorkspace.ID)
+				parsedURL.RawQuery = query.Encode()
 
-			fmt.Println("\nOpening console in your browser...")
-			if err := auth.OpenBrowser(parsedURL.String()); err != nil {
-				fmt.Printf("Failed to open browser automatically. Please visit: %s\n", parsedURL.String())
+				fmt.Println("\nOpening console in your browser...")
+				if err := auth.OpenBrowser(parsedURL.String()); err != nil {
+					fmt.Printf("Failed to open browser automatically. Please visit: %s\n", parsedURL.String())
+				}
 			}
 		}
 	}
