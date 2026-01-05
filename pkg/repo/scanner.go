@@ -246,13 +246,18 @@ func queryForResult(platformUrl string, epoch string, accessToken string, consol
 
 	client := &http.Client{Timeout: 10 * time.Second}
 
+	scanType := "scan"
+	if full {
+		scanType = "risk-check"
+	}
+	// Build URL
+	fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s&op=beginswith&scanType=%s",
+		strings.TrimSuffix(platformUrl, "/"),
+		epoch,
+		scanType)
+
 	for attempt < maxAttempts {
 		attempt++
-
-		// Build URL
-		fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s&op=beginswith",
-			strings.TrimSuffix(platformUrl, "/"),
-			epoch)
 
 		// Create HTTP client
 		req, err := http.NewRequest("GET", fullURL, nil)
