@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"runtime/debug"
 	"strings"
 
 	"github.com/kusaridev/kusari-cli/pkg/constants"
@@ -31,12 +32,67 @@ func SetVersionInfo(v, c, d string) {
 	date = d
 }
 
+// getVersion returns the version string, using build info as fallback
+func getVersion() string {
+	if version != "dev" {
+		return version
+	}
+
+	// Try to get version from build info (works with go install)
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			return info.Main.Version
+		}
+	}
+
+	return version
+}
+
+// getCommit returns the commit hash, using build info as fallback
+func getCommit() string {
+	if commit != "none" {
+		return commit
+	}
+
+	// Try to get commit from build info
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.revision" {
+				if len(setting.Value) > 7 {
+					return setting.Value[:7]
+				}
+				return setting.Value
+			}
+		}
+	}
+
+	return commit
+}
+
+// getBuildDate returns the build date, using build info as fallback
+func getBuildDate() string {
+	if date != "unknown" {
+		return date
+	}
+
+	// Try to get build date from build info
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.time" {
+				return setting.Value
+			}
+		}
+	}
+
+	return date
+}
+
 func init() {
 	cobra.OnInitialize(initConfig)
 
 	// Set version information for the root command
 	// This enables the --version flag automatically
-	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built at: %s)", version, commit, date)
+	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built at: %s)", getVersion(), getCommit(), getBuildDate())
 
 	rootCmd.PersistentFlags().StringVarP(&consoleUrl, "console-url", "", constants.DefaultConsoleURL, "console url")
 	rootCmd.PersistentFlags().StringVarP(&platformUrl, "platform-url", "", constants.DefaultPlatformURL, "platform url")
