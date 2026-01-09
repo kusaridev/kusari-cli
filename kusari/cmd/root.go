@@ -17,10 +17,27 @@ var (
 	consoleUrl  string
 	platformUrl string
 	verbose     bool
+
+	// Version information (injected at build time)
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
 )
+
+// SetVersionInfo sets the version information for the CLI
+func SetVersionInfo(v, c, d string) {
+	version = v
+	commit = c
+	date = d
+}
 
 func init() {
 	cobra.OnInitialize(initConfig)
+
+	// Set version information for the root command
+	// This enables the --version flag automatically
+	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built at: %s)", version, commit, date)
+
 	rootCmd.PersistentFlags().StringVarP(&consoleUrl, "console-url", "", constants.DefaultConsoleURL, "console url")
 	rootCmd.PersistentFlags().StringVarP(&platformUrl, "platform-url", "", constants.DefaultPlatformURL, "platform url")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
