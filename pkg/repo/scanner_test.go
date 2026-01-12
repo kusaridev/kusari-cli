@@ -304,6 +304,63 @@ func TestDetectMonoRepo(t *testing.T) {
 			expectMonoRepo:   true,
 			expectIndicators: []string{"multiple pom.xml files in subdirectories"},
 		},
+		{
+			name: "monorepo - polyglot (go + nodejs)",
+			setupFunc: func(dir string) error {
+				// Backend service with Go
+				backend := filepath.Join(dir, "backend")
+				if err := os.Mkdir(backend, 0755); err != nil {
+					return err
+				}
+				if err := os.WriteFile(filepath.Join(backend, "go.mod"), []byte(`module example.com/backend`), 0644); err != nil {
+					return err
+				}
+				// Frontend service with Node.js
+				frontend := filepath.Join(dir, "frontend")
+				if err := os.Mkdir(frontend, 0755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(frontend, "package.json"), []byte(`{"name": "frontend"}`), 0644)
+			},
+			expectMonoRepo:   true,
+			expectIndicators: []string{"multiple project types detected"},
+		},
+		{
+			name: "not monorepo - single project with docs",
+			setupFunc: func(dir string) error {
+				// Main Go project in cmd/
+				cmd := filepath.Join(dir, "cmd")
+				if err := os.Mkdir(cmd, 0755); err != nil {
+					return err
+				}
+				if err := os.WriteFile(filepath.Join(cmd, "go.mod"), []byte(`module example.com/cmd`), 0644); err != nil {
+					return err
+				}
+				// Documentation with Jekyll/Gemfile
+				docs := filepath.Join(dir, "docs")
+				if err := os.Mkdir(docs, 0755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(docs, "Gemfile"), []byte(`gem "github-pages"`), 0644)
+			},
+			expectMonoRepo: false,
+		},
+		{
+			name: "not monorepo - single project with examples",
+			setupFunc: func(dir string) error {
+				// Root package.json
+				if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name": "root"}`), 0644); err != nil {
+					return err
+				}
+				// Examples directory should be ignored
+				examples := filepath.Join(dir, "examples", "demo")
+				if err := os.MkdirAll(examples, 0755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(examples, "package.json"), []byte(`{"name": "demo"}`), 0644)
+			},
+			expectMonoRepo: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -329,7 +386,8 @@ func TestDetectMonoRepo(t *testing.T) {
 				for _, expectedIndicator := range tt.expectIndicators {
 					found := false
 					for _, indicator := range indicators {
-						if indicator == expectedIndicator {
+						// Use Contains for partial matching since some indicators include details
+						if strings.Contains(indicator, expectedIndicator) {
 							found = true
 							break
 						}

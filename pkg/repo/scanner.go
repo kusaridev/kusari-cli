@@ -93,8 +93,8 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 			fmt.Fprintf(os.Stderr, "\nKusari Inspector works best when analyzing individual repositories.\n")
 			fmt.Fprintf(os.Stderr, "Please run risk-check on each sub-project directory separately.\n")
 			fmt.Fprintf(os.Stderr, "\nFor example:\n")
-			fmt.Fprintf(os.Stderr, "  kusari risk-check ./packages/project1\n")
-			fmt.Fprintf(os.Stderr, "  kusari risk-check ./packages/project2\n")
+			fmt.Fprintf(os.Stderr, "  kusari repo risk-check ./packages/project1\n")
+			fmt.Fprintf(os.Stderr, "  kusari repo risk-check ./packages/project2\n")
 			os.Exit(1)
 		}
 	}
@@ -473,7 +473,28 @@ func detectMonoRepo(path string) (bool, []string, error) {
 		"build.gradle",     // Gradle
 	}
 
+	// Directories that commonly contain tooling/docs, not separate projects
+	excludedDirs := map[string]bool{
+		"docs":      true,
+		"doc":       true,
+		"website":   true,
+		".github":   true,
+		"scripts":   true,
+		"tools":     true,
+		"tool":      true,
+		"util":      true,
+		"utils":     true,
+		"utilities": true,
+		"examples":  true,
+		"example":   true,
+		"test":      true,
+		"tests":     true,
+	}
+
 	manifestCounts := make(map[string]int)
+	manifestLocations := make(map[string][]string) // Track locations for reporting
+	totalManifests := 0
+
 	err := filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip errors
@@ -490,10 +511,26 @@ func detectMonoRepo(path string) (bool, []string, error) {
 		// Check if this is a manifest file and not in the root
 		for _, manifest := range manifestFiles {
 			if info.Name() == manifest && p != filepath.Join(path, manifest) {
-				manifestCounts[manifest]++
-				// Early exit if we found multiple of any type
-				if manifestCounts[manifest] >= 2 {
-					return filepath.SkipAll
+				// Get the relative path and check if it's in an excluded directory
+				relPath, err := filepath.Rel(path, p)
+				if err != nil {
+					continue
+				}
+
+				// Check if the manifest is in an excluded directory
+				pathParts := strings.Split(filepath.Dir(relPath), string(filepath.Separator))
+				inExcludedDir := false
+				for _, part := range pathParts {
+					if excludedDirs[part] {
+						inExcludedDir = true
+						break
+					}
+				}
+
+				if !inExcludedDir {
+					manifestCounts[manifest]++
+					manifestLocations[manifest] = append(manifestLocations[manifest], relPath)
+					totalManifests++
 				}
 			}
 		}
@@ -504,11 +541,20 @@ func detectMonoRepo(path string) (bool, []string, error) {
 		return false, nil, err
 	}
 
-	// Report which manifests were found multiple times
+	// Report which manifests were found multiple times (same type)
 	for manifest, count := range manifestCounts {
 		if count >= 2 {
 			indicators = append(indicators, fmt.Sprintf("multiple %s files in subdirectories", manifest))
 		}
+	}
+
+	// Check for polyglot monorepo: 2+ manifests of different types
+	if totalManifests >= 2 && len(manifestCounts) >= 2 {
+		var types []string
+		for manifest := range manifestCounts {
+			types = append(types, manifest)
+		}
+		indicators = append(indicators, fmt.Sprintf("multiple project types detected: %s", strings.Join(types, ", ")))
 	}
 
 	return len(indicators) > 0, indicators, nil
