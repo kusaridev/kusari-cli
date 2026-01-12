@@ -77,6 +77,28 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		os.Exit(1)
 	}
 
+	// Check if this is a monorepo - only for risk checks (full scans)
+	// Diff scans can work fine on monorepos since they're analyzing changes
+	if full {
+		isMonoRepo, indicators, err := detectMonoRepo(dir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Error checking for monorepo: %v\n", err)
+		}
+		if isMonoRepo {
+			fmt.Fprintf(os.Stderr, "Error: Monorepo detected in %s\n", dir)
+			fmt.Fprintf(os.Stderr, "\nMonorepo indicators found:\n")
+			for _, indicator := range indicators {
+				fmt.Fprintf(os.Stderr, "  - %s\n", indicator)
+			}
+			fmt.Fprintf(os.Stderr, "\nKusari Inspector works best when analyzing individual repositories.\n")
+			fmt.Fprintf(os.Stderr, "Please run risk-check on each sub-project directory separately.\n")
+			fmt.Fprintf(os.Stderr, "\nFor example:\n")
+			fmt.Fprintf(os.Stderr, "  kusari risk-check ./packages/project1\n")
+			fmt.Fprintf(os.Stderr, "  kusari risk-check ./packages/project2\n")
+			os.Exit(1)
+		}
+	}
+
 	fileUploader := uploadFileToS3
 	presignedURLGetter := getPresignedURL
 	defaultWorkspaceGetter := login.FetchWorkspaces
@@ -398,6 +420,98 @@ func validateDirectory(path string) error {
 	}
 
 	return nil
+}
+
+// detectMonoRepo checks if the directory appears to be a monorepo based on Kusari-relevant dependency files
+// Returns true if monorepo indicators are found, along with detected patterns
+func detectMonoRepo(path string) (bool, []string, error) {
+	var indicators []string
+
+	// Check for common monorepo configuration files in root
+	monoRepoConfigFiles := []string{
+		"lerna.json",
+		"nx.json",
+		"pnpm-workspace.yaml",
+		"turbo.json",
+		"rush.json",
+		"lage.config.js",
+		"workspace.json",
+	}
+
+	for _, configFile := range monoRepoConfigFiles {
+		if _, err := os.Stat(filepath.Join(path, configFile)); err == nil {
+			indicators = append(indicators, fmt.Sprintf("monorepo config: %s", configFile))
+		}
+	}
+
+	// Check root package.json for workspaces field (npm/yarn/pnpm workspaces)
+	packageJsonPath := filepath.Join(path, "package.json")
+	if data, err := os.ReadFile(packageJsonPath); err == nil {
+		if strings.Contains(string(data), "\"workspaces\"") {
+			indicators = append(indicators, "package.json with workspaces")
+		}
+	}
+
+	// Check root Cargo.toml for workspace field (Rust workspace)
+	cargoTomlPath := filepath.Join(path, "Cargo.toml")
+	if data, err := os.ReadFile(cargoTomlPath); err == nil {
+		if strings.Contains(string(data), "[workspace]") {
+			indicators = append(indicators, "Cargo.toml with [workspace]")
+		}
+	}
+
+	// Check for multiple Kusari-relevant dependency files in subdirectories
+	// These are the key project manifest files that indicate separate projects
+	manifestFiles := []string{
+		"go.mod",           // Go
+		"package.json",     // JavaScript/TypeScript (not lock files)
+		"pom.xml",          // Java/Maven
+		"Cargo.toml",       // Rust (not Cargo.lock)
+		"requirements.txt", // Python
+		"pyproject.toml",   // Python
+		"Gemfile",          // Ruby (not lock file)
+		"build.gradle",     // Gradle
+	}
+
+	manifestCounts := make(map[string]int)
+	err := filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip errors
+		}
+		// Skip .git, node_modules, vendor, and other common directories
+		if info.IsDir() {
+			name := info.Name()
+			if name == ".git" || name == "node_modules" || name == "vendor" ||
+				name == "target" || name == ".venv" || name == "venv" {
+				return filepath.SkipDir
+			}
+		}
+
+		// Check if this is a manifest file and not in the root
+		for _, manifest := range manifestFiles {
+			if info.Name() == manifest && p != filepath.Join(path, manifest) {
+				manifestCounts[manifest]++
+				// Early exit if we found multiple of any type
+				if manifestCounts[manifest] >= 2 {
+					return filepath.SkipAll
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return false, nil, err
+	}
+
+	// Report which manifests were found multiple times
+	for manifest, count := range manifestCounts {
+		if count >= 2 {
+			indicators = append(indicators, fmt.Sprintf("multiple %s files in subdirectories", manifest))
+		}
+	}
+
+	return len(indicators) > 0, indicators, nil
 }
 
 func removeImageLines(content string) string {
