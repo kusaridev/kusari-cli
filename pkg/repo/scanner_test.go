@@ -361,6 +361,38 @@ func TestDetectMonoRepo(t *testing.T) {
 			},
 			expectMonoRepo: false,
 		},
+		{
+			name: "not monorepo - single project with integration tests",
+			setupFunc: func(dir string) error {
+				// Root go.mod
+				if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(`module example.com/root`), 0644); err != nil {
+					return err
+				}
+				// Integration test directory should be ignored (pattern match)
+				integrationTest := filepath.Join(dir, "pkg", "db", "integrationtest", "tool")
+				if err := os.MkdirAll(integrationTest, 0755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(integrationTest, "package.json"), []byte(`{"name": "test-tool"}`), 0644)
+			},
+			expectMonoRepo: false,
+		},
+		{
+			name: "not monorepo - Go project with generated TypeScript client",
+			setupFunc: func(dir string) error {
+				// Root go.mod
+				if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(`module example.com/root`), 0644); err != nil {
+					return err
+				}
+				// Generated API client should be ignored
+				apiGen := filepath.Join(dir, "api", "npm")
+				if err := os.MkdirAll(apiGen, 0755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(apiGen, "package.json"), []byte(`{"name": "@example/api-client"}`), 0644)
+			},
+			expectMonoRepo: false,
+		},
 	}
 
 	for _, tt := range tests {
