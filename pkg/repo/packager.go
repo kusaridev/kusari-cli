@@ -30,7 +30,9 @@ func packageDirectory(full bool) (int64, error) {
 	// Get list of files from git (respects .gitignore)
 	// This includes tracked files and untracked files that aren't in .gitignore
 	filesListPath := filepath.Join(tarballDir, "files.txt")
-	defer os.Remove(filesListPath)
+	defer func() {
+		_ = os.Remove(filesListPath)
+	}()
 
 	// Get tracked files and untracked files (excluding .gitignore entries)
 	gitCmd := exec.Command("sh", "-c", "git ls-files && git ls-files --others --exclude-standard")

@@ -5,14 +5,13 @@ package repo
 
 import (
 	"archive/tar"
+	"compress/bzip2"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/dsnet/compress/bzip2"
 )
 
 func TestPackageDirectory(t *testing.T) {
@@ -310,14 +309,12 @@ func extractTarballContents(t *testing.T, tarballPath string) []string {
 	if err != nil {
 		t.Fatalf("Failed to open tarball: %v", err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	// Decompress bzip2
-	bzr, err := bzip2.NewReader(f, nil)
-	if err != nil {
-		t.Fatalf("Failed to create bzip2 reader: %v", err)
-	}
-	defer bzr.Close()
+	bzr := bzip2.NewReader(f)
 
 	// Read tar contents
 	tr := tar.NewReader(bzr)
