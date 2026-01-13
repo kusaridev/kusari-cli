@@ -17,13 +17,13 @@ import (
 
 func TestPackageDirectory(t *testing.T) {
 	tests := []struct {
-		name              string
-		setupRepo         func(t *testing.T, repoDir string)
-		full              bool
-		expectError       bool
-		errorContains     string
-		expectedFiles     []string
-		notExpectedFiles  []string
+		name             string
+		setupRepo        func(t *testing.T, repoDir string)
+		full             bool
+		expectError      bool
+		errorContains    string
+		expectedFiles    []string
+		notExpectedFiles []string
 	}{
 		{
 			name: "successful packaging with tracked files",

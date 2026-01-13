@@ -475,30 +475,30 @@ func detectMonoRepo(path string) (bool, []string, error) {
 
 	// Directories that commonly contain tooling/docs/generated code, not separate projects
 	excludedDirs := map[string]bool{
-		"docs":      true,
-		"doc":       true,
-		"website":   true,
-		".github":   true,
-		"scripts":   true,
-		"tools":     true,
-		"tool":      true,
-		"util":      true,
-		"utils":     true,
-		"utilities": true,
-		"examples":  true,
-		"example":   true,
-		"test":      true,
-		"tests":     true,
-		"generated": true,
-		"gen":       true,
+		"docs":       true,
+		"doc":        true,
+		"website":    true,
+		".github":    true,
+		"scripts":    true,
+		"tools":      true,
+		"tool":       true,
+		"util":       true,
+		"utils":      true,
+		"utilities":  true,
+		"examples":   true,
+		"example":    true,
+		"test":       true,
+		"tests":      true,
+		"generated":  true,
+		"gen":        true,
 		".generated": true,
 	}
 
 	// Directory name patterns that indicate non-project directories (partial matches)
 	excludedPatterns := []string{
-		"test",     // matches: test, tests, integrationtest, unittest, etc.
-		"mock",     // matches: mock, mocks, mockdata, etc.
-		"fixture",  // matches: fixture, fixtures, etc.
+		"test",      // matches: test, tests, integrationtest, unittest, etc.
+		"mock",      // matches: mock, mocks, mockdata, etc.
+		"fixture",   // matches: fixture, fixtures, etc.
 		"generated", // matches: generated, .generated, codegen, etc.
 	}
 
