@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -148,6 +149,7 @@ func Upload(
 	sbomSubjectNameOverride string,
 	sbomSubjectVersionOverride string,
 	checkBlockedPackages bool,
+	wait bool,
 ) error {
 	// Validate required configuration
 	if filePath == "" {
@@ -280,7 +282,7 @@ func Upload(
 	}
 
 	// Query ingestion status for each uploaded document
-	if workspace != "" && tenantName != "" {
+	if wait && workspace != "" && tenantName != "" {
 		type ingestionResult struct {
 			docRef       string
 			documentName string
@@ -300,7 +302,17 @@ func Upload(
 		if len(validSSaus) > 0 {
 			fmt.Fprintf(os.Stderr, "\nChecking ingestion status for %d document(s)...\n", len(validSSaus))
 
+			// Initialize results with "SBOM uploading..." status
 			results := make([]ingestionResult, len(validSSaus))
+			var resultsMutex sync.Mutex
+			for i, ssau := range validSSaus {
+				results[i] = ingestionResult{
+					docRef:      ssau.docRef,
+					status:      "uploading",
+					userMessage: "SBOM uploading...",
+				}
+			}
+
 			g, ctx := errgroup.WithContext(context.Background())
 			g.SetLimit(5) // Limit to 5 concurrent queries
 
@@ -308,17 +320,27 @@ func Upload(
 			for i, ssau := range validSSaus {
 				i, ssau := i, ssau // Capture loop variables
 				g.Go(func() error {
-					result, err := queryForIngestionStatusQuiet(ctx, platformUrl, tenantName, ssau.docRef, accessToken, workspace)
+					startTime := time.Now()
+					infraMessageShown := false
+
+					result, err := queryForIngestionStatusWithTimeout(ctx, platformUrl, tenantName, ssau.docRef, accessToken, workspace, func() {
+						// This callback is called during polling if 1 minute has passed
+						if !infraMessageShown && time.Since(startTime) >= time.Minute {
+							infraMessageShown = true
+							resultsMutex.Lock()
+							results[i].userMessage = "Infra spinning up..."
+							resultsMutex.Unlock()
+						}
+					})
+
+					resultsMutex.Lock()
 					if err != nil {
 						results[i] = ingestionResult{
 							docRef: ssau.docRef,
 							status: "failed",
 							err:    err,
 						}
-						return nil // Don't fail the whole group on individual errors
-					}
-
-					if result != nil {
+					} else if result != nil {
 						results[i] = ingestionResult{
 							docRef:       ssau.docRef,
 							documentName: result.DocumentName,
@@ -326,7 +348,8 @@ func Upload(
 							userMessage:  result.StatusMeta.UserMessage,
 						}
 					}
-					return nil
+					resultsMutex.Unlock()
+					return nil // Don't fail the whole group on individual errors
 				})
 			}
 
@@ -624,10 +647,10 @@ func makePicoRequest(ctx context.Context, client *http.Client, accessToken, tena
 	return res, nil
 }
 
-// queryForIngestionStatusQuiet polls the ingestion status endpoint without a spinner
-// This version is suitable for parallel execution
-func queryForIngestionStatusQuiet(ctx context.Context, platformUrl, tenantName, docRef, accessToken, workspace string) (*IngestionStatusItem, error) {
-	maxAttempts := 150 // 150 attempts * 2 seconds = 5 minutes max
+// queryForIngestionStatusWithTimeout polls the ingestion status endpoint with a callback for timeout tracking
+// The callback is called periodically to allow status message updates based on elapsed time
+func queryForIngestionStatusWithTimeout(ctx context.Context, platformUrl, tenantName, docRef, accessToken, workspace string, timeoutCallback func()) (*IngestionStatusItem, error) {
+	maxAttempts := 450 // 450 attempts * 2 seconds = 15 minutes max
 	attempt := 0
 	sleepDuration := 2 * time.Second
 
@@ -639,6 +662,11 @@ func queryForIngestionStatusQuiet(ctx context.Context, platformUrl, tenantName, 
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
+		}
+
+		// Call the timeout callback to check if status message needs updating
+		if timeoutCallback != nil {
+			timeoutCallback()
 		}
 
 		attempt++

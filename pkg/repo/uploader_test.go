@@ -795,6 +795,7 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				"",
 				"",
 				false,
+				false,
 			)
 
 			if !tt.expectError {
