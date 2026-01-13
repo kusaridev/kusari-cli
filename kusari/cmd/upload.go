@@ -21,6 +21,7 @@ var (
 	uploadCheckBlocked               bool
 	uploadSbomSubjectNameOverride    string
 	uploadSbomSubjectVersionOverride string
+	uploadWait                       bool
 )
 
 func init() {
@@ -35,6 +36,7 @@ func init() {
 	uploadcmd.Flags().BoolVar(&uploadCheckBlocked, "check-blocked-packages", false, "Check if any of the SBOMs uses a package contained in the blocked package list")
 	uploadcmd.Flags().StringVar(&uploadSbomSubjectNameOverride, "sbom-subject-name-override", "", "SBOM Subject Name override (optional, for SBOMs only)")
 	uploadcmd.Flags().StringVar(&uploadSbomSubjectVersionOverride, "sbom-subject-version-override", "", "SBOM Subject Version override (optional, from SBOMs only)")
+	uploadcmd.Flags().BoolVar(&uploadWait, "wait", true, "Wait for ingestion status (default: true)")
 
 	// Bind flags to viper
 	mustBindPFlag("file-path", uploadcmd.Flags().Lookup("file-path"))
@@ -48,6 +50,7 @@ func init() {
 	mustBindPFlag("check-blocked-packages", uploadcmd.Flags().Lookup("check-blocked-packages"))
 	mustBindPFlag("sbom-subject-name-override", uploadcmd.Flags().Lookup("sbom-subject-name-override"))
 	mustBindPFlag("sbom-subject-version-override", uploadcmd.Flags().Lookup("sbom-subject-version-override"))
+	mustBindPFlag("wait", uploadcmd.Flags().Lookup("wait"))
 }
 
 func upload() *cobra.Command {
@@ -68,6 +71,7 @@ func upload() *cobra.Command {
 			uploadSbomSubjectNameOverride,
 			uploadSbomSubjectVersionOverride,
 			uploadCheckBlocked,
+			uploadWait,
 		)
 	}
 
@@ -114,5 +118,6 @@ Examples:
 		uploadCheckBlocked = viper.GetBool("check-blocked-packages")
 		uploadSbomSubjectNameOverride = viper.GetString("sbom-subject-name-override")
 		uploadSbomSubjectVersionOverride = viper.GetString("sbom-subject-version-override")
+		uploadWait = viper.GetBool("wait")
 	},
 }
