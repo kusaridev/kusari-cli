@@ -26,9 +26,27 @@ func packageDirectory(full bool) (int64, error) {
 		}
 	}
 	outFile := filepath.Join(tarballDir, tarballNameUncompressed)
+
+	// Get list of files from git (respects .gitignore)
+	// This includes tracked files and untracked files that aren't in .gitignore
+	filesListPath := filepath.Join(tarballDir, "files.txt")
+	defer os.Remove(filesListPath)
+
+	// Get tracked files and untracked files (excluding .gitignore entries)
+	gitCmd := exec.Command("sh", "-c", "git ls-files && git ls-files --others --exclude-standard")
+	filesOutput, err := gitCmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("error getting git files list: %w", err)
+	}
+
+	// Write file list to a temporary file
+	if err := os.WriteFile(filesListPath, filesOutput, 0600); err != nil {
+		return 0, fmt.Errorf("error writing files list: %w", err)
+	}
+
 	// Write the repo contents to the tarball, uncompressed so that we can append to it
-	// tar -cf ./kusari-archive/kusari-inspector.tar.bz2 --dereference --exclude=.git .
-	tc := exec.Command("tar", "-cf", outFile, "--dereference", "--exclude=.git", ".")
+	// Use -T to specify files from list (respects .gitignore)
+	tc := exec.Command("tar", "-cf", outFile, "--dereference", "-T", filesListPath)
 	tc.Env = append(tc.Env, "COPYFILE_DISABLE=1")
 	if err := tc.Run(); err != nil {
 		return 0, fmt.Errorf("error taring source code: %w", err)
