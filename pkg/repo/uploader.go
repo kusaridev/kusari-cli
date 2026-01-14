@@ -302,16 +302,9 @@ func Upload(
 		if len(validSSaus) > 0 {
 			fmt.Fprintf(os.Stderr, "\nChecking ingestion status for %d document(s)...\n", len(validSSaus))
 
-			// Initialize results with "SBOM uploading..." status
+			// Initialize results array for tracking status
 			results := make([]ingestionResult, len(validSSaus))
 			var resultsMutex sync.Mutex
-			for i, ssau := range validSSaus {
-				results[i] = ingestionResult{
-					docRef:      ssau.docRef,
-					status:      "uploading",
-					userMessage: "SBOM uploading...",
-				}
-			}
 
 			g, ctx := errgroup.WithContext(context.Background())
 			g.SetLimit(5) // Limit to 5 concurrent queries
@@ -320,17 +313,22 @@ func Upload(
 			for i, ssau := range validSSaus {
 				i, ssau := i, ssau // Capture loop variables
 				g.Go(func() error {
-					startTime := time.Now()
-					infraMessageShown := false
-
-					result, err := queryForIngestionStatusWithTimeout(ctx, platformUrl, tenantName, ssau.docRef, accessToken, workspace, func() {
-						// This callback is called during polling if 1 minute has passed
-						if !infraMessageShown && time.Since(startTime) >= time.Minute {
-							infraMessageShown = true
-							resultsMutex.Lock()
-							results[i].userMessage = "Infra spinning up..."
-							resultsMutex.Unlock()
+					result, err := queryForIngestionStatusWithTimeout(ctx, platformUrl, tenantName, ssau.docRef, accessToken, workspace, func(statusItem *IngestionStatusItem) {
+						// Update results with interim status changes (started, processing, etc.)
+						resultsMutex.Lock()
+						results[i] = ingestionResult{
+							docRef:       ssau.docRef,
+							documentName: statusItem.DocumentName,
+							status:       statusItem.StatusMeta.Status,
+							userMessage:  statusItem.StatusMeta.UserMessage,
 						}
+						// Print live status update (truncate docRef for readability)
+						shortDocRef := ssau.docRef
+						if len(shortDocRef) > 20 {
+							shortDocRef = shortDocRef[:20] + "..."
+						}
+						fmt.Fprintf(os.Stderr, "[%s] %s - %s\n", shortDocRef, statusItem.StatusMeta.Status, statusItem.StatusMeta.UserMessage)
+						resultsMutex.Unlock()
 					})
 
 					resultsMutex.Lock()
@@ -649,12 +647,13 @@ func makePicoRequest(ctx context.Context, client *http.Client, accessToken, tena
 
 // queryForIngestionStatusWithTimeout polls the ingestion status endpoint with a callback for timeout tracking
 // The callback is called periodically to allow status message updates based on elapsed time
-func queryForIngestionStatusWithTimeout(ctx context.Context, platformUrl, tenantName, docRef, accessToken, workspace string, timeoutCallback func()) (*IngestionStatusItem, error) {
+func queryForIngestionStatusWithTimeout(ctx context.Context, platformUrl, tenantName, docRef, accessToken, workspace string, statusCallback func(*IngestionStatusItem)) (*IngestionStatusItem, error) {
 	maxAttempts := 450 // 450 attempts * 2 seconds = 15 minutes max
 	attempt := 0
 	sleepDuration := 2 * time.Second
 
 	client := &http.Client{Timeout: 10 * time.Second}
+	var lastStatus string
 
 	for attempt < maxAttempts {
 		// Check if context is cancelled
@@ -662,11 +661,6 @@ func queryForIngestionStatusWithTimeout(ctx context.Context, platformUrl, tenant
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
-		}
-
-		// Call the timeout callback to check if status message needs updating
-		if timeoutCallback != nil {
-			timeoutCallback()
 		}
 
 		attempt++
@@ -709,14 +703,19 @@ func queryForIngestionStatusWithTimeout(ctx context.Context, platformUrl, tenant
 			if len(results) > 0 {
 				status := results[0].StatusMeta.Status
 
+				// Call callback if status changed to update display
+				if statusCallback != nil && status != lastStatus {
+					statusCallback(&results[0])
+					lastStatus = status
+				}
+
+				// Check if we've reached a terminal state (success or failed)
+				// For "started" and "processing", continue polling
 				switch status {
-				case "success":
+				case "success", "failed":
 					return &results[0], nil
-				case "failed":
-					userMsg := results[0].StatusMeta.UserMessage
-					return nil, fmt.Errorf("ingestion failed: %s", userMsg)
 				default:
-					// Still processing, continue polling
+					// Still in progress (started, processing, or unknown), continue polling
 				}
 			}
 		}
