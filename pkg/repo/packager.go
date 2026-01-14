@@ -95,7 +95,8 @@ func createMeta(rev string, full bool) (*api.BundleMeta, error) {
 		remote = []byte{}
 	}
 
-	status, err := exec.Command("git", "status", "--porcelain").Output()
+	// Use "-- ." to scope git status to the current directory (for subdirectory scans)
+	status, err := exec.Command("git", "status", "--porcelain", "--", ".").Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run git status: %w", err)
 	}

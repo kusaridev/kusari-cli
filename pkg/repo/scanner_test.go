@@ -73,7 +73,7 @@ func TestScan_ArchiveFormat(t *testing.T) {
 		}
 
 		// Run the scan with dependencies injection
-		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, full, "markdown", mock)
+		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, full, "markdown", false, mock)
 		require.NoError(t, err)
 
 		// Verify upload was called
@@ -407,7 +407,7 @@ func TestDetectMonoRepo(t *testing.T) {
 			}
 
 			// Run detection
-			isMonoRepo, indicators, err := detectMonoRepo(testDir)
+			isMonoRepo, indicators, _, err := detectMonoRepo(testDir)
 			require.NoError(t, err)
 
 			// Verify results
@@ -475,7 +475,7 @@ func TestMonoRepoCheck_OnlyForRiskCheck(t *testing.T) {
 
 	t.Run("diff scan should succeed on monorepo", func(t *testing.T) {
 		// Diff scan (full=false) should succeed even with monorepo
-		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, false, "markdown", mock)
+		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, false, "markdown", false, mock)
 		assert.NoError(t, err, "diff scan should succeed on monorepo")
 	})
 
@@ -483,7 +483,7 @@ func TestMonoRepoCheck_OnlyForRiskCheck(t *testing.T) {
 		// Risk check (full=true) should detect monorepo and exit
 		// Since the code calls os.Exit(1), we can't directly test this in a unit test
 		// Instead, we verify that detectMonoRepo correctly identifies it
-		isMonoRepo, indicators, err := detectMonoRepo(testDir)
+		isMonoRepo, indicators, _, err := detectMonoRepo(testDir)
 		require.NoError(t, err)
 		assert.True(t, isMonoRepo, "should detect monorepo")
 		assert.Contains(t, indicators, "monorepo config: lerna.json", "should detect lerna.json")
