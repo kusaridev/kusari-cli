@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
@@ -43,12 +44,12 @@ var (
 )
 
 func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, nil)
+	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, false, nil)
 }
 
-func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
+func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool, scanSubprojects bool) error {
 	// default to outputformat "markdown" for now for risk check as it will link to console
-	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", nil)
+	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", scanSubprojects, nil)
 }
 
 // scanMock facilitates use of mock values for testing
@@ -60,7 +61,7 @@ type scanMock struct {
 }
 
 func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, full bool, outputFormat string,
-	mock *scanMock) error {
+	scanSubprojects bool, mock *scanMock) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
 		fmt.Fprintf(os.Stderr, " rev: %s\n", rev)
@@ -69,32 +70,84 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		fmt.Fprintf(os.Stderr, " outputFormat: %s\n", outputFormat)
 	}
 
-	// Check to see if the directory has a .git directory. If it does not, it is not the root of
-	// the repo and the scan will probably fail during analysis.
-	_, err := os.Stat(filepath.Join(dir, ".git"))
-	if os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "No .git directory found in %s\n  Directory must be root of repo\n", dir)
+	// Verify the directory is within a git repository
+	gitRootCmd := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel")
+	gitRootBytes, err := gitRootCmd.Output()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Directory %s is not within a git repository\n", dir)
 		os.Exit(1)
 	}
+	gitRoot := strings.TrimSpace(string(gitRootBytes))
 
-	// Check if this is a monorepo - only for risk checks (full scans)
-	// Diff scans can work fine on monorepos since they're analyzing changes
-	if full {
-		isMonoRepo, indicators, err := detectMonoRepo(dir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Error checking for monorepo: %v\n", err)
+	// Determine if we're scanning a subdirectory of the git repo
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+	isSubdirectory := absDir != gitRoot
+
+	// Check if this is a monorepo - only for risk checks (full scans) at the repo root
+	// Skip monorepo detection if user explicitly specified a subdirectory
+	if full && !isSubdirectory {
+		isMonoRepo, indicators, subprojects, detectErr := detectMonoRepo(dir)
+		if detectErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Error checking for monorepo: %v\n", detectErr)
 		}
 		if isMonoRepo {
+			// If --scan-subprojects flag is set, scan each subproject
+			if scanSubprojects && len(subprojects) > 0 {
+				fmt.Fprintf(os.Stderr, "Monorepo detected. Scanning %d subprojects...\n\n", len(subprojects))
+
+				// Convert all subproject paths to absolute paths before scanning
+				// This is necessary because scan() changes the working directory,
+				// which would break relative paths for subsequent subprojects
+				var absSubprojects []string
+				for _, sp := range subprojects {
+					absSp, absErr := filepath.Abs(sp)
+					if absErr != nil {
+						fmt.Fprintf(os.Stderr, "Warning: Failed to get absolute path for %s: %v\n", sp, absErr)
+						continue
+					}
+					absSubprojects = append(absSubprojects, absSp)
+				}
+
+				var scanErrors []string
+				for _, subproject := range absSubprojects {
+					fmt.Fprintf(os.Stderr, "=== Scanning: %s ===\n", subproject)
+					subErr := scan(subproject, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", false, mock)
+					if subErr != nil {
+						scanErrors = append(scanErrors, fmt.Sprintf("%s: %v", subproject, subErr))
+						fmt.Fprintf(os.Stderr, "Warning: Failed to scan %s: %v\n\n", subproject, subErr)
+					} else {
+						fmt.Fprintf(os.Stderr, "\n")
+					}
+				}
+				if len(scanErrors) > 0 {
+					return fmt.Errorf("some subprojects failed to scan: %v", scanErrors)
+				}
+				return nil
+			}
+
+			// Otherwise show error with guidance
 			fmt.Fprintf(os.Stderr, "Error: Monorepo detected in %s\n", dir)
 			fmt.Fprintf(os.Stderr, "\nMonorepo indicators found:\n")
 			for _, indicator := range indicators {
 				fmt.Fprintf(os.Stderr, "  - %s\n", indicator)
 			}
 			fmt.Fprintf(os.Stderr, "\nKusari Inspector works best when analyzing individual repositories.\n")
-			fmt.Fprintf(os.Stderr, "Please run risk-check on each sub-project directory separately.\n")
-			fmt.Fprintf(os.Stderr, "\nFor example:\n")
-			fmt.Fprintf(os.Stderr, "  kusari repo risk-check ./packages/project1\n")
-			fmt.Fprintf(os.Stderr, "  kusari repo risk-check ./packages/project2\n")
+			fmt.Fprintf(os.Stderr, "You can either:\n")
+			fmt.Fprintf(os.Stderr, "  1. Use --scan-subprojects to automatically scan all detected subprojects\n")
+			fmt.Fprintf(os.Stderr, "  2. Run risk-check on each sub-project directory separately\n")
+			if len(subprojects) > 0 {
+				fmt.Fprintf(os.Stderr, "\nDetected subprojects:\n")
+				for _, sp := range subprojects {
+					fmt.Fprintf(os.Stderr, "  kusari repo risk-check %s\n", sp)
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "\nFor example:\n")
+				fmt.Fprintf(os.Stderr, "  kusari repo risk-check ./packages/project1\n")
+				fmt.Fprintf(os.Stderr, "  kusari repo risk-check ./packages/project2\n")
+			}
 			os.Exit(1)
 		}
 	}
@@ -423,9 +476,10 @@ func validateDirectory(path string) error {
 }
 
 // detectMonoRepo checks if the directory appears to be a monorepo based on Kusari-relevant dependency files
-// Returns true if monorepo indicators are found, along with detected patterns
-func detectMonoRepo(path string) (bool, []string, error) {
+// Returns true if monorepo indicators are found, along with detected patterns and subproject paths
+func detectMonoRepo(path string) (bool, []string, []string, error) {
 	var indicators []string
+	subprojectDirs := make(map[string]bool) // Use map to dedupe
 
 	// Check for common monorepo configuration files in root
 	monoRepoConfigFiles := []string{
@@ -554,6 +608,9 @@ func detectMonoRepo(path string) (bool, []string, error) {
 					manifestCounts[manifest]++
 					manifestLocations[manifest] = append(manifestLocations[manifest], relPath)
 					totalManifests++
+					// Track the directory containing this manifest as a subproject
+					subprojectDir := filepath.Join(path, filepath.Dir(relPath))
+					subprojectDirs[subprojectDir] = true
 				}
 			}
 		}
@@ -561,7 +618,7 @@ func detectMonoRepo(path string) (bool, []string, error) {
 	})
 
 	if err != nil {
-		return false, nil, err
+		return false, nil, nil, err
 	}
 
 	// Report which manifests were found multiple times (same type)
@@ -580,7 +637,14 @@ func detectMonoRepo(path string) (bool, []string, error) {
 		indicators = append(indicators, fmt.Sprintf("multiple project types detected: %s", strings.Join(types, ", ")))
 	}
 
-	return len(indicators) > 0, indicators, nil
+	// Convert subproject dirs map to sorted slice
+	var subprojects []string
+	for dir := range subprojectDirs {
+		subprojects = append(subprojects, dir)
+	}
+	slices.Sort(subprojects)
+
+	return len(indicators) > 0, indicators, subprojects, nil
 }
 
 func removeImageLines(content string) string {
