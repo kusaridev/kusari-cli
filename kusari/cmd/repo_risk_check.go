@@ -24,10 +24,12 @@ func riskcheck() *cobra.Command {
 	return riskcheckcmd
 }
 
+// Coming soon (renovation in progress)
 var riskcheckcmd = &cobra.Command{
 	Use:   "risk-check <directory>",
 	Short: "Risk-check a repo with Kusari Inspector",
 	Long: `Submit the directory for summary analysis in Kusari Inspector.
     <directory>  A directory containing a git repository to analyze`,
-	Args: cobra.ExactArgs(1),
+	Args:   cobra.ExactArgs(1),
+	Hidden: true,
 }
