@@ -137,6 +137,9 @@ Console](https://console.us.kusari.cloud/analysis/cli).
 
 ### `kusari repo risk-check`
 
+Analyze a repository's overall security posture (Coming soon!)
+
+<!-- 
 Scans a repository for risks using [Kusari
 Inspector](https://www.kusari.dev/inspector). This does a risk check on
 the full repository.  Usage:
@@ -157,4 +160,4 @@ kusari repo risk-check ~/git/guac
 Will perform a risk check on my full `~/git/guac` repository.
 
 Kusari Inspector results will be stored and displayed in the [Kusari
-Console](https://console.us.kusari.cloud/analysis/cli).
+Console](https://console.us.kusari.cloud/analysis/cli). -->
