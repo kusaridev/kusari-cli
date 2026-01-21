@@ -11,8 +11,8 @@ func Auth() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "auth",
-		Short: "auth things",
-		Long:  "do auth things",
+		Short: "Authentication operations",
+		Long:  "Authenticate to Kusari and select Kusari workspace/tenant",
 	}
 
 	cmd.AddCommand(login())
