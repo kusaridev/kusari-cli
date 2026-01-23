@@ -58,7 +58,7 @@ func login() *cobra.Command {
 		redirectPort := port.GenerateRandomPortOrDefault()
 		redirectUrl := fmt.Sprintf("http://localhost:%s/callback", redirectPort)
 
-		return l.Login(cmd.Context(), effectiveClientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, platformUrl, verbose)
+		return l.Login(cmd.Context(), effectiveClientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, platformUrl, verbose, useSso)
 	}
 
 	return logincmd
