@@ -16,7 +16,7 @@ import (
 	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
 )
 
-func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, platformUrl string, verbose bool) error {
+func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, platformUrl string, verbose bool, useSso bool) error {
 	// Store authEndpoint for workspace validation
 	currentAuthEndpoint := authEndpoint
 	if verbose {
@@ -117,6 +117,9 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 			if parseErr == nil {
 				query := parsedURL.Query()
 				query.Set("workspaceId", selectedWorkspace.ID)
+				if useSso {
+					query.Set("sso", "saml")
+				}
 				parsedURL.RawQuery = query.Encode()
 
 				fmt.Println("\nOpening console in your browser...")
