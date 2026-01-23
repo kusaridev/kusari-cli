@@ -1,0 +1,9 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/kusaridev/kusari-cli/vex/2025-01-23",
+  "author": "Kusari Security Team",
+  "timestamp": "2025-01-23T00:00:00Z",
+  "version": 1,
+  "tooling": "manual",
+  "statements": []
+}
