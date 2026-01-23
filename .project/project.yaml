@@ -1,0 +1,29 @@
+# .project/project.yaml - CNCF Project Configuration
+# https://github.com/cncf/automation/tree/main/utilities/dot-project
+# 
+# This file contains standard CNCF .project fields.
+# Extension fields are in separate files (darnit.yaml, etc.)
+
+name: kusari-cli
+description: ''
+schema_version: '1.0'
+type: software
+maturity_log: []
+repositories: []
+social: {}
+mailing_lists: []
+security:
+  policy:
+    path: .github/ISSUE_TEMPLATE/bug_report.md
+governance:
+  codeowners:
+    path: CODEOWNERS
+  maintainers:
+    path: GOVERNANCE.md
+legal:
+  contributor_agreement:
+    path: CONTRIBUTING.md
+documentation:
+  support:
+    path: SUPPORT.md
+audits: []

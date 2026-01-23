@@ -1,0 +1,13 @@
+  {
+    "mcpServers": {
+      "openssf-baseline": {
+        "command": "uv",
+        "args": [
+          "run",
+          "--directory", "/Users/mlieberman/Projects/baseline-mcp",
+          "darnit", "serve",
+          "packages/darnit-baseline/openssf-baseline.toml"
+        ]
+      }
+    }
+  }

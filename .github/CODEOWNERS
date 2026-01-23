@@ -1,0 +1,14 @@
+# CODEOWNERS - Defines code ownership for review requirements
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global ownership - default reviewers for all files
+* @BWhitfield @mlieberman85 @pxp928 @sunnyyip @trmiller
+
+# Examples - customize based on your project structure:
+# /docs/       @BWhitfield
+# /src/        @BWhitfield @mlieberman85 @pxp928 @sunnyyip @trmiller
+# *.md         @BWhitfield
+
+# Security-sensitive files should have explicit owners:
+# /security/   @BWhitfield @mlieberman85 @pxp928 @sunnyyip @trmiller
+# SECURITY.md  @BWhitfield @mlieberman85 @pxp928 @sunnyyip @trmiller

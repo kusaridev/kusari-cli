@@ -1,0 +1,7 @@
+# .project/darnit.yaml - Darnit Extension
+# 
+# Extension fields for security tooling (OpenSSF Baseline, etc.)
+# Standard CNCF .project fields are in project.yaml
+
+version: '1.0'
+controls: {}
