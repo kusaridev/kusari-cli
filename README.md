@@ -49,6 +49,15 @@ kusari auth login --client-secret <secret> --client-id <id>
 In CI/CD mode, the first available workspace is automatically selected without
 prompting, ensuring non-interactive execution.
 
+**SSO Login (SAML authentication):**
+```bash
+kusari auth login --use-sso
+```
+
+Use the `--use-sso` flag to authenticate with your organization's SSO (SAML)
+identity provider. This redirects you to your corporate login page and opens
+the Kusari console with SSO parameters after successful authentication.
+
 **Workspace Storage:**
 Your selected workspace is stored in `$HOME/.kusari/workspace.json` and is tied
 to your current platform and authentication endpoint. If you switch environments
