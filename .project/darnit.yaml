@@ -1,7 +1,15 @@
 # .project/darnit.yaml - Darnit Extension
-# 
+#
 # Extension fields for security tooling (OpenSSF Baseline, etc.)
 # Standard CNCF .project fields are in project.yaml
 
 version: '1.0'
-controls: {}
+controls:
+  OSPS-BR-01.02:
+    status: override
+    reason: |
+      False positive. The github.ref_name is used in an env: block which
+      passes the value as an environment variable, not directly in shell.
+      The shell script uses ${REF_NAME} (the env var) which is the
+      recommended secure pattern per GitHub security hardening guide.
+      Additionally, the value is sanitized with sed before use.
