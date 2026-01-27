@@ -1,0 +1,9 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/kusaridev/kusari-cli/vex",
+  "author": "Kusari Security Team",
+  "timestamp": "2026-01-27T00:00:00Z",
+  "version": 1,
+  "tooling": "OpenSSF Baseline",
+  "statements": []
+}
