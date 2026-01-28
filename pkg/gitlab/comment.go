@@ -262,6 +262,14 @@ func postCodeMitigationComments(analysis *api.SecurityAnalysis, opts CommentOpti
 		// Check if we already have a comment at this location
 		existingDiscussionID, existingNoteID := findExistingInlineComment(existingDiscussions, issue.Path, issue.LineNumber)
 
+		if opts.Verbose {
+			if existingDiscussionID != "" && existingNoteID > 0 {
+				fmt.Fprintf(os.Stderr, "Found existing inline comment at %s:%d (discussion: %s, note: %d)\n", issue.Path, issue.LineNumber, existingDiscussionID, existingNoteID)
+			} else {
+				fmt.Fprintf(os.Stderr, "No existing inline comment found at %s:%d\n", issue.Path, issue.LineNumber)
+			}
+		}
+
 		if existingDiscussionID != "" && existingNoteID > 0 {
 			// Update existing comment
 			if opts.Verbose {
@@ -392,15 +400,23 @@ func listMRDiscussions(apiURL, projectID, mrIID, token string) ([]discussion, er
 // findExistingInlineComment finds an existing Kusari inline comment at the given location
 // Returns the discussion ID and note ID if found, empty string and 0 otherwise
 func findExistingInlineComment(discussions []discussion, path string, line int) (string, int) {
+	sanitizedPath := sanitizePath(path)
+
 	for _, d := range discussions {
-		for _, note := range d.Notes {
-			// Check if this is a Kusari comment at the same location
-			if note.Position != nil &&
-				note.Position.NewPath == sanitizePath(path) &&
-				note.Position.NewLine == line &&
-				strings.Contains(note.Body, "Kusari") {
-				return d.ID, note.ID
-			}
+		// Only check the first note in each discussion (the one that created the thread)
+		// Replies don't have position data
+		if len(d.Notes) == 0 {
+			continue
+		}
+
+		firstNote := d.Notes[0]
+
+		// Check if this is a Kusari comment at the same location
+		if firstNote.Position != nil &&
+			firstNote.Position.NewPath == sanitizedPath &&
+			firstNote.Position.NewLine == line &&
+			strings.Contains(firstNote.Body, "Kusari") {
+			return d.ID, firstNote.ID
 		}
 	}
 	return "", 0
