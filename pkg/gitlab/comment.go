@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -95,8 +96,16 @@ func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*CommentR
 
 	// Check for existing Kusari summary comment and update if found
 	existingNoteID, err := findExistingKusariNote(apiURL, opts.ProjectID, opts.MergeReqIID, opts.Token)
-	if err != nil && opts.Verbose {
-		fmt.Fprintf(os.Stderr, "Warning: Could not check for existing comments: %v\n", err)
+	if err != nil {
+		if opts.Verbose {
+			fmt.Fprintf(os.Stderr, "Warning: Could not check for existing comments: %v\n", err)
+		}
+	} else if opts.Verbose {
+		if existingNoteID > 0 {
+			fmt.Fprintf(os.Stderr, "Found existing Kusari summary comment (note ID: %d)\n", existingNoteID)
+		} else {
+			fmt.Fprintf(os.Stderr, "No existing Kusari summary comment found\n")
+		}
 	}
 
 	if existingNoteID > 0 {
@@ -157,41 +166,81 @@ type mrNote struct {
 	Body string `json:"body"`
 }
 
-// findExistingKusariNote finds an existing Kusari summary comment on the MR
-func findExistingKusariNote(apiURL, projectID, mrIID, token string) (int, error) {
+// listMRNotes retrieves all notes on a merge request
+func listMRNotes(apiURL, projectID, mrIID, token string) ([]mrNote, error) {
 	endpoint := fmt.Sprintf("%s/projects/%s/merge_requests/%s/notes", apiURL, projectID, mrIID)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("PRIVATE-TOKEN", token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("GitLab API returned status %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("GitLab API returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var notes []mrNote
 	if err := json.NewDecoder(resp.Body).Decode(&notes); err != nil {
-		return 0, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// Look for existing Kusari summary comment (check multiple markers for compatibility)
-	for _, note := range notes {
-		if strings.Contains(note.Body, "IGNORE_KUSARI_COMMENT") ||
-			strings.Contains(note.Body, "Kusari Analysis Results") ||
-			strings.Contains(note.Body, "Kusari Security Scan Results") {
+	return notes, nil
+}
+
+// findExistingKusariNote finds an existing Kusari summary comment on the MR
+func findExistingKusariNote(apiURL, projectID, mrIID, token string) (int, error) {
+	notes, err := listMRNotes(apiURL, projectID, mrIID, token)
+	if err != nil {
+		return 0, err
+	}
+
+	// Debug: log what we're searching through
+	verbose := os.Getenv("KUSARI_DEBUG") == "true"
+	if verbose {
+		fmt.Fprintf(os.Stderr, "DEBUG: Searching through %d notes for existing Kusari comment\n", len(notes))
+	}
+
+	// Look for existing Kusari summary comment by marker
+	// Check for primary marker first, then fall back to legacy text-based markers for backward compatibility
+	for i, note := range notes {
+		if verbose {
+			preview := note.Body
+			if len(preview) > 100 {
+				preview = preview[:100] + "..."
+			}
+			fmt.Fprintf(os.Stderr, "DEBUG: Note %d (ID %d): %s\n", i, note.ID, preview)
+		}
+
+		// Primary marker (consistent with GitHub implementation)
+		if strings.Contains(note.Body, "IGNORE_KUSARI_COMMENT") {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "DEBUG: Found match at note ID %d via IGNORE_KUSARI_COMMENT marker\n", note.ID)
+			}
 			return note.ID, nil
 		}
+
+		// Legacy text-based markers for backward compatibility with old comments
+		if strings.Contains(note.Body, "Kusari Analysis Results") ||
+			strings.Contains(note.Body, "Kusari Security Scan Results") {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "DEBUG: Found match at note ID %d via legacy text marker\n", note.ID)
+			}
+			return note.ID, nil
+		}
+	}
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "DEBUG: No existing Kusari note found\n")
 	}
 
 	return 0, nil
@@ -238,13 +287,14 @@ func postCodeMitigationComments(analysis *api.SecurityAnalysis, opts CommentOpti
 		return 0, fmt.Errorf("failed to get MR diff refs: %w", err)
 	}
 
-	// Get existing discussions to check for updates
-	existingDiscussions, err := listMRDiscussions(apiURL, opts.ProjectID, opts.MergeReqIID, opts.Token)
+	// Get existing notes to check for updates
+	// Inline diff comments are returned by the Notes API, not the Discussions API
+	existingNotes, err := listMRNotes(apiURL, opts.ProjectID, opts.MergeReqIID, opts.Token)
 	if err != nil {
 		if opts.Verbose {
-			fmt.Fprintf(os.Stderr, "Warning: Could not list existing discussions: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: Could not list existing notes: %v\n", err)
 		}
-		existingDiscussions = nil
+		existingNotes = nil
 	}
 
 	posted := 0
@@ -260,22 +310,22 @@ func postCodeMitigationComments(analysis *api.SecurityAnalysis, opts CommentOpti
 		message := formatInlineComment(issue)
 
 		// Check if we already have a comment at this location
-		existingDiscussionID, existingNoteID := findExistingInlineComment(existingDiscussions, issue.Path, issue.LineNumber)
+		existingNoteID := findExistingInlineCommentInNotes(existingNotes, issue.Path, issue.LineNumber)
 
 		if opts.Verbose {
-			if existingDiscussionID != "" && existingNoteID > 0 {
-				fmt.Fprintf(os.Stderr, "Found existing inline comment at %s:%d (discussion: %s, note: %d)\n", issue.Path, issue.LineNumber, existingDiscussionID, existingNoteID)
+			if existingNoteID > 0 {
+				fmt.Fprintf(os.Stderr, "Found existing inline comment at %s:%d (note: %d)\n", issue.Path, issue.LineNumber, existingNoteID)
 			} else {
 				fmt.Fprintf(os.Stderr, "No existing inline comment found at %s:%d\n", issue.Path, issue.LineNumber)
 			}
 		}
 
-		if existingDiscussionID != "" && existingNoteID > 0 {
+		if existingNoteID > 0 {
 			// Update existing comment
 			if opts.Verbose {
 				fmt.Fprintf(os.Stderr, "Updating inline comment at %s:%d\n", issue.Path, issue.LineNumber)
 			}
-			err := updateDiscussionNote(apiURL, opts.ProjectID, opts.MergeReqIID, existingDiscussionID, existingNoteID, opts.Token, message)
+			err := updateNote(apiURL, opts.ProjectID, opts.MergeReqIID, existingNoteID, opts.Token, message)
 			if err != nil {
 				lastErr = err
 				if opts.Verbose {
@@ -304,6 +354,7 @@ func postCodeMitigationComments(analysis *api.SecurityAnalysis, opts CommentOpti
 }
 
 // formatInlineComment creates the message for an inline code comment
+// Includes a hidden marker for duplicate detection that survives even when position data is lost
 func formatInlineComment(issue api.CodeMitigationItem) string {
 	var sb strings.Builder
 
@@ -315,6 +366,10 @@ func formatInlineComment(issue api.CodeMitigationItem) string {
 		sb.WriteString(issue.Code)
 		sb.WriteString("\n```")
 	}
+
+	// Add hidden marker for duplicate detection by path:line
+	// Format: <!-- KUSARI_INLINE:path:line -->
+	sb.WriteString(fmt.Sprintf("\n\n<!-- KUSARI_INLINE:%s:%d -->", issue.Path, issue.LineNumber))
 
 	return sb.String()
 }
@@ -355,8 +410,11 @@ type discussionNote struct {
 	ID       int    `json:"id"`
 	Body     string `json:"body"`
 	Position *struct {
-		NewPath string `json:"new_path"`
-		NewLine int    `json:"new_line"`
+		BaseSHA  string `json:"base_sha"`
+		HeadSHA  string `json:"head_sha"`
+		StartSHA string `json:"start_sha"`
+		NewPath  string `json:"new_path"`
+		NewLine  int    `json:"new_line"`
 	} `json:"position"`
 }
 
@@ -398,28 +456,142 @@ func listMRDiscussions(apiURL, projectID, mrIID, token string) ([]discussion, er
 }
 
 // findExistingInlineComment finds an existing Kusari inline comment at the given location
+// Since GitLab API doesn't reliably return position data (especially for outdated comments),
+// we parse the comment body looking for our hidden marker: <!-- KUSARI_INLINE:path:line -->
+// If found, we update it with new content regardless of what was there before
 // Returns the discussion ID and note ID if found, empty string and 0 otherwise
-func findExistingInlineComment(discussions []discussion, path string, line int) (string, int) {
+func findExistingInlineComment(discussions []discussion, path string, line int, currentDiffRefs *mrDiffRefs) (string, int) {
 	sanitizedPath := sanitizePath(path)
+	verbose := os.Getenv("KUSARI_DEBUG") == "true"
 
-	for _, d := range discussions {
+	if verbose {
+		fmt.Fprintf(os.Stderr, "DEBUG: Looking for inline comment at %s:%d (sanitized: %s)\n", path, line, sanitizedPath)
+		fmt.Fprintf(os.Stderr, "DEBUG: Searching through %d discussions\n", len(discussions))
+	}
+
+	// Regex to extract marker: <!-- KUSARI_INLINE:path:line -->
+	markerRegex := regexp.MustCompile(`<!-- KUSARI_INLINE:([^:]+):(\d+) -->`)
+
+	for i, d := range discussions {
 		// Only check the first note in each discussion (the one that created the thread)
-		// Replies don't have position data
 		if len(d.Notes) == 0 {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "DEBUG: Discussion %d: empty (no notes)\n", i)
+			}
 			continue
 		}
 
 		firstNote := d.Notes[0]
 
-		// Check if this is a Kusari comment at the same location
-		if firstNote.Position != nil &&
-			firstNote.Position.NewPath == sanitizedPath &&
-			firstNote.Position.NewLine == line &&
-			strings.Contains(firstNote.Body, "Kusari") {
+		if verbose {
+			bodyPreview := firstNote.Body
+			if len(bodyPreview) > 100 {
+				bodyPreview = bodyPreview[:100] + "..."
+			}
+			fmt.Fprintf(os.Stderr, "DEBUG: Discussion %d (ID %s, note ID %d): %s\n", i, d.ID, firstNote.ID, bodyPreview)
+		}
+
+		// Check if this is a Kusari inline comment by looking for the marker in the body
+		if !strings.Contains(firstNote.Body, "KUSARI_INLINE:") {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "DEBUG:   -> No KUSARI_INLINE marker found\n")
+			}
+			continue
+		}
+
+		matches := markerRegex.FindStringSubmatch(firstNote.Body)
+		if len(matches) != 3 {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "DEBUG:   -> Found KUSARI_INLINE marker but couldn't parse (matches: %d)\n", len(matches))
+			}
+			continue
+		}
+
+		commentPath := matches[1]
+		commentLine := matches[2]
+
+		if verbose {
+			fmt.Fprintf(os.Stderr, "DEBUG:   -> Found Kusari comment for %s:%s\n", commentPath, commentLine)
+		}
+
+		// Match by path and line number from the marker
+		if commentPath == sanitizedPath && commentLine == fmt.Sprintf("%d", line) {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "DEBUG: MATCH! Found existing inline comment via marker (discussion: %s, note: %d)\n", d.ID, firstNote.ID)
+			}
 			return d.ID, firstNote.ID
 		}
 	}
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "DEBUG: No existing inline comment found at %s:%d\n", path, line)
+	}
+
 	return "", 0
+}
+
+// findExistingInlineCommentInNotes finds an existing Kusari inline comment at the given location
+// by searching through the Notes API response. Inline diff comments created with position parameters
+// are returned by the Notes API but NOT by the Discussions API.
+// Returns the note ID if found, 0 otherwise
+func findExistingInlineCommentInNotes(notes []mrNote, path string, line int) int {
+	sanitizedPath := sanitizePath(path)
+	verbose := os.Getenv("KUSARI_DEBUG") == "true"
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "DEBUG: Looking for inline comment at %s:%d (sanitized: %s)\n", path, line, sanitizedPath)
+		fmt.Fprintf(os.Stderr, "DEBUG: Searching through %d notes\n", len(notes))
+	}
+
+	// Regex to extract marker: <!-- KUSARI_INLINE:path:line -->
+	markerRegex := regexp.MustCompile(`<!-- KUSARI_INLINE:([^:]+):(\d+) -->`)
+
+	for i, note := range notes {
+		if verbose {
+			bodyPreview := note.Body
+			if len(bodyPreview) > 100 {
+				bodyPreview = bodyPreview[:100] + "..."
+			}
+			fmt.Fprintf(os.Stderr, "DEBUG: Note %d (ID %d): %s\n", i, note.ID, bodyPreview)
+		}
+
+		// Check if this is a Kusari inline comment by looking for the marker in the body
+		if !strings.Contains(note.Body, "KUSARI_INLINE:") {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "DEBUG:   -> No KUSARI_INLINE marker found\n")
+			}
+			continue
+		}
+
+		matches := markerRegex.FindStringSubmatch(note.Body)
+		if len(matches) != 3 {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "DEBUG:   -> Found KUSARI_INLINE marker but couldn't parse (matches: %d)\n", len(matches))
+			}
+			continue
+		}
+
+		commentPath := matches[1]
+		commentLine := matches[2]
+
+		if verbose {
+			fmt.Fprintf(os.Stderr, "DEBUG:   -> Found Kusari comment for %s:%s\n", commentPath, commentLine)
+		}
+
+		// Match by path and line number from the marker
+		if commentPath == sanitizedPath && commentLine == fmt.Sprintf("%d", line) {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "DEBUG: MATCH! Found existing inline comment via marker (note: %d)\n", note.ID)
+			}
+			return note.ID
+		}
+	}
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "DEBUG: No existing inline comment found at %s:%d\n", path, line)
+	}
+
+	return 0
 }
 
 // updateDiscussionNote updates an existing note in a discussion

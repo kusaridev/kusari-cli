@@ -261,6 +261,12 @@ func TestFormatInlineComment(t *testing.T) {
 }
 
 func TestFindExistingInlineComment(t *testing.T) {
+	currentDiffRefs := &mrDiffRefs{
+		BaseSHA:  "base123",
+		HeadSHA:  "head456",
+		StartSHA: "start123",
+	}
+
 	discussions := []discussion{
 		{
 			ID: "abc123",
@@ -269,11 +275,17 @@ func TestFindExistingInlineComment(t *testing.T) {
 					ID:   1,
 					Body: "Some other comment",
 					Position: &struct {
-						NewPath string `json:"new_path"`
-						NewLine int    `json:"new_line"`
+						BaseSHA  string `json:"base_sha"`
+						HeadSHA  string `json:"head_sha"`
+						StartSHA string `json:"start_sha"`
+						NewPath  string `json:"new_path"`
+						NewLine  int    `json:"new_line"`
 					}{
-						NewPath: "src/main.go",
-						NewLine: 10,
+						BaseSHA:  "base123",
+						HeadSHA:  "head456",
+						StartSHA: "start123",
+						NewPath:  "src/main.go",
+						NewLine:  10,
 					},
 				},
 			},
@@ -283,13 +295,19 @@ func TestFindExistingInlineComment(t *testing.T) {
 			Notes: []discussionNote{
 				{
 					ID:   2,
-					Body: "🔒 **Kusari Security Issue**\n\nSQL injection",
+					Body: "🔒 **Kusari Security Issue**\n\nSQL injection\n\n<!-- KUSARI_INLINE:src/db.go:42 -->",
 					Position: &struct {
-						NewPath string `json:"new_path"`
-						NewLine int    `json:"new_line"`
+						BaseSHA  string `json:"base_sha"`
+						HeadSHA  string `json:"head_sha"`
+						StartSHA string `json:"start_sha"`
+						NewPath  string `json:"new_path"`
+						NewLine  int    `json:"new_line"`
 					}{
-						NewPath: "src/db.go",
-						NewLine: 42,
+						BaseSHA:  "base123",
+						HeadSHA:  "head456",
+						StartSHA: "start123",
+						NewPath:  "src/db.go",
+						NewLine:  42,
 					},
 				},
 			},
@@ -300,6 +318,28 @@ func TestFindExistingInlineComment(t *testing.T) {
 				{
 					ID:   3,
 					Body: "General discussion",
+				},
+			},
+		},
+		{
+			ID: "outdated123",
+			Notes: []discussionNote{
+				{
+					ID:   4,
+					Body: "🔒 **Kusari Security Issue**\n\nOld comment\n\n<!-- KUSARI_INLINE:src/db.go:100 -->",
+					Position: &struct {
+						BaseSHA  string `json:"base_sha"`
+						HeadSHA  string `json:"head_sha"`
+						StartSHA string `json:"start_sha"`
+						NewPath  string `json:"new_path"`
+						NewLine  int    `json:"new_line"`
+					}{
+						BaseSHA:  "oldbase",
+						HeadSHA:  "oldhead",
+						StartSHA: "oldstart",
+						NewPath:  "src/db.go",
+						NewLine:  100,
+					},
 				},
 			},
 		},
@@ -327,9 +367,16 @@ func TestFindExistingInlineComment(t *testing.T) {
 			expectedNoteID:       0,
 		},
 		{
-			name:                 "no Kusari comment - different line",
+			name:                 "find outdated Kusari comment (different SHA)",
 			path:                 "src/db.go",
 			line:                 100,
+			expectedDiscussionID: "outdated123",
+			expectedNoteID:       4,
+		},
+		{
+			name:                 "no Kusari comment - different line",
+			path:                 "src/db.go",
+			line:                 99,
 			expectedDiscussionID: "",
 			expectedNoteID:       0,
 		},
@@ -351,7 +398,7 @@ func TestFindExistingInlineComment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			discID, noteID := findExistingInlineComment(discussions, tt.path, tt.line)
+			discID, noteID := findExistingInlineComment(discussions, tt.path, tt.line, currentDiffRefs)
 			assert.Equal(t, tt.expectedDiscussionID, discID)
 			assert.Equal(t, tt.expectedNoteID, noteID)
 		})
@@ -655,7 +702,7 @@ func TestFindExistingKusariNote(t *testing.T) {
 		expectNoteID int
 	}{
 		{
-			name: "found kusari note with IGNORE marker",
+			name: "found kusari note with IGNORE_KUSARI_COMMENT marker",
 			responseBody: `[
 				{"id": 1, "body": "Some other comment"},
 				{"id": 2, "body": "#### Kusari Analysis Results:\n\nContent\n<!-- IGNORE_KUSARI_COMMENT -->"},
