@@ -5,7 +5,7 @@
 #
 # PUBLIC GITLAB.COM USAGE:
 #   include:
-#     - remote: 'https://raw.githubusercontent.com/kusaridev/kusari-cli/main/ci-templates/gitlab/kusari-scan.yml'
+#     - remote: 'https://raw.githubusercontent.com/kusaridev/kusari-cli/v0.17.9/ci-templates/gitlab/kusari-scan.yml'
 #
 # ENTERPRISE/SELF-HOSTED GITLAB USAGE:
 #   1. Mirror ghcr.io/kusaridev/kusari-cli to your internal container registry
@@ -40,7 +40,7 @@
 #   - KUSARI_POST_COMMENT: Set to "true" to post results as MR comment (default: "true")
 
 variables:
-  KUSARI_CLI_IMAGE: "ghcr.io/kusaridev/kusari-cli:latest"
+  KUSARI_CLI_IMAGE: "ghcr.io/kusaridev/kusari-cli@sha256:fef17565fc6922753af75036d28a65705d8e617e479f5fa5f5095f954ee9aaf3"
   KUSARI_FAIL_ON_ISSUES: "false"
   KUSARI_POST_COMMENT: "true"
 

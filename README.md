@@ -182,7 +182,7 @@ For easy integration, use the provided GitLab CI/CD template:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/kusaridev/kusari-cli/main/ci-templates/gitlab/kusari-scan.yml'
+  - remote: 'https://raw.githubusercontent.com/kusaridev/kusari-cli/v0.17.9/ci-templates/gitlab/kusari-scan.yml'
 ```
 
 **Setup Instructions:**
@@ -203,7 +203,7 @@ include:
 
 The template will automatically run on merge requests and post security findings as comments.
 
-For more details, see the [template documentation](https://github.com/kusaridev/kusari-cli/blob/main/ci-templates/gitlab/kusari-scan.yml).
+For more details, see the [template documentation](https://github.com/kusaridev/kusari-cli/blob/v0.17.9/ci-templates/gitlab/kusari-scan.yml).
 
 ### `kusari repo risk-check`
 
