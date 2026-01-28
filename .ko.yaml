@@ -1,0 +1,6 @@
+# ko build configuration
+# https://ko.build/configuration/
+
+# Use Chainguard's wolfi-base as the base image
+# This provides a minimal secure image with shell support needed for CI environments
+defaultBaseImage: cgr.dev/chainguard/wolfi-base:latest
