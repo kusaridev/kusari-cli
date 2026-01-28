@@ -1,0 +1,51 @@
+![Kusari Inspector](https://cdn.prod.website-files.com/645bae6cd3ac4d56631d637f/68a88788b10ca50fa44181d9_inspector-banner-dark.svg)
+
+#### Kusari Analysis Results:
+
+{{- if .FinalAnalysis.ShouldProceed }}
+![Proceed with these changes](https://cdn.prod.website-files.com/645bae6cd3ac4d56631d637f/68a887881020f4a81bb519cf_banner-DO-proceed-light.svg)
+
+**:white_check_mark: No Flagged Issues Detected**
+_All values appear to be within acceptable risk parameters._
+
+{{ .FinalAnalysis.Justification }}
+{{- else }}
+![Do not proceed without addressing issues](https://cdn.prod.website-files.com/645bae6cd3ac4d56631d637f/68a887883f2f1d183063b599_banner-do-NOT-proceed-light.svg)
+
+> **:warning: Flagged Issues Detected**
+> _These changes contain flagged issues that may introduce security risks._
+
+{{ .FinalAnalysis.Justification }}
+{{ end }}
+
+{{ if .ConsoleURL }}
+> **Note:** [View full detailed analysis result]({{ .ConsoleURL }}) for more information on the output and the checks that were run.
+
+{{ end }}
+
+{{ if not .FinalAnalysis.ShouldProceed -}}
+{{ if .FinalAnalysis.RequiredCodeMitigations -}}
+## Required Code Mitigations
+{{ range .FinalAnalysis.RequiredCodeMitigations }}
+### {{ .Content }}
+{{ if ne .LineNumber 0 }}- **Location:** {{ .Path }}:{{ .LineNumber }}{{ end }}
+{{ if .Code }}
+- **Potential Code Fix:**
+```
+{{ .Code }}
+```
+{{ end -}}
+{{ end -}}
+{{ end }}
+
+{{ if .FinalAnalysis.RequiredDependencyMitigations -}}
+## Required Dependency Mitigations
+{{ range .FinalAnalysis.RequiredDependencyMitigations -}}
+- {{ .Content }}
+{{ end -}}
+{{ end }}
+{{ end }}
+
+--------
+
+<!-- IGNORE_KUSARI_COMMENT -->
