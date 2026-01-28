@@ -22,11 +22,22 @@
 #   - KUSARI_CLIENT_ID: Your Kusari client ID
 #   - KUSARI_CLIENT_SECRET: Your Kusari client secret (mark as masked)
 #
+# REQUIRED FOR MR COMMENTS (choose one option):
+#   Option A - Use a GitLab Token (Recommended):
+#     1. Create a Project Access Token or Personal Access Token with 'api' scope
+#        (Settings > Access Tokens > Add new token > Select 'api' scope)
+#     2. Add the token as a CI/CD variable named GITLAB_TOKEN (mark as masked)
+#        (Settings > CI/CD > Variables > Add variable)
+#
+#   Option B - Enable CI_JOB_TOKEN API Access:
+#     1. Go to Settings > CI/CD > Token Access
+#     2. Enable "Allow CI job tokens from this project to access this project's API"
+#     Note: This option has more limited permissions and may not work in all scenarios
+#
 # OPTIONAL VARIABLES:
 #   - KUSARI_CLI_IMAGE: Override the default Kusari CLI image
 #   - KUSARI_FAIL_ON_ISSUES: Set to "true" to fail pipeline on security issues (default: "false")
 #   - KUSARI_POST_COMMENT: Set to "true" to post results as MR comment (default: "true")
-#   - GITLAB_TOKEN: Token for posting comments (defaults to CI_JOB_TOKEN)
 
 variables:
   KUSARI_CLI_IMAGE: "ghcr.io/kusaridev/kusari-cli:latest"
@@ -41,7 +52,7 @@ variables:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
   before_script:
-    - apk add --no-cache git jq
+    - apk add --no-cache git jq gnutar bzip2
   script:
     - git fetch origin ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}
     - kusari auth login --client-id="${KUSARI_CLIENT_ID}" --client-secret="${KUSARI_CLIENT_SECRET}"

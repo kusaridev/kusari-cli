@@ -360,18 +360,18 @@ func TestFindExistingInlineComment(t *testing.T) {
 
 func TestPostComment(t *testing.T) {
 	tests := []struct {
-		name           string
-		analysis       *api.SecurityAnalysis
-		expectPosted   bool
-		expectMessage  string
-		expectIssues   int
+		name          string
+		analysis      *api.SecurityAnalysis
+		expectPosted  bool
+		expectMessage string
+		expectIssues  int
 	}{
 		{
-			name:           "nil analysis",
-			analysis:       nil,
-			expectPosted:   false,
-			expectMessage:  "No analysis results available",
-			expectIssues:   0,
+			name:          "nil analysis",
+			analysis:      nil,
+			expectPosted:  false,
+			expectMessage: "No analysis results available",
+			expectIssues:  0,
 		},
 		{
 			name: "no issues",
