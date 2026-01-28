@@ -1,0 +1,80 @@
+# Kusari GitLab CI/CD Template
+#
+# This template provides automated security scanning for merge requests using Kusari Inspector.
+# It automatically posts scan results as comments on merge requests when issues are found.
+#
+# PUBLIC GITLAB.COM USAGE:
+#   include:
+#     - remote: 'https://raw.githubusercontent.com/kusaridev/kusari-cli/main/ci-templates/gitlab/kusari-scan.yml'
+#
+# ENTERPRISE/SELF-HOSTED GITLAB USAGE:
+#   1. Mirror ghcr.io/kusaridev/kusari-cli to your internal container registry
+#   2. Copy this file to your internal GitLab instance (e.g., gitlab.corp.com/platform/ci-templates)
+#   3. Update KUSARI_CLI_IMAGE variable to point to your internal registry
+#   4. Include in your projects:
+#
+#   include:
+#     - project: 'platform/ci-templates'
+#       ref: 'main'
+#       file: '/gitlab/kusari-scan.yml'
+#
+# REQUIRED CI/CD VARIABLES (set in GitLab project/group settings):
+#   - KUSARI_CLIENT_ID: Your Kusari client ID
+#   - KUSARI_CLIENT_SECRET: Your Kusari client secret (mark as masked)
+#
+# OPTIONAL VARIABLES:
+#   - KUSARI_CLI_IMAGE: Override the default Kusari CLI image
+#   - KUSARI_FAIL_ON_ISSUES: Set to "true" to fail pipeline on security issues (default: "false")
+#   - KUSARI_POST_COMMENT: Set to "true" to post results as MR comment (default: "true")
+#   - GITLAB_TOKEN: Token for posting comments (defaults to CI_JOB_TOKEN)
+
+variables:
+  KUSARI_CLI_IMAGE: "ghcr.io/kusaridev/kusari-cli:latest"
+  KUSARI_FAIL_ON_ISSUES: "false"
+  KUSARI_POST_COMMENT: "true"
+
+.kusari-scan:
+  image:
+    name: ${KUSARI_CLI_IMAGE}
+    entrypoint: [""]
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - git fetch origin ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}
+    - kusari auth login --client-id="${KUSARI_CLIENT_ID}" --client-secret="${KUSARI_CLIENT_SECRET}"
+    # Run scan with GitLab comment posting (if enabled)
+    # The --gitlab-comment flag will post results directly to the MR if issues are found
+    - |
+      GITLAB_COMMENT_FLAG=""
+      if [ "$KUSARI_POST_COMMENT" = "true" ]; then
+        GITLAB_COMMENT_FLAG="--gitlab-comment"
+      fi
+      kusari repo scan -w --output-format sarif $GITLAB_COMMENT_FLAG . origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} > kusari_results.sarif
+    - |
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo "KUSARI SECURITY SCAN RESULTS"
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo ""
+      COMMENT_BODY=$(jq -r '.runs[0].results[0].message.markdown // "No results found"' kusari_results.sarif)
+      SHOULD_PROCEED=$(jq -r '.runs[0].results[0].properties.should_proceed // "true"' kusari_results.sarif)
+      echo "$COMMENT_BODY"
+      echo ""
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    - |
+      SHOULD_PROCEED=$(jq -r '.runs[0].results[0].properties.should_proceed // "true"' kusari_results.sarif)
+      if [ "$KUSARI_FAIL_ON_ISSUES" = "true" ] && [ "$SHOULD_PROCEED" = "false" ]; then
+        echo "Security issues found - failing pipeline"
+        exit 1
+      fi
+  artifacts:
+    reports:
+      sast: kusari_results.sarif
+    paths:
+      - kusari_results.sarif
+    expire_in: 30 days
+    when: always
+
+kusari-repo-scan:
+  extends: .kusari-scan
+  allow_failure: true
