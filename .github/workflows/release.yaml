@@ -45,7 +45,7 @@ jobs:
         uses: ko-build/setup-ko@d006021bd0c28d1ce33a07e7943d48b079944c8d # v0.9
 
       - name: Build and publish image with ko (non-release)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      #  if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: |
           ko build ./kusari --bare \
             --platform=linux/amd64,linux/arm64 \
@@ -90,28 +90,28 @@ jobs:
       # Generate image SBOM
       - uses: anchore/sbom-action@deef08a0db64bfad603422135db61477b16cef56 # v0.22.1
         name: Generate image SBOM
-        if: startsWith(github.ref, 'refs/tags/')
+        #if: startsWith(github.ref, 'refs/tags/')
         with:
-          image: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          image: ghcr.io/${{ github.repository }}:latest
           output-file: 'cyclonedx.sbom.json'
           format: cyclonedx-json
 
       # Download cyclonedx-gomod
       - name: Download cyclonedx-gomod
-        if: startsWith(github.ref, 'refs/tags/')
+  #      if: startsWith(github.ref, 'refs/tags/')
         uses: CycloneDX/gh-gomod-generate-sbom@efc74245d6802c8cefd925620515442756c70d8f # v2.0.0
         with:
           version: v1
 
       - name: Generate CycloneDX Build SBOM
-        if: startsWith(github.ref, 'refs/tags/')
+     #   if: startsWith(github.ref, 'refs/tags/')
         run: |
           cyclonedx-gomod app -licenses -json -output cyclonedx_build.json -main ./kusari
 
       # Ingest image SBOM
       - uses: kusaridev/kusari-ingest@de5ea549676f1b93fa1a105cf517d38165c68086 #v2.0.6
         name: Kusari ingestion for image SBOM
-        if: startsWith(github.ref, 'refs/tags/')
+    #    if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
         with:
           file-path: 'cyclonedx.sbom.json'
@@ -124,7 +124,7 @@ jobs:
       # Ingest build SBOM
       - uses: kusaridev/kusari-ingest@de5ea549676f1b93fa1a105cf517d38165c68086 #v2.0.6
         name: Kusari ingestion for build SBOM
-        if: startsWith(github.ref, 'refs/tags/')
+     #   if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
         with:
           file-path: 'cyclonedx_build.json'
