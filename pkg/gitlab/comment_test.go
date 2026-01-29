@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kusaridev/kusari-cli/api"
+	"github.com/kusaridev/kusari-cli/pkg/comment"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,7 +85,7 @@ func TestCheckForIssues(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hasIssues, count := checkForIssues(tt.analysis)
+			hasIssues, count := comment.CheckForIssues(tt.analysis)
 			assert.Equal(t, tt.expectHasIssues, hasIssues)
 			assert.Equal(t, tt.expectCount, count)
 		})
@@ -126,7 +127,7 @@ func TestSanitizePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizePath(tt.input)
+			result := comment.SanitizePath(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -205,7 +206,7 @@ func TestFormatComment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatComment(tt.analysis, tt.consoleURL)
+			result := comment.FormatComment(tt.analysis, tt.consoleURL)
 
 			for _, expected := range tt.expectedContains {
 				assert.Contains(t, result, expected)
@@ -252,7 +253,7 @@ func TestFormatInlineComment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatInlineComment(tt.issue)
+			result := comment.FormatInlineComment(tt.issue)
 			for _, expected := range tt.expectedContains {
 				assert.Contains(t, result, expected)
 			}

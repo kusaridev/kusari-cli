@@ -160,10 +160,10 @@ The SARIF format integrates with GitLab's Security Dashboard when used as a CI a
 
 #### GitLab Integration
 
-The `kusari repo scan` command supports automatic posting of scan results as comments on GitLab merge requests using the `--gitlab-comment` flag:
+The `kusari repo scan` command supports automatic posting of scan results as comments on GitLab merge requests using the `--comment` flag:
 
 ```bash
-kusari repo scan --gitlab-comment . origin/main
+kusari repo scan --comment gitlab . origin/main
 ```
 
 When enabled in a GitLab CI environment, this will:

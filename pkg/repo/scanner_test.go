@@ -73,7 +73,7 @@ func TestScan_ArchiveFormat(t *testing.T) {
 		}
 
 		// Run the scan with dependencies injection
-		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, full, "markdown", false, mock)
+		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, full, "markdown", "", mock)
 		require.NoError(t, err)
 
 		// Verify upload was called
@@ -475,7 +475,7 @@ func TestMonoRepoCheck_OnlyForRiskCheck(t *testing.T) {
 
 	t.Run("diff scan should succeed on monorepo", func(t *testing.T) {
 		// Diff scan (full=false) should succeed even with monorepo
-		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, false, "markdown", false, mock)
+		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, false, "markdown", "", mock)
 		assert.NoError(t, err, "diff scan should succeed on monorepo")
 	})
 

@@ -5,7 +5,6 @@ package gitlab
 
 import (
 	"bytes"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,20 +12,11 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/kusaridev/kusari-cli/api"
+	"github.com/kusaridev/kusari-cli/pkg/comment"
 )
-
-//go:embed templates/analysisComment.tmpl
-var templateFS embed.FS
-
-// analysisCommentData holds the data for the analysis comment template
-type analysisCommentData struct {
-	FinalAnalysis *api.SecurityAnalysis
-	ConsoleURL    string
-}
 
 const (
 	defaultGitLabAPIURL = "https://gitlab.com/api/v4"
@@ -42,13 +32,6 @@ type CommentOptions struct {
 	Verbose     bool
 }
 
-// CommentResult holds the result of posting a comment
-type CommentResult struct {
-	Posted               bool
-	IssuesFound          int
-	InlineCommentsPosted int
-	Message              string
-}
 
 // mrDiffRefs holds the SHA references needed for inline comments
 type mrDiffRefs struct {
@@ -65,9 +48,9 @@ type mrInfo struct {
 // PostComment posts scan results as a comment to a GitLab merge request
 // Returns without posting if no issues are found (ShouldProceed is true and no mitigations)
 // If an existing Kusari comment exists, it will be updated instead of creating a new one
-func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*CommentResult, error) {
+func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*comment.CommentResult, error) {
 	if analysis == nil {
-		return &CommentResult{
+		return &comment.CommentResult{
 			Posted:      false,
 			IssuesFound: 0,
 			Message:     "No analysis results available - skipping comment",
@@ -75,9 +58,9 @@ func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*CommentR
 	}
 
 	// Check if there are any issues to report
-	hasIssues, issueCount := checkForIssues(analysis)
+	hasIssues, issueCount := comment.CheckForIssues(analysis)
 	if !hasIssues {
-		return &CommentResult{
+		return &comment.CommentResult{
 			Posted:      false,
 			IssuesFound: 0,
 			Message:     "No issues found - skipping comment",
@@ -92,7 +75,7 @@ func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*CommentR
 	apiURL = strings.TrimSuffix(apiURL, "/")
 
 	// Format comment body from analysis results
-	commentBody := formatComment(analysis, opts.ConsoleURL)
+	commentBody := comment.FormatComment(analysis, opts.ConsoleURL)
 
 	// Check for existing Kusari summary comment and update if found
 	existingNoteID, err := findExistingKusariNote(apiURL, opts.ProjectID, opts.MergeReqIID, opts.Token)
@@ -152,7 +135,7 @@ func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*CommentR
 		message = fmt.Sprintf("%s comment with %d issue(s) and %d inline comment(s) to MR !%s", action, issueCount, inlineCount, opts.MergeReqIID)
 	}
 
-	return &CommentResult{
+	return &comment.CommentResult{
 		Posted:               true,
 		IssuesFound:          issueCount,
 		InlineCommentsPosted: inlineCount,
@@ -307,7 +290,7 @@ func postCodeMitigationComments(analysis *api.SecurityAnalysis, opts CommentOpti
 		}
 
 		// Format the inline comment message
-		message := formatInlineComment(issue)
+		message := comment.FormatInlineComment(issue)
 
 		// Check if we already have a comment at this location
 		existingNoteID := findExistingInlineCommentInNotes(existingNotes, issue.Path, issue.LineNumber)
@@ -353,26 +336,6 @@ func postCodeMitigationComments(analysis *api.SecurityAnalysis, opts CommentOpti
 	return posted, lastErr
 }
 
-// formatInlineComment creates the message for an inline code comment
-// Includes a hidden marker for duplicate detection that survives even when position data is lost
-func formatInlineComment(issue api.CodeMitigationItem) string {
-	var sb strings.Builder
-
-	sb.WriteString("🔒 **Kusari Security Issue**\n\n")
-	sb.WriteString(issue.Content)
-
-	if issue.Code != "" {
-		sb.WriteString("\n\n**Recommended Code Changes:**\n```\n")
-		sb.WriteString(issue.Code)
-		sb.WriteString("\n```")
-	}
-
-	// Add hidden marker for duplicate detection by path:line
-	// Format: <!-- KUSARI_INLINE:path:line -->
-	sb.WriteString(fmt.Sprintf("\n\n<!-- KUSARI_INLINE:%s:%d -->", issue.Path, issue.LineNumber))
-
-	return sb.String()
-}
 
 // getMRDiffRefs retrieves the diff refs from a merge request
 func getMRDiffRefs(apiURL, projectID, mrIID, token string) (*mrDiffRefs, error) {
@@ -410,7 +373,7 @@ func getMRDiffRefs(apiURL, projectID, mrIID, token string) (*mrDiffRefs, error) 
 // are returned by the Notes API but NOT by the Discussions API.
 // Returns the note ID if found, 0 otherwise
 func findExistingInlineCommentInNotes(notes []mrNote, path string, line int) int {
-	sanitizedPath := sanitizePath(path)
+	sanitizedPath := comment.SanitizePath(path)
 	verbose := os.Getenv("KUSARI_DEBUG") == "true"
 
 	if verbose {
@@ -496,7 +459,7 @@ func postInlineComment(apiURL, projectID, mrIID, token string, diffRefs *mrDiffR
 			StartSHA:     diffRefs.StartSHA,
 			HeadSHA:      diffRefs.HeadSHA,
 			PositionType: "text",
-			NewPath:      sanitizePath(path),
+			NewPath:      comment.SanitizePath(path),
 			NewLine:      line,
 		},
 	}
@@ -527,117 +490,6 @@ func postInlineComment(apiURL, projectID, mrIID, token string, diffRefs *mrDiffR
 	}
 
 	return nil
-}
-
-// sanitizePath ensures the path is in the correct format for GitLab
-func sanitizePath(path string) string {
-	// Remove leading ./ if present
-	path = strings.TrimPrefix(path, "./")
-	// Remove leading / if present
-	path = strings.TrimPrefix(path, "/")
-	return path
-}
-
-// checkForIssues determines if there are issues to report
-func checkForIssues(analysis *api.SecurityAnalysis) (bool, int) {
-	// If analysis failed, that's an issue
-	if analysis.FailedAnalysis {
-		return true, 1
-	}
-
-	issueCount := 0
-	// If should not proceed, there are issues
-	if !analysis.ShouldProceed {
-		issueCount = len(analysis.RequiredCodeMitigations) + len(analysis.RequiredDependencyMitigations)
-		if issueCount == 0 {
-			issueCount = 1 // At least one issue if ShouldProceed is false
-		}
-		return true, issueCount
-	} else {
-		return issueCount > 0, issueCount
-	}
-}
-
-// formatComment creates a GitLab-friendly markdown comment from analysis results
-// Uses the same template structure as the GitHub implementation for consistency
-func formatComment(analysis *api.SecurityAnalysis, consoleURL string) string {
-	tmplContent, err := templateFS.ReadFile("templates/analysisComment.tmpl")
-	if err != nil {
-		// Fallback to basic format if template fails
-		return formatCommentFallback(analysis, consoleURL)
-	}
-
-	tmpl, err := template.New("analysisComment").Parse(string(tmplContent))
-	if err != nil {
-		return formatCommentFallback(analysis, consoleURL)
-	}
-
-	data := analysisCommentData{
-		FinalAnalysis: analysis,
-		ConsoleURL:    consoleURL,
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return formatCommentFallback(analysis, consoleURL)
-	}
-
-	return buf.String()
-}
-
-// formatCommentFallback provides a basic format if template rendering fails
-func formatCommentFallback(analysis *api.SecurityAnalysis, consoleURL string) string {
-	var sb strings.Builder
-
-	sb.WriteString("#### Kusari Analysis Results:\n\n")
-
-	if analysis.ShouldProceed {
-		sb.WriteString("**:white_check_mark: No Flagged Issues Detected**\n")
-		sb.WriteString("_All values appear to be within acceptable risk parameters._\n\n")
-	} else {
-		sb.WriteString("**:warning: Flagged Issues Detected**\n")
-		sb.WriteString("_These changes contain flagged issues that may introduce security risks._\n\n")
-	}
-
-	if analysis.Justification != "" {
-		sb.WriteString(analysis.Justification + "\n\n")
-	}
-
-	// Code mitigations
-	if len(analysis.RequiredCodeMitigations) > 0 && !analysis.ShouldProceed {
-		sb.WriteString("## Required Code Mitigations\n\n")
-		for _, m := range analysis.RequiredCodeMitigations {
-			sb.WriteString(fmt.Sprintf("### %s\n", m.Content))
-			if m.LineNumber > 0 {
-				sb.WriteString(fmt.Sprintf("- **Location:** %s:%d\n", m.Path, m.LineNumber))
-			}
-			if m.Code != "" {
-				sb.WriteString("- **Potential Code Fix:**\n```\n")
-				sb.WriteString(m.Code)
-				sb.WriteString("\n```\n")
-			}
-			sb.WriteString("\n")
-		}
-	}
-
-	// Dependency mitigations
-	if len(analysis.RequiredDependencyMitigations) > 0 && !analysis.ShouldProceed {
-		sb.WriteString("## Required Dependency Mitigations\n\n")
-		for _, m := range analysis.RequiredDependencyMitigations {
-			sb.WriteString(fmt.Sprintf("- %s\n", m.Content))
-		}
-		sb.WriteString("\n")
-	}
-
-	// Link to full results
-	if consoleURL != "" {
-		sb.WriteString(fmt.Sprintf("> **Note:** [View full detailed analysis result](%s) for more information.\n\n", consoleURL))
-	}
-
-	sb.WriteString("--------\n\n")
-	sb.WriteString("<!-- IGNORE_KUSARI_COMMENT -->\n")
-
-	return sb.String()
 }
 
 // noteRequest is the request body for GitLab's notes API
