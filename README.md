@@ -158,52 +158,28 @@ Available formats:
 
 The SARIF format integrates with GitLab's Security Dashboard when used as a CI artifact.
 
-#### GitLab Integration
+#### CI/CD Integration
 
-The `kusari repo scan` command supports automatic posting of scan results as comments on GitLab merge requests using the `--comment` flag:
+The `kusari repo scan` command supports automatic posting of scan results as comments on merge requests and pull requests using the `--comment` flag:
 
+**GitLab:**
 ```bash
 kusari repo scan --comment gitlab . origin/main
 ```
 
-When enabled in a GitLab CI environment, this will:
-- Post a summary comment to the merge request with security findings
+**GitHub:**
+```bash
+kusari repo scan --comment github . origin/main
+```
+
+When enabled in a CI/CD environment, this will:
+- Post a summary comment with security findings
 - Post inline comments on specific lines of code where issues are detected
 - Update existing comments instead of creating duplicates on subsequent runs
 
-**Required Environment Variables:**
-- `CI_PROJECT_ID` - GitLab project ID (automatically set by GitLab CI)
-- `CI_MERGE_REQUEST_IID` - Merge request IID (automatically set by GitLab CI)
-- `GITLAB_TOKEN` or `CI_JOB_TOKEN` - Token with API access for posting comments
-
-**GitLab CI/CD Template:**
-
-For easy integration, use the provided GitLab CI/CD template:
-
-```yaml
-include:
-  - remote: 'https://raw.githubusercontent.com/kusaridev/kusari-cli/v0.17.9/ci-templates/gitlab/kusari-scan.yml'
-```
-
 **Setup Instructions:**
 
-1. Add the CI/CD variables to your GitLab project (Settings > CI/CD > Variables):
-   - `KUSARI_CLIENT_ID` - Your Kusari client ID
-   - `KUSARI_CLIENT_SECRET` - Your Kusari client secret (mark as masked)
-
-2. Set up GitLab token for posting comments (choose one option):
-
-   **Option A - Use a GitLab Token (Recommended):**
-   - Create a Project Access Token with `api` scope (Settings > Access Tokens)
-   - Add it as `GITLAB_TOKEN` variable (mark as masked)
-
-   **Option B - Enable CI_JOB_TOKEN API Access:**
-   - Go to Settings > CI/CD > Token Access
-   - Enable "Allow CI job tokens from this project to access this project's API"
-
-The template will automatically run on merge requests and post security findings as comments.
-
-For more details, see the [template documentation](https://github.com/kusaridev/kusari-cli/blob/v0.17.9/ci-templates/gitlab/kusari-scan.yml).
+For complete setup instructions, templates, and reusable workflows for both GitLab and GitHub, see the [Kusari CI Templates repository](https://github.com/kusaridev/kusari-ci-templates).
 
 ### `kusari repo risk-check`
 
