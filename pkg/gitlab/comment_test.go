@@ -77,8 +77,8 @@ func TestCheckForIssues(t *testing.T) {
 					{Path: "test.go", LineNumber: 10, Content: "Warning"},
 				},
 			},
-			expectHasIssues: true,
-			expectCount:     1,
+			expectHasIssues: false,
+			expectCount:     0,
 		},
 	}
 
@@ -256,151 +256,6 @@ func TestFormatInlineComment(t *testing.T) {
 			for _, expected := range tt.expectedContains {
 				assert.Contains(t, result, expected)
 			}
-		})
-	}
-}
-
-func TestFindExistingInlineComment(t *testing.T) {
-	currentDiffRefs := &mrDiffRefs{
-		BaseSHA:  "base123",
-		HeadSHA:  "head456",
-		StartSHA: "start123",
-	}
-
-	discussions := []discussion{
-		{
-			ID: "abc123",
-			Notes: []discussionNote{
-				{
-					ID:   1,
-					Body: "Some other comment",
-					Position: &struct {
-						BaseSHA  string `json:"base_sha"`
-						HeadSHA  string `json:"head_sha"`
-						StartSHA string `json:"start_sha"`
-						NewPath  string `json:"new_path"`
-						NewLine  int    `json:"new_line"`
-					}{
-						BaseSHA:  "base123",
-						HeadSHA:  "head456",
-						StartSHA: "start123",
-						NewPath:  "src/main.go",
-						NewLine:  10,
-					},
-				},
-			},
-		},
-		{
-			ID: "def456",
-			Notes: []discussionNote{
-				{
-					ID:   2,
-					Body: "🔒 **Kusari Security Issue**\n\nSQL injection\n\n<!-- KUSARI_INLINE:src/db.go:42 -->",
-					Position: &struct {
-						BaseSHA  string `json:"base_sha"`
-						HeadSHA  string `json:"head_sha"`
-						StartSHA string `json:"start_sha"`
-						NewPath  string `json:"new_path"`
-						NewLine  int    `json:"new_line"`
-					}{
-						BaseSHA:  "base123",
-						HeadSHA:  "head456",
-						StartSHA: "start123",
-						NewPath:  "src/db.go",
-						NewLine:  42,
-					},
-				},
-			},
-		},
-		{
-			ID: "ghi789",
-			Notes: []discussionNote{
-				{
-					ID:   3,
-					Body: "General discussion",
-				},
-			},
-		},
-		{
-			ID: "outdated123",
-			Notes: []discussionNote{
-				{
-					ID:   4,
-					Body: "🔒 **Kusari Security Issue**\n\nOld comment\n\n<!-- KUSARI_INLINE:src/db.go:100 -->",
-					Position: &struct {
-						BaseSHA  string `json:"base_sha"`
-						HeadSHA  string `json:"head_sha"`
-						StartSHA string `json:"start_sha"`
-						NewPath  string `json:"new_path"`
-						NewLine  int    `json:"new_line"`
-					}{
-						BaseSHA:  "oldbase",
-						HeadSHA:  "oldhead",
-						StartSHA: "oldstart",
-						NewPath:  "src/db.go",
-						NewLine:  100,
-					},
-				},
-			},
-		},
-	}
-
-	tests := []struct {
-		name                 string
-		path                 string
-		line                 int
-		expectedDiscussionID string
-		expectedNoteID       int
-	}{
-		{
-			name:                 "find existing Kusari comment",
-			path:                 "src/db.go",
-			line:                 42,
-			expectedDiscussionID: "def456",
-			expectedNoteID:       2,
-		},
-		{
-			name:                 "no Kusari comment - different path",
-			path:                 "src/other.go",
-			line:                 42,
-			expectedDiscussionID: "",
-			expectedNoteID:       0,
-		},
-		{
-			name:                 "find outdated Kusari comment (different SHA)",
-			path:                 "src/db.go",
-			line:                 100,
-			expectedDiscussionID: "outdated123",
-			expectedNoteID:       4,
-		},
-		{
-			name:                 "no Kusari comment - different line",
-			path:                 "src/db.go",
-			line:                 99,
-			expectedDiscussionID: "",
-			expectedNoteID:       0,
-		},
-		{
-			name:                 "non-Kusari comment at location",
-			path:                 "src/main.go",
-			line:                 10,
-			expectedDiscussionID: "",
-			expectedNoteID:       0,
-		},
-		{
-			name:                 "path with leading dot slash",
-			path:                 "./src/db.go",
-			line:                 42,
-			expectedDiscussionID: "def456",
-			expectedNoteID:       2,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			discID, noteID := findExistingInlineComment(discussions, tt.path, tt.line, currentDiffRefs)
-			assert.Equal(t, tt.expectedDiscussionID, discID)
-			assert.Equal(t, tt.expectedNoteID, noteID)
 		})
 	}
 }
@@ -640,61 +495,6 @@ func TestGetMRDiffRefs(t *testing.T) {
 	}
 }
 
-func TestListMRDiscussions(t *testing.T) {
-	tests := []struct {
-		name           string
-		responseStatus int
-		responseBody   string
-		expectError    bool
-		expectCount    int
-	}{
-		{
-			name:           "success with discussions",
-			responseStatus: http.StatusOK,
-			responseBody: `[
-				{"id": "disc1", "notes": [{"id": 1, "body": "Test", "position": {"new_path": "test.go", "new_line": 10}}]},
-				{"id": "disc2", "notes": [{"id": 2, "body": "Test2"}]}
-			]`,
-			expectError: false,
-			expectCount: 2,
-		},
-		{
-			name:           "success empty",
-			responseStatus: http.StatusOK,
-			responseBody:   `[]`,
-			expectError:    false,
-			expectCount:    0,
-		},
-		{
-			name:           "error",
-			responseStatus: http.StatusInternalServerError,
-			responseBody:   `{"error": "server error"}`,
-			expectError:    true,
-			expectCount:    0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(tt.responseStatus)
-				_, _ = w.Write([]byte(tt.responseBody))
-			}))
-			defer server.Close()
-
-			discussions, err := listMRDiscussions(server.URL+"/api/v4", "123", "1", "test-token")
-
-			if tt.expectError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Len(t, discussions, tt.expectCount)
-			}
-		})
-	}
-}
-
 func TestFindExistingKusariNote(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -884,46 +684,6 @@ func TestPostInlineComment(t *testing.T) {
 			}
 
 			err := postInlineComment(server.URL+"/api/v4", "123", "1", "test-token", diffRefs, "src/main.go", 42, "Test message")
-
-			if tt.expectError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestUpdateDiscussionNote(t *testing.T) {
-	tests := []struct {
-		name           string
-		responseStatus int
-		expectError    bool
-	}{
-		{
-			name:           "success",
-			responseStatus: http.StatusOK,
-			expectError:    false,
-		},
-		{
-			name:           "forbidden",
-			responseStatus: http.StatusForbidden,
-			expectError:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				assert.Equal(t, "PUT", r.Method)
-				assert.Equal(t, "/api/v4/projects/123/merge_requests/1/discussions/disc1/notes/888", r.URL.Path)
-
-				w.WriteHeader(tt.responseStatus)
-				_, _ = w.Write([]byte(`{"id": 888}`))
-			}))
-			defer server.Close()
-
-			err := updateDiscussionNote(server.URL+"/api/v4", "123", "1", "disc1", 888, "test-token", "Updated message")
 
 			if tt.expectError {
 				require.Error(t, err)

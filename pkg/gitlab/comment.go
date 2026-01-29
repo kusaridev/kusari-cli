@@ -405,131 +405,6 @@ func getMRDiffRefs(apiURL, projectID, mrIID, token string) (*mrDiffRefs, error) 
 	return &mr.DiffRefs, nil
 }
 
-// discussionNote represents a note in a discussion
-type discussionNote struct {
-	ID       int    `json:"id"`
-	Body     string `json:"body"`
-	Position *struct {
-		BaseSHA  string `json:"base_sha"`
-		HeadSHA  string `json:"head_sha"`
-		StartSHA string `json:"start_sha"`
-		NewPath  string `json:"new_path"`
-		NewLine  int    `json:"new_line"`
-	} `json:"position"`
-}
-
-// discussion represents a GitLab discussion
-type discussion struct {
-	ID    string           `json:"id"`
-	Notes []discussionNote `json:"notes"`
-}
-
-// listMRDiscussions retrieves existing discussions on a merge request
-func listMRDiscussions(apiURL, projectID, mrIID, token string) ([]discussion, error) {
-	endpoint := fmt.Sprintf("%s/projects/%s/merge_requests/%s/discussions", apiURL, projectID, mrIID)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest("GET", endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("PRIVATE-TOKEN", token)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("GitLab API returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var discussions []discussion
-	if err := json.NewDecoder(resp.Body).Decode(&discussions); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return discussions, nil
-}
-
-// findExistingInlineComment finds an existing Kusari inline comment at the given location
-// Since GitLab API doesn't reliably return position data (especially for outdated comments),
-// we parse the comment body looking for our hidden marker: <!-- KUSARI_INLINE:path:line -->
-// If found, we update it with new content regardless of what was there before
-// Returns the discussion ID and note ID if found, empty string and 0 otherwise
-func findExistingInlineComment(discussions []discussion, path string, line int, currentDiffRefs *mrDiffRefs) (string, int) {
-	sanitizedPath := sanitizePath(path)
-	verbose := os.Getenv("KUSARI_DEBUG") == "true"
-
-	if verbose {
-		fmt.Fprintf(os.Stderr, "DEBUG: Looking for inline comment at %s:%d (sanitized: %s)\n", path, line, sanitizedPath)
-		fmt.Fprintf(os.Stderr, "DEBUG: Searching through %d discussions\n", len(discussions))
-	}
-
-	// Regex to extract marker: <!-- KUSARI_INLINE:path:line -->
-	markerRegex := regexp.MustCompile(`<!-- KUSARI_INLINE:([^:]+):(\d+) -->`)
-
-	for i, d := range discussions {
-		// Only check the first note in each discussion (the one that created the thread)
-		if len(d.Notes) == 0 {
-			if verbose {
-				fmt.Fprintf(os.Stderr, "DEBUG: Discussion %d: empty (no notes)\n", i)
-			}
-			continue
-		}
-
-		firstNote := d.Notes[0]
-
-		if verbose {
-			bodyPreview := firstNote.Body
-			if len(bodyPreview) > 100 {
-				bodyPreview = bodyPreview[:100] + "..."
-			}
-			fmt.Fprintf(os.Stderr, "DEBUG: Discussion %d (ID %s, note ID %d): %s\n", i, d.ID, firstNote.ID, bodyPreview)
-		}
-
-		// Check if this is a Kusari inline comment by looking for the marker in the body
-		if !strings.Contains(firstNote.Body, "KUSARI_INLINE:") {
-			if verbose {
-				fmt.Fprintf(os.Stderr, "DEBUG:   -> No KUSARI_INLINE marker found\n")
-			}
-			continue
-		}
-
-		matches := markerRegex.FindStringSubmatch(firstNote.Body)
-		if len(matches) != 3 {
-			if verbose {
-				fmt.Fprintf(os.Stderr, "DEBUG:   -> Found KUSARI_INLINE marker but couldn't parse (matches: %d)\n", len(matches))
-			}
-			continue
-		}
-
-		commentPath := matches[1]
-		commentLine := matches[2]
-
-		if verbose {
-			fmt.Fprintf(os.Stderr, "DEBUG:   -> Found Kusari comment for %s:%s\n", commentPath, commentLine)
-		}
-
-		// Match by path and line number from the marker
-		if commentPath == sanitizedPath && commentLine == fmt.Sprintf("%d", line) {
-			if verbose {
-				fmt.Fprintf(os.Stderr, "DEBUG: MATCH! Found existing inline comment via marker (discussion: %s, note: %d)\n", d.ID, firstNote.ID)
-			}
-			return d.ID, firstNote.ID
-		}
-	}
-
-	if verbose {
-		fmt.Fprintf(os.Stderr, "DEBUG: No existing inline comment found at %s:%d\n", path, line)
-	}
-
-	return "", 0
-}
-
 // findExistingInlineCommentInNotes finds an existing Kusari inline comment at the given location
 // by searching through the Notes API response. Inline diff comments created with position parameters
 // are returned by the Notes API but NOT by the Discussions API.
@@ -592,40 +467,6 @@ func findExistingInlineCommentInNotes(notes []mrNote, path string, line int) int
 	}
 
 	return 0
-}
-
-// updateDiscussionNote updates an existing note in a discussion
-func updateDiscussionNote(apiURL, projectID, mrIID, discussionID string, noteID int, token, body string) error {
-	endpoint := fmt.Sprintf("%s/projects/%s/merge_requests/%s/discussions/%s/notes/%d",
-		apiURL, projectID, mrIID, discussionID, noteID)
-
-	reqBody := noteRequest{Body: body}
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest("PUT", endpoint, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("PRIVATE-TOKEN", token)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("GitLab API returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	return nil
 }
 
 // discussionRequest is the request body for creating a discussion with inline comment
@@ -704,18 +545,17 @@ func checkForIssues(analysis *api.SecurityAnalysis) (bool, int) {
 		return true, 1
 	}
 
+	issueCount := 0
 	// If should not proceed, there are issues
 	if !analysis.ShouldProceed {
-		issueCount := len(analysis.RequiredCodeMitigations) + len(analysis.RequiredDependencyMitigations)
+		issueCount = len(analysis.RequiredCodeMitigations) + len(analysis.RequiredDependencyMitigations)
 		if issueCount == 0 {
 			issueCount = 1 // At least one issue if ShouldProceed is false
 		}
 		return true, issueCount
+	} else {
+		return issueCount > 0, issueCount
 	}
-
-	// Even if ShouldProceed is true, report if there are mitigations
-	issueCount := len(analysis.RequiredCodeMitigations) + len(analysis.RequiredDependencyMitigations)
-	return issueCount > 0, issueCount
 }
 
 // formatComment creates a GitLab-friendly markdown comment from analysis results
