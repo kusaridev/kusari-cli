@@ -246,12 +246,12 @@ func TestGetTokenFromEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clear env vars
-			os.Unsetenv("GITHUB_TOKEN")
-			os.Unsetenv("GH_TOKEN")
+			_ = os.Unsetenv("GITHUB_TOKEN")
+			_ = os.Unsetenv("GH_TOKEN")
 
 			// Set test env vars
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 
 			result := GetTokenFromEnv()
@@ -259,7 +259,7 @@ func TestGetTokenFromEnv(t *testing.T) {
 
 			// Cleanup
 			for k := range tt.envVars {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			}
 		})
 	}
@@ -285,17 +285,17 @@ func TestGetGitHubAPIURLFromEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Unsetenv("GITHUB_API_URL")
+			_ = os.Unsetenv("GITHUB_API_URL")
 
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 
 			result := GetGitHubAPIURLFromEnv()
 			assert.Equal(t, tt.expected, result)
 
 			for k := range tt.envVars {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			}
 		})
 	}
@@ -370,13 +370,13 @@ func TestGetPRInfoFromEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clear env vars
-			os.Unsetenv("GITHUB_REPOSITORY")
-			os.Unsetenv("GITHUB_REF")
-			os.Unsetenv("GITHUB_REF_NAME")
+			_ = os.Unsetenv("GITHUB_REPOSITORY")
+			_ = os.Unsetenv("GITHUB_REF")
+			_ = os.Unsetenv("GITHUB_REF_NAME")
 
 			// Set test env vars
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 
 			owner, repo, prNum := GetPRInfoFromEnv()
@@ -386,7 +386,7 @@ func TestGetPRInfoFromEnv(t *testing.T) {
 
 			// Cleanup
 			for k := range tt.envVars {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			}
 		})
 	}

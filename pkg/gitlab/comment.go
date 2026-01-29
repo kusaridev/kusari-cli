@@ -32,7 +32,6 @@ type CommentOptions struct {
 	Verbose     bool
 }
 
-
 // mrDiffRefs holds the SHA references needed for inline comments
 type mrDiffRefs struct {
 	BaseSHA  string `json:"base_sha"`
@@ -335,7 +334,6 @@ func postCodeMitigationComments(analysis *api.SecurityAnalysis, opts CommentOpti
 
 	return posted, lastErr
 }
-
 
 // getMRDiffRefs retrieves the diff refs from a merge request
 func getMRDiffRefs(apiURL, projectID, mrIID, token string) (*mrDiffRefs, error) {
