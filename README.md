@@ -144,6 +144,43 @@ Will scan my `~/git/guac` repository and compare the working tree with the
 Kusari Inspector results will be stored and displayed in the [Kusari
 Console](https://console.us.kusari.cloud/analysis/cli).
 
+**Output Formats:**
+
+The scan command supports multiple output formats via the `--output-format` flag:
+
+```bash
+kusari repo scan --output-format sarif . origin/main
+```
+
+Available formats:
+- `json` (default) - Detailed JSON output with full analysis results
+- `sarif` - SARIF format compatible with GitLab SAST reports
+
+The SARIF format integrates with GitLab's Security Dashboard when used as a CI artifact.
+
+#### CI/CD Integration
+
+The `kusari repo scan` command supports automatic posting of scan results as comments on merge requests and pull requests using the `--comment` flag:
+
+**GitLab:**
+```bash
+kusari repo scan --comment gitlab . origin/main
+```
+
+**GitHub:**
+```bash
+kusari repo scan --comment github . origin/main
+```
+
+When enabled in a CI/CD environment, this will:
+- Post a summary comment with security findings
+- Post inline comments on specific lines of code where issues are detected
+- Update existing comments instead of creating duplicates on subsequent runs
+
+**Setup Instructions:**
+
+For complete setup instructions, templates, and reusable workflows for both GitLab and GitHub, see the [Kusari CI Templates repository](https://github.com/kusaridev/kusari-ci-templates).
+
 ### `kusari repo risk-check`
 
 Analyze a repository's overall security posture (Coming soon!)

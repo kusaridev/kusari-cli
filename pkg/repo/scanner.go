@@ -22,6 +22,8 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/kusaridev/kusari-cli/api"
 	"github.com/kusaridev/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/pkg/github"
+	"github.com/kusaridev/kusari-cli/pkg/gitlab"
 	"github.com/kusaridev/kusari-cli/pkg/login"
 	"github.com/kusaridev/kusari-cli/pkg/sarif"
 	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
@@ -33,6 +35,10 @@ const (
 	tarballNameUncompressed = "kusari-inspector.tar"
 	tarballName             = tarballNameUncompressed + ".bz2"
 	workingDirName          = "kusari-dir"
+
+	// Comment platform constants
+	PlatformGitLab = "gitlab"
+	PlatformGitHub = "github"
 )
 
 var (
@@ -42,13 +48,14 @@ var (
 	workingDir string
 )
 
-func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, nil)
+func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string, commentPlatform string) error {
+	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, commentPlatform, nil)
 }
 
 func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
 	// default to outputformat "markdown" for now for risk check as it will link to console
-	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", nil)
+	// commentPlatform is empty for risk-check as it's not typically run in MR context
+	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", "", nil)
 }
 
 // scanMock facilitates use of mock values for testing
@@ -60,7 +67,7 @@ type scanMock struct {
 }
 
 func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, full bool, outputFormat string,
-	mock *scanMock) error {
+	commentPlatform string, mock *scanMock) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
 		fmt.Fprintf(os.Stderr, " rev: %s\n", rev)
@@ -242,7 +249,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
-		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl, workspace, outputFormat, full)
+		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose)
 	}
 	return nil
 }
@@ -251,7 +258,7 @@ func cleanupWorkingDirectory(tempDir string) {
 	_ = os.RemoveAll(tempDir)
 }
 
-func queryForResult(platformUrl string, epoch string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool) error {
+func queryForResult(platformUrl string, epoch string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool) error {
 	maxAttempts := 750
 	attempt := 0
 	sleepDuration := time.Second
@@ -318,6 +325,14 @@ func queryForResult(platformUrl string, epoch string, accessToken string, consol
 					// Stop spinner before outputting results
 					s.FinalMSG = "✓ Analysis complete!\n"
 					s.Stop()
+
+					// Post comment to the specified platform (only for diff scans, not full scans)
+					if commentPlatform != "" && !full && results[0].Analysis.RawLLMAnalysis != nil {
+						if err := postCommentToPlatform(commentPlatform, results[0].Analysis.RawLLMAnalysis, consoleFullUrl, verbose); err != nil {
+							// Log error but don't fail the scan
+							fmt.Fprintf(os.Stderr, "Warning: Failed to post %s comment: %v\n", commentPlatform, err)
+						}
+					}
 
 					if full {
 						printFullScanResults(results[0].Analysis)
@@ -661,4 +676,105 @@ func printFullScanResults(a *api.Analysis) {
 
 func titleize(s string) string {
 	return strings.ToUpper(s[0:1]) + s[1:]
+}
+
+// postCommentToPlatform dispatches comment posting to the appropriate platform
+func postCommentToPlatform(platform string, analysis *api.SecurityAnalysis, consoleURL *string, verbose bool) error {
+	switch platform {
+	case PlatformGitLab:
+		return postToGitLab(analysis, consoleURL, verbose)
+	case PlatformGitHub:
+		return postToGitHub(analysis, consoleURL, verbose)
+	default:
+		return fmt.Errorf("unsupported comment platform: %s (supported: %s, %s)", platform, PlatformGitLab, PlatformGitHub)
+	}
+}
+
+// postToGitLab posts scan results as a comment to a GitLab merge request
+func postToGitLab(analysis *api.SecurityAnalysis, consoleURL *string, verbose bool) error {
+	// Get GitLab configuration from environment
+	projectID, mrIID := gitlab.GetMRInfoFromEnv()
+	if projectID == "" || mrIID == "" {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "GitLab CI environment not detected (CI_PROJECT_ID or CI_MERGE_REQUEST_IID not set), skipping comment\n")
+		}
+		return nil // Not in GitLab CI context, silently skip
+	}
+
+	token := gitlab.GetTokenFromEnv()
+	if token == "" {
+		return fmt.Errorf("no GitLab token found (set GITLAB_TOKEN or CI_JOB_TOKEN)")
+	}
+
+	consoleURLStr := ""
+	if consoleURL != nil {
+		consoleURLStr = *consoleURL
+	}
+
+	opts := gitlab.CommentOptions{
+		ProjectID:   projectID,
+		MergeReqIID: mrIID,
+		GitLabURL:   gitlab.GetGitLabAPIURLFromEnv(),
+		Token:       token,
+		ConsoleURL:  consoleURLStr,
+		Verbose:     verbose,
+	}
+
+	result, err := gitlab.PostComment(analysis, opts)
+	if err != nil {
+		return err
+	}
+
+	if result.Posted {
+		fmt.Fprintf(os.Stderr, "%s\n", result.Message)
+	} else if verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", result.Message)
+	}
+
+	return nil
+}
+
+// postToGitHub posts scan results as a comment to a GitHub pull request
+func postToGitHub(analysis *api.SecurityAnalysis, consoleURL *string, verbose bool) error {
+	// Get GitHub configuration from environment
+	owner, repo, prNumber := github.GetPRInfoFromEnv()
+	if owner == "" || repo == "" || prNumber == 0 {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "GitHub Actions environment not detected (GITHUB_REPOSITORY or PR number not set), skipping comment\n")
+		}
+		return nil // Not in GitHub Actions context, silently skip
+	}
+
+	token := github.GetTokenFromEnv()
+	if token == "" {
+		return fmt.Errorf("no GitHub token found (set GITHUB_TOKEN or GH_TOKEN)")
+	}
+
+	consoleURLStr := ""
+	if consoleURL != nil {
+		consoleURLStr = *consoleURL
+	}
+
+	opts := github.CommentOptions{
+		Owner:      owner,
+		Repo:       repo,
+		PRNumber:   prNumber,
+		GitHubURL:  github.GetGitHubAPIURLFromEnv(),
+		Token:      token,
+		ConsoleURL: consoleURLStr,
+		Verbose:    verbose,
+	}
+
+	result, err := github.PostComment(analysis, opts)
+	if err != nil {
+		return err
+	}
+
+	if result.Posted {
+		fmt.Fprintf(os.Stderr, "%s\n", result.Message)
+	} else if verbose {
+		fmt.Fprintf(os.Stderr, "%s\n", result.Message)
+	}
+
+	return nil
 }
