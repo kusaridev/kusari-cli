@@ -53,10 +53,12 @@ jobs:
 
       - name: Build and publish image with ko (release)
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           ko build ./kusari --bare \
             --platform=linux/amd64,linux/arm64 \
-            --tags=latest,sha-${{ github.sha }},$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]//g')
+            --tags=latest,sha-${{ github.sha }},$(echo "$REF_NAME" | sed 's/[^a-zA-Z0-9._-]//g')
 
       - name: Install cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # main
