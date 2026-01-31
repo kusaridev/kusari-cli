@@ -1,0 +1,15 @@
+# CODEOWNERS - Kusari CLI
+# These owners are responsible for code review and approval.
+
+# Default owners for everything in the repo
+* @mlieberman85 @pxp928 @funnelfiasco
+
+# Go source code
+*.go @mlieberman85 @pxp928 @funnelfiasco
+
+# CI/CD workflows
+.github/ @mlieberman85 @pxp928 @funnelfiasco
+
+# Documentation
+*.md @mlieberman85 @pxp928 @funnelfiasco
+docs/ @mlieberman85 @pxp928 @funnelfiasco
