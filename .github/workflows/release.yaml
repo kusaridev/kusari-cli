@@ -109,7 +109,7 @@ jobs:
           cyclonedx-gomod app -licenses -json -output cyclonedx_build.json -main ./kusari
 
       # Ingest image SBOM
-      - uses: kusaridev/kusari-ingest@de5ea549676f1b93fa1a105cf517d38165c68086 #v2.0.6
+      - uses: kusaridev/kusari-ingest@f28d0be1bb0cddcbc83f37f50dd2cd66f5c76ffb #v2.0.7
         name: Kusari ingestion for image SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
@@ -122,7 +122,7 @@ jobs:
           document-type: 'image'
 
       # Ingest build SBOM
-      - uses: kusaridev/kusari-ingest@de5ea549676f1b93fa1a105cf517d38165c68086 #v2.0.6
+      - uses: kusaridev/kusari-ingest@f28d0be1bb0cddcbc83f37f50dd2cd66f5c76ffb #v2.0.7
         name: Kusari ingestion for build SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
