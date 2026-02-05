@@ -132,6 +132,73 @@ func TestUpdateAddMissing(t *testing.T) {
 	require.NoError(t, os.Chdir(cwd))
 }
 
+// Test that SBOM configuration fields are properly preserved during update
+func TestUpdatePreservesSBOMConfig(t *testing.T) {
+	// Get the current directory so that we can change back to it later
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	// Create a temporary test directory
+	testDir := t.TempDir()
+	// Copy the test file
+	sourceFile := filepath.Join(cwd, "testdata", "config-sbom-enabled.yaml")
+	destFile := filepath.Join(testDir, "kusari.yaml")
+	require.NoError(t, runCommand("cp", sourceFile, destFile))
+	require.NoError(t, os.Chdir(testDir))
+
+	// Write the file
+	require.NoError(t, UpdateConfig())
+
+	// Make sure SBOM configs were preserved
+	readContent, err := os.ReadFile(destFile)
+	require.NoError(t, err)
+	content := string(readContent)
+
+	// Verify SBOM fields are preserved
+	require.Contains(t, content, "sbom_generation_enabled: true")
+	require.Contains(t, content, "sbom_component_name: my-custom-component")
+	require.Contains(t, content, "sbom_subject_name_override: custom-subject")
+	require.Contains(t, content, "sbom_subject_version_override: v1.0.0")
+
+	require.NoError(t, os.Chdir(cwd))
+}
+
+// Test that default SBOM config has generation disabled
+func TestDefaultSBOMConfigDisabled(t *testing.T) {
+	require.False(t, DefaultConfig.SBOMGenerationEnabled, "SBOM generation should be disabled by default")
+	require.Empty(t, DefaultConfig.SBOMComponentName, "SBOM component name should be empty by default")
+	require.Empty(t, DefaultConfig.SBOMSubjectNameOverride, "SBOM subject name override should be empty by default")
+	require.Empty(t, DefaultConfig.SBOMSubjectVersionOverride, "SBOM subject version override should be empty by default")
+}
+
+// Test that generated config omits empty SBOM string fields
+func TestGeneratedConfigOmitsEmptySBOMFields(t *testing.T) {
+	// Get the current directory so that we can change back to it later
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	// Create a temporary test directory
+	testDir := t.TempDir()
+
+	require.NoError(t, os.Chdir(testDir))
+
+	// Generate a new config file
+	require.NoError(t, GenerateConfig(false))
+
+	// Read the generated file
+	readContent, err := os.ReadFile("kusari.yaml")
+	require.NoError(t, err)
+	content := string(readContent)
+
+	// SBOM generation enabled should be present (it's a bool, not omitempty)
+	require.Contains(t, content, "sbom_generation_enabled: false")
+
+	// Empty string fields should NOT be present (they have omitempty)
+	require.NotContains(t, content, "sbom_component_name")
+	require.NotContains(t, content, "sbom_subject_name_override")
+	require.NotContains(t, content, "sbom_subject_version_override")
+
+	require.NoError(t, os.Chdir(cwd))
+}
+
 //
 // Some helper functions along the way
 //

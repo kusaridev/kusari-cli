@@ -4,4 +4,7 @@ status_check_name: Kusari Inspector
 post_comment_on_failure: true
 post_comment_on_success: false
 full_code_review_enabled: false
-sbom_generation_enabled: false
+sbom_generation_enabled: true
+sbom_component_name: my-custom-component
+sbom_subject_name_override: custom-subject
+sbom_subject_version_override: v1.0.0
