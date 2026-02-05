@@ -4,3 +4,4 @@ status_check_name: Kusari Inspectormatic
 post_comment_on_failure: true
 post_comment_on_success: false
 full_code_review_enabled: true
+sbom_generation_enabled: false

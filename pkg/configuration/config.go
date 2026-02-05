@@ -21,6 +21,11 @@ var DefaultConfig = configuration.Config{
 	PostCommentOnFailure:                   true,
 	PostCommentOnSuccess:                   false,
 	FullCodeReviewEnabled:                  false,
+	// SBOM Generation is disabled by default to avoid breaking existing implementations
+	SBOMGenerationEnabled:      false,
+	SBOMComponentName:          "", // Empty means use GitHub repo name as default
+	SBOMSubjectNameOverride:    "",
+	SBOMSubjectVersionOverride: "",
 }
 
 func GenerateConfig(forceWrite bool) error {
@@ -84,11 +89,18 @@ func mergeConfigs(defaultConfig configuration.Config, existingConfig map[string]
 	for i := 0; i < resultType.NumField(); i++ {
 		field := resultType.Field(i)
 
-		// Get the JSON tag name for this field
+		// Get the YAML tag name for this field
 		yamlTag := field.Tag.Get("yaml")
 
+		// Parse the yaml tag to extract just the field name (before any comma)
+		// e.g., "sbom_component_name,omitempty" -> "sbom_component_name"
+		yamlFieldName := yamlTag
+		if commaIdx := findComma(yamlTag); commaIdx != -1 {
+			yamlFieldName = yamlTag[:commaIdx]
+		}
+
 		// Check if this field was present in the original YAML
-		if val, exists := existingConfig[yamlTag]; exists {
+		if val, exists := existingConfig[yamlFieldName]; exists {
 			resultFieldValue := resultValue.Field(i)
 
 			// Only set if the field is settable
@@ -131,4 +143,14 @@ func mergeConfigs(defaultConfig configuration.Config, existingConfig map[string]
 	}
 
 	return result, nil
+}
+
+// findComma returns the index of the first comma in a string, or -1 if not found
+func findComma(s string) int {
+	for i, c := range s {
+		if c == ',' {
+			return i
+		}
+	}
+	return -1
 }
