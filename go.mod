@@ -1,6 +1,6 @@
 module github.com/kusaridev/kusari-cli
 
-go 1.25.5
+go 1.25.7
 
 require (
 	github.com/briandowns/spinner v1.23.2
