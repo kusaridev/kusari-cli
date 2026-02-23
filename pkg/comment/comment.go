@@ -97,9 +97,9 @@ func FormatCommentFallback(analysis *api.SecurityAnalysis, consoleURL string) st
 	if len(analysis.RequiredCodeMitigations) > 0 && !analysis.ShouldProceed {
 		sb.WriteString("## Required Code Mitigations\n\n")
 		for _, m := range analysis.RequiredCodeMitigations {
-			sb.WriteString(fmt.Sprintf("### %s\n", m.Content))
+			fmt.Fprintf(&sb, "### %s\n", m.Content)
 			if m.LineNumber > 0 {
-				sb.WriteString(fmt.Sprintf("- **Location:** %s:%d\n", m.Path, m.LineNumber))
+				fmt.Fprintf(&sb, "- **Location:** %s:%d\n", m.Path, m.LineNumber)
 			}
 			if m.Code != "" {
 				sb.WriteString("- **Potential Code Fix:**\n```\n")
@@ -114,14 +114,14 @@ func FormatCommentFallback(analysis *api.SecurityAnalysis, consoleURL string) st
 	if len(analysis.RequiredDependencyMitigations) > 0 && !analysis.ShouldProceed {
 		sb.WriteString("## Required Dependency Mitigations\n\n")
 		for _, m := range analysis.RequiredDependencyMitigations {
-			sb.WriteString(fmt.Sprintf("- %s\n", m.Content))
+			fmt.Fprintf(&sb, "- %s\n", m.Content)
 		}
 		sb.WriteString("\n")
 	}
 
 	// Link to full results
 	if consoleURL != "" {
-		sb.WriteString(fmt.Sprintf("> **Note:** [View full detailed analysis result](%s) for more information.\n\n", consoleURL))
+		fmt.Fprintf(&sb, "> **Note:** [View full detailed analysis result](%s) for more information.\n\n", consoleURL)
 	}
 
 	sb.WriteString("--------\n\n")
@@ -146,7 +146,7 @@ func FormatInlineComment(issue api.CodeMitigationItem) string {
 
 	// Add hidden marker for duplicate detection by path:line
 	// Format: <!-- KUSARI_INLINE:path:line -->
-	sb.WriteString(fmt.Sprintf("\n\n<!-- KUSARI_INLINE:%s:%d -->", issue.Path, issue.LineNumber))
+	fmt.Fprintf(&sb, "\n\n<!-- KUSARI_INLINE:%s:%d -->", issue.Path, issue.LineNumber)
 
 	return sb.String()
 }
