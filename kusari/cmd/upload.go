@@ -22,6 +22,10 @@ var (
 	uploadSbomSubjectNameOverride    string
 	uploadSbomSubjectVersionOverride string
 	uploadWait                       bool
+	uploadForge                      string
+	uploadOrg                        string
+	uploadRepo                       string
+	uploadSubrepoPath                string
 )
 
 func init() {
@@ -37,6 +41,10 @@ func init() {
 	uploadcmd.Flags().StringVar(&uploadSbomSubjectNameOverride, "sbom-subject-name-override", "", "SBOM Subject Name override (optional, for SBOMs only)")
 	uploadcmd.Flags().StringVar(&uploadSbomSubjectVersionOverride, "sbom-subject-version-override", "", "SBOM Subject Version override (optional, from SBOMs only)")
 	uploadcmd.Flags().BoolVar(&uploadWait, "wait", true, "Wait for ingestion status (default: true)")
+	uploadcmd.Flags().StringVar(&uploadForge, "forge", "", "Source forge for the SBOM (e.g., github.com, gitlab.com)")
+	uploadcmd.Flags().StringVar(&uploadOrg, "org", "", "Organization/owner name in the forge")
+	uploadcmd.Flags().StringVar(&uploadRepo, "repo", "", "Repository name in the forge")
+	uploadcmd.Flags().StringVar(&uploadSubrepoPath, "subrepo-path", "", "Path to subrepo within the repository (e.g., app/frontend)")
 
 	// Bind flags to viper
 	mustBindPFlag("file-path", uploadcmd.Flags().Lookup("file-path"))
@@ -51,6 +59,10 @@ func init() {
 	mustBindPFlag("sbom-subject-name-override", uploadcmd.Flags().Lookup("sbom-subject-name-override"))
 	mustBindPFlag("sbom-subject-version-override", uploadcmd.Flags().Lookup("sbom-subject-version-override"))
 	mustBindPFlag("wait", uploadcmd.Flags().Lookup("wait"))
+	mustBindPFlag("forge", uploadcmd.Flags().Lookup("forge"))
+	mustBindPFlag("org", uploadcmd.Flags().Lookup("org"))
+	mustBindPFlag("repo", uploadcmd.Flags().Lookup("repo"))
+	mustBindPFlag("subrepo-path", uploadcmd.Flags().Lookup("subrepo-path"))
 }
 
 func upload() *cobra.Command {
@@ -72,6 +84,10 @@ func upload() *cobra.Command {
 			uploadSbomSubjectVersionOverride,
 			uploadCheckBlocked,
 			uploadWait,
+			uploadForge,
+			uploadOrg,
+			uploadRepo,
+			uploadSubrepoPath,
 		)
 	}
 
@@ -102,6 +118,10 @@ Examples:
   kusari platform upload --file-path sbom.json --tenant demo \
     --check-blocked-packages
 
+  # CI/CD: Upload with repository traceability metadata
+  kusari platform upload --file-path sbom.json --tenant demo \
+    --forge github.com --org myorg --repo myrepo --subrepo-path app/frontend
+
   # Dev/Testing: Upload using full tenant endpoint (overrides --tenant)
   kusari platform upload --file-path sbom.json --tenant-endpoint https://demo.api.dev.kusari.cloud`,
 	Args: cobra.NoArgs,
@@ -119,5 +139,9 @@ Examples:
 		uploadSbomSubjectNameOverride = viper.GetString("sbom-subject-name-override")
 		uploadSbomSubjectVersionOverride = viper.GetString("sbom-subject-version-override")
 		uploadWait = viper.GetBool("wait")
+		uploadForge = viper.GetString("forge")
+		uploadOrg = viper.GetString("org")
+		uploadRepo = viper.GetString("repo")
+		uploadSubrepoPath = viper.GetString("subrepo-path")
 	},
 }

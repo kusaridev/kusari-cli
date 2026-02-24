@@ -151,6 +151,10 @@ func Upload(
 	sbomSubjectVersionOverride string,
 	checkBlockedPackages bool,
 	wait bool,
+	forge string,
+	org string,
+	repo string,
+	subrepoPath string,
 ) error {
 	// Validate required configuration
 	if filePath == "" {
@@ -250,6 +254,19 @@ func Upload(
 	}
 	if sbomSubjectVersionOverride != "" { // only used for SBOM
 		uploadMeta["sbom_subject_version_override"] = sbomSubjectVersionOverride
+	}
+	// Repository traceability metadata
+	if forge != "" {
+		uploadMeta["forge"] = forge
+	}
+	if org != "" {
+		uploadMeta["org"] = org
+	}
+	if repo != "" {
+		uploadMeta["repo"] = repo
+	}
+	if subrepoPath != "" {
+		uploadMeta["subrepo_path"] = subrepoPath
 	}
 
 	var ssaus []sbomSubjectAndURI
