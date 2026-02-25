@@ -229,6 +229,23 @@ func Upload(
 		return fmt.Errorf("cannot override SBOM subject with directories, only single files")
 	}
 
+	// Auto-derive subrepo path from file-path if not explicitly set
+	if subrepoPath == "" {
+		if fileInfo.IsDir() {
+			// filePath is a directory, use it as subrepo path
+			subrepoPath = filePath
+		} else {
+			// filePath is a file, extract the directory portion
+			subrepoPath = filepath.Dir(filePath)
+		}
+		// Normalize the path
+		subrepoPath = filepath.Clean(subrepoPath)
+		// If it's the current directory, use "."
+		if subrepoPath == "" || subrepoPath == "." {
+			subrepoPath = "."
+		}
+	}
+
 	// Build upload metadata
 	uploadMeta := map[string]string{}
 	if alias != "" {

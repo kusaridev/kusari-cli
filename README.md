@@ -13,7 +13,7 @@ the [GitHub releases page](https://github.com/kusaridev/kusari-cli/releases).
 
 ## Usage
 
-For detailed information, see the [Kusari Documentation](https://docs.kusari.cloud/docs/CLI/).
+For detailed information, see the [Kusari Documentation](https://docs.kusari.cloud/reference/CLI/).
 
 When enabled in a CI/CD environment, Kusari Inspector via the `repo scan` command will:
 - Post a summary comment with security findings
