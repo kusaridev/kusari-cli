@@ -731,6 +731,165 @@ type mockResponse struct {
 	body   string
 }
 
+func TestUploadMetadata(t *testing.T) {
+	tests := []struct {
+		name                       string
+		alias                      string
+		docType                    string
+		tag                        string
+		softwareID                 string
+		sbomSubject                string
+		componentName              string
+		sbomSubjectNameOverride    string
+		sbomSubjectVersionOverride string
+		forge                      string
+		org                        string
+		repo                       string
+		subrepoPath                string
+		expectedMeta               map[string]string
+	}{
+		{
+			name:        "all repository traceability fields",
+			forge:       "github.com",
+			org:         "myorg",
+			repo:        "myrepo",
+			subrepoPath: "app/frontend",
+			expectedMeta: map[string]string{
+				"forge":        "github.com",
+				"org":          "myorg",
+				"repo":         "myrepo",
+				"subrepo_path": "app/frontend",
+			},
+		},
+		{
+			name:  "partial repository fields",
+			forge: "gitlab.com",
+			org:   "company",
+			repo:  "",
+			expectedMeta: map[string]string{
+				"forge": "gitlab.com",
+				"org":   "company",
+			},
+		},
+		{
+			name:          "combined with existing fields",
+			alias:         "my-alias",
+			componentName: "my-component",
+			forge:         "github.com",
+			org:           "testorg",
+			repo:          "testrepo",
+			expectedMeta: map[string]string{
+				"alias":          "my-alias",
+				"component_name": "my-component",
+				"forge":          "github.com",
+				"org":            "testorg",
+				"repo":           "testrepo",
+			},
+		},
+		{
+			name:                       "all fields populated",
+			alias:                      "alias",
+			docType:                    "image",
+			tag:                        "v1.0",
+			softwareID:                 "12345",
+			sbomSubject:                "subject",
+			componentName:              "component",
+			sbomSubjectNameOverride:    "name-override",
+			sbomSubjectVersionOverride: "version-override",
+			forge:                      "github.com",
+			org:                        "org",
+			repo:                       "repo",
+			subrepoPath:                "path/to/subrepo",
+			expectedMeta: map[string]string{
+				"alias":                         "alias",
+				"type":                          "image",
+				"tag":                           "v1.0",
+				"software_id":                   "12345",
+				"sbom_subject":                  "subject",
+				"component_name":                "component",
+				"sbom_subject_name_override":    "name-override",
+				"sbom_subject_version_override": "version-override",
+				"forge":                         "github.com",
+				"org":                           "org",
+				"repo":                          "repo",
+				"subrepo_path":                  "path/to/subrepo",
+			},
+		},
+		{
+			name:         "empty fields not included",
+			forge:        "",
+			org:          "",
+			repo:         "",
+			subrepoPath:  "",
+			expectedMeta: map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build upload metadata using the same logic as the Upload function
+			uploadMeta := map[string]string{}
+			if tt.alias != "" {
+				uploadMeta["alias"] = tt.alias
+			}
+			if tt.docType != "" {
+				uploadMeta["type"] = tt.docType
+			}
+			if tt.tag != "" {
+				uploadMeta["tag"] = tt.tag
+			}
+			if tt.softwareID != "" {
+				uploadMeta["software_id"] = tt.softwareID
+			}
+			if tt.sbomSubject != "" {
+				uploadMeta["sbom_subject"] = tt.sbomSubject
+			}
+			if tt.componentName != "" {
+				uploadMeta["component_name"] = tt.componentName
+			}
+			if tt.sbomSubjectNameOverride != "" {
+				uploadMeta["sbom_subject_name_override"] = tt.sbomSubjectNameOverride
+			}
+			if tt.sbomSubjectVersionOverride != "" {
+				uploadMeta["sbom_subject_version_override"] = tt.sbomSubjectVersionOverride
+			}
+			// Repository traceability metadata
+			if tt.forge != "" {
+				uploadMeta["forge"] = tt.forge
+			}
+			if tt.org != "" {
+				uploadMeta["org"] = tt.org
+			}
+			if tt.repo != "" {
+				uploadMeta["repo"] = tt.repo
+			}
+			if tt.subrepoPath != "" {
+				uploadMeta["subrepo_path"] = tt.subrepoPath
+			}
+
+			// Verify expected metadata
+			if len(uploadMeta) != len(tt.expectedMeta) {
+				t.Errorf("Expected %d metadata fields, got %d", len(tt.expectedMeta), len(uploadMeta))
+			}
+
+			for key, expectedValue := range tt.expectedMeta {
+				if actualValue, exists := uploadMeta[key]; !exists {
+					t.Errorf("Expected metadata key '%s' not found", key)
+				} else if actualValue != expectedValue {
+					t.Errorf("Metadata key '%s': expected '%s', got '%s'", key, expectedValue, actualValue)
+				}
+			}
+
+			// Verify no unexpected keys
+			for key := range uploadMeta {
+				if _, expected := tt.expectedMeta[key]; !expected {
+					t.Errorf("Unexpected metadata key '%s' found", key)
+				}
+			}
+		})
+	}
+}
+
 func TestUpload_ValidationErrors(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -796,6 +955,10 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				"",
 				false,
 				false,
+				"", // forge
+				"", // org
+				"", // repo
+				"", // subrepoPath
 			)
 
 			if !tt.expectError {

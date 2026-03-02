@@ -151,6 +151,10 @@ func Upload(
 	sbomSubjectVersionOverride string,
 	checkBlockedPackages bool,
 	wait bool,
+	forge string,
+	org string,
+	repo string,
+	subrepoPath string,
 ) error {
 	// Validate required configuration
 	if filePath == "" {
@@ -225,6 +229,23 @@ func Upload(
 		return fmt.Errorf("cannot override SBOM subject with directories, only single files")
 	}
 
+	// Auto-derive subrepo path from file-path if not explicitly set
+	if subrepoPath == "" {
+		if fileInfo.IsDir() {
+			// filePath is a directory, use it as subrepo path
+			subrepoPath = filePath
+		} else {
+			// filePath is a file, extract the directory portion
+			subrepoPath = filepath.Dir(filePath)
+		}
+		// Normalize the path
+		subrepoPath = filepath.Clean(subrepoPath)
+		// If it's the current directory, use "."
+		if subrepoPath == "" || subrepoPath == "." {
+			subrepoPath = "."
+		}
+	}
+
 	// Build upload metadata
 	uploadMeta := map[string]string{}
 	if alias != "" {
@@ -250,6 +271,19 @@ func Upload(
 	}
 	if sbomSubjectVersionOverride != "" { // only used for SBOM
 		uploadMeta["sbom_subject_version_override"] = sbomSubjectVersionOverride
+	}
+	// Repository traceability metadata
+	if forge != "" {
+		uploadMeta["forge"] = forge
+	}
+	if org != "" {
+		uploadMeta["org"] = org
+	}
+	if repo != "" {
+		uploadMeta["repo"] = repo
+	}
+	if subrepoPath != "" {
+		uploadMeta["subrepo_path"] = subrepoPath
 	}
 
 	var ssaus []sbomSubjectAndURI
