@@ -61,7 +61,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # main
       - name: Install syft
-        uses: anchore/sbom-action/download-syft@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+        uses: anchore/sbom-action/download-syft@17ae1740179002c89186b61233e0f892c3118b11 # v0.23.0
 
       - name: Run GoReleaser Snapshot
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -88,7 +88,7 @@ jobs:
           DOCKER_CONTEXT: default
 
       # Generate image SBOM
-      - uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+      - uses: anchore/sbom-action@17ae1740179002c89186b61233e0f892c3118b11 # v0.23.0
         name: Generate image SBOM
         if: startsWith(github.ref, 'refs/tags/')
         with:
@@ -109,7 +109,7 @@ jobs:
           cyclonedx-gomod app -licenses -json -output cyclonedx_build.json -main ./kusari
 
       # Ingest image SBOM
-      - uses: kusaridev/kusari-ingest@f28d0be1bb0cddcbc83f37f50dd2cd66f5c76ffb #v2.0.7
+      - uses: kusaridev/kusari-ingest@de095cf0055369199682c3ec9ecf0d9207b2e26a #v2.0.8
         name: Kusari ingestion for image SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
@@ -122,7 +122,7 @@ jobs:
           document-type: 'image'
 
       # Ingest build SBOM
-      - uses: kusaridev/kusari-ingest@f28d0be1bb0cddcbc83f37f50dd2cd66f5c76ffb #v2.0.7
+      - uses: kusaridev/kusari-ingest@de095cf0055369199682c3ec9ecf0d9207b2e26a #v2.0.8
         name: Kusari ingestion for build SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
