@@ -11,4 +11,7 @@ type BundleMeta struct {
 	Remote        string `json:"remote"`
 	GitDirty      bool   `json:"git_dirty"`
 	ScanType      string `json:"scan_type,omitempty"`
+	// Incremental scanning fields
+	CommitSHA    string   `json:"commit_sha,omitempty"`    // Current HEAD commit SHA
+	ChangedFiles []string `json:"changed_files,omitempty"` // Files changed in this scan
 }
