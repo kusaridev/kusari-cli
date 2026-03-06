@@ -12,6 +12,7 @@ type BundleMeta struct {
 	GitDirty      bool   `json:"git_dirty"`
 	ScanType      string `json:"scan_type,omitempty"`
 	// Incremental scanning fields
-	CommitSHA    string   `json:"commit_sha,omitempty"`    // Current HEAD commit SHA
-	ChangedFiles []string `json:"changed_files,omitempty"` // Files changed in this scan
+	CommitSHA         string            `json:"commit_sha,omitempty"`          // Current HEAD commit SHA
+	ChangedFiles      []string          `json:"changed_files,omitempty"`       // Files changed in this scan
+	ChangedFileHashes map[string]string `json:"changed_file_hashes,omitempty"` // SHA256 hashes of changed file contents
 }
