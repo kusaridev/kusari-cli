@@ -43,10 +43,10 @@ func (s *Server) ensureAuthenticated(ctx context.Context) error {
 			return nil
 		}
 		// Token expired, need to re-auth
-		fmt.Fprintln(os.Stderr, "[kusari-mcp] Token expired, initiating re-authentication...")
+		fmt.Fprintln(os.Stderr, "[kusari-ai] Token expired, initiating re-authentication...")
 	} else {
 		// No token, need to auth
-		fmt.Fprintln(os.Stderr, "[kusari-mcp] No authentication token found, initiating browser login...")
+		fmt.Fprintln(os.Stderr, "[kusari-ai] No authentication token found, initiating browser login...")
 	}
 
 	// Trigger browser-based authentication
@@ -58,7 +58,7 @@ func (s *Server) triggerBrowserAuth(ctx context.Context) error {
 	redirectPort := port.GenerateRandomPortOrDefault()
 	redirectURL := fmt.Sprintf("http://localhost:%s/callback", redirectPort)
 
-	fmt.Fprintln(os.Stderr, "[kusari-mcp] Opening browser for authentication...")
+	fmt.Fprintln(os.Stderr, "[kusari-ai] Opening browser for authentication...")
 
 	// Authenticate - this opens the browser
 	token, err := auth.Authenticate(
@@ -75,7 +75,7 @@ func (s *Server) triggerBrowserAuth(ctx context.Context) error {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "[kusari-mcp] Authentication successful!")
+	fmt.Fprintln(os.Stderr, "[kusari-ai] Authentication successful!")
 
 	// Fetch workspaces and auto-select the first one
 	workspaces, workspaceTenants, err := login.FetchWorkspaces(s.config.PlatformURL, token.AccessToken)
@@ -100,17 +100,17 @@ func (s *Server) triggerBrowserAuth(ctx context.Context) error {
 		selectedWorkspace.Tenant = tenants[0]
 	}
 
-	fmt.Fprintf(os.Stderr, "[kusari-mcp] Auto-selected workspace: %s\n", selectedWorkspace.Description)
+	fmt.Fprintf(os.Stderr, "[kusari-ai] Auto-selected workspace: %s\n", selectedWorkspace.Description)
 	if selectedWorkspace.Tenant != "" {
-		fmt.Fprintf(os.Stderr, "[kusari-mcp] Auto-selected tenant: %s\n", selectedWorkspace.Tenant)
+		fmt.Fprintf(os.Stderr, "[kusari-ai] Auto-selected tenant: %s\n", selectedWorkspace.Tenant)
 	}
 
 	// Inform user how to change workspace/tenant if needed
 	if len(workspaces) > 1 {
-		fmt.Fprintln(os.Stderr, "[kusari-mcp] To change workspace, run: kusari auth select-workspace")
+		fmt.Fprintln(os.Stderr, "[kusari-ai] To change workspace, run: kusari auth select-workspace")
 	}
 	if tenants, ok := workspaceTenants[selectedWorkspace.ID]; ok && len(tenants) > 1 {
-		fmt.Fprintln(os.Stderr, "[kusari-mcp] To change tenant, run: kusari auth select-tenant")
+		fmt.Fprintln(os.Stderr, "[kusari-ai] To change tenant, run: kusari auth select-tenant")
 	}
 
 	// Save the selected workspace

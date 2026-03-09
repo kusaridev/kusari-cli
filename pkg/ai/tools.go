@@ -45,7 +45,7 @@ func (s *Server) executeScanLocalChanges(ctx context.Context, args ScanLocalChan
 	}
 
 	if s.config.Verbose {
-		fmt.Fprintf(os.Stderr, "[kusari-mcp] Scanning local changes in %s (base: %s, format: %s)\n",
+		fmt.Fprintf(os.Stderr, "[kusari-ai] Scanning local changes in %s (base: %s, format: %s)\n",
 			repoPath, baseRef, outputFormat)
 	}
 
@@ -65,7 +65,7 @@ func (s *Server) executeScanLocalChanges(ctx context.Context, args ScanLocalChan
 
 	// If scan fails due to auth, try to re-authenticate and retry once
 	if err != nil && isAuthError(err) {
-		fmt.Fprintln(os.Stderr, "[kusari-mcp] Authentication error during scan, attempting re-authentication...")
+		fmt.Fprintln(os.Stderr, "[kusari-ai] Authentication error during scan, attempting re-authentication...")
 		if authErr := s.triggerBrowserAuth(ctx); authErr != nil {
 			return nil, fmt.Errorf("re-authentication failed: %w", authErr)
 		}

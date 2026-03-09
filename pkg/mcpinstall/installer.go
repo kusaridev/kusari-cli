@@ -30,13 +30,13 @@ type InstallationResult struct {
 func GetServerConfig() map[string]interface{} {
 	return map[string]interface{}{
 		"command": "kusari",
-		"args":    []string{"mcp", "serve", "--verbose"},
+		"args":    []string{"ai", "serve", "--verbose"},
 	}
 }
 
 // GetServerArgs returns the server command arguments.
 func GetServerArgs() []string {
-	return []string{"mcp", "serve"}
+	return []string{"ai", "serve"}
 }
 
 // Install installs the Kusari MCP server for the given client.
@@ -59,8 +59,8 @@ func installViaCLI(client ClientConfig) (*InstallationResult, error) {
 		}, fmt.Errorf("%s CLI not found: %w", client.CLICommand, err)
 	}
 
-	// Build command: <cli> mcp add <server-key> -- kusari mcp serve
-	args := []string{"mcp", "add", client.ServerKey, "--", "kusari", "mcp", "serve"}
+	// Build command: <cli> mcp add <server-key> -- kusari ai serve
+	args := []string{"mcp", "add", client.ServerKey, "--", "kusari", "ai", "serve"}
 
 	cmd := exec.Command(cliPath, args...)
 	output, err := cmd.CombinedOutput()
@@ -309,7 +309,7 @@ func addServerContinueFormat(config map[string]interface{}, serverKey string) {
 			if srv["name"] == serverKey {
 				// Update existing
 				srv["command"] = "kusari"
-				srv["args"] = []string{"mcp", "serve"}
+				srv["args"] = []string{"ai", "serve"}
 				return
 			}
 		}

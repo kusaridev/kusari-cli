@@ -256,7 +256,7 @@ func TestGetServerConfig_ReturnsCorrectStructure(t *testing.T) {
 	assert.Equal(t, "kusari", config["command"])
 	args, ok := config["args"].([]string)
 	require.True(t, ok)
-	assert.Contains(t, args, "mcp")
+	assert.Contains(t, args, "ai")
 	assert.Contains(t, args, "serve")
 }
 
