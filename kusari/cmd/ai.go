@@ -7,12 +7,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// MCP returns the parent command for MCP server operations.
-func MCP() *cobra.Command {
+// AI returns the parent command for AI integrations.
+func AI() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "mcp",
-		Short: "MCP server operations",
-		Long:  "Manage the Kusari Inspector MCP server for AI coding assistants",
+		Use:   "ai",
+		Short: "AI coding assistant integrations",
+		Long:  "Install and manage Kusari integrations for AI coding assistants (MCP servers and agent skills)",
 	}
 
 	cmd.AddCommand(serve())

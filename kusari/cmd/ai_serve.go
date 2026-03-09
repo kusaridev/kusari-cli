@@ -8,22 +8,22 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kusaridev/kusari-cli/pkg/mcp"
+	"github.com/kusaridev/kusari-cli/pkg/ai"
 	"github.com/spf13/cobra"
 )
 
 func serve() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Start the MCP server",
-		Long: `Start the MCP server process.
+		Short: "Start the AI integration server",
+		Long: `Start the AI integration server process (MCP protocol).
 
-This command is designed to be spawned by MCP clients (like Claude Code),
+This command is designed to be spawned by AI coding assistants (like Claude Code),
 not run directly by users. The server communicates via stdio transport.
 
 For debugging, you can run it directly with --verbose to see detailed logging.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := mcp.LoadConfig()
+			cfg, err := ai.LoadConfig()
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
@@ -33,7 +33,7 @@ For debugging, you can run it directly with --verbose to see detailed logging.`,
 				cfg.Verbose = verbose
 			}
 
-			server, err := mcp.NewServer(cfg)
+			server, err := ai.NewServer(cfg)
 			if err != nil {
 				return fmt.Errorf("failed to create server: %w", err)
 			}

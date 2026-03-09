@@ -15,15 +15,17 @@ import (
 func uninstall() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "uninstall [client]",
-		Short: "Uninstall the MCP server from a coding agent",
-		Long: `Remove the Kusari Inspector MCP server configuration from a specific coding agent.
+		Short: "Uninstall AI integrations from a coding agent",
+		Long: `Remove Kusari integrations from a specific coding agent.
+
+This includes MCP server configuration and agent skills.
 
 If no client is specified, an interactive menu will let you select from supported clients.
 
 Supported clients: claude, cursor, windsurf, cline, continue`,
-		Example: `  kusari mcp uninstall           # Interactive selection
-  kusari mcp uninstall claude    # Uninstall from Claude Code
-  kusari mcp uninstall cursor    # Uninstall from Cursor`,
+		Example: `  kusari ai uninstall           # Interactive selection
+  kusari ai uninstall claude    # Uninstall from Claude Code
+  kusari ai uninstall cursor    # Uninstall from Cursor`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var clientID string
@@ -98,7 +100,7 @@ func selectClientForUninstall() (string, error) {
 
 func printUninstallHeader(client mcpinstall.ClientConfig) {
 	fmt.Println(strings.Repeat("=", 70))
-	fmt.Println("Kusari Inspector MCP Server - Uninstallation")
+	fmt.Println("Kusari AI Integrations - Uninstallation")
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 	fmt.Printf("Removing from: %s\n", client.Name)
@@ -121,7 +123,7 @@ func printUninstallSuccess(client mcpinstall.ClientConfig, result *mcpinstall.In
 		fmt.Println()
 	}
 
-	fmt.Println("To reinstall, run: kusari mcp install " + client.ID)
+	fmt.Println("To reinstall, run: kusari ai install " + client.ID)
 	fmt.Println()
 	fmt.Println(strings.Repeat("=", 70))
 

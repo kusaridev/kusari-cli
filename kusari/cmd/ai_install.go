@@ -15,15 +15,17 @@ import (
 func install() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install [client]",
-		Short: "Install the MCP server for a coding agent",
-		Long: `Install and configure the Kusari Inspector MCP server for a specific coding agent.
+		Short: "Install AI integrations for a coding agent",
+		Long: `Install and configure Kusari integrations for a specific coding agent.
+
+This includes MCP server configuration and agent skills (coming soon).
 
 If no client is specified, an interactive menu will let you select from supported clients.
 
 Supported clients: claude, cursor, windsurf, cline, continue`,
-		Example: `  kusari mcp install           # Interactive selection
-  kusari mcp install claude    # Install for Claude Code
-  kusari mcp install cursor    # Install for Cursor`,
+		Example: `  kusari ai install           # Interactive selection
+  kusari ai install claude    # Install for Claude Code
+  kusari ai install cursor    # Install for Cursor`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var clientID string
@@ -98,7 +100,7 @@ func selectClient() (string, error) {
 
 func printInstallHeader(client mcpinstall.ClientConfig) {
 	fmt.Println(strings.Repeat("=", 70))
-	fmt.Println("Kusari Inspector MCP Server - Installation")
+	fmt.Println("Kusari AI Integrations - Installation")
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 	fmt.Printf("Configuring for: %s\n", client.Name)

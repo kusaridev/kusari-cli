@@ -1,7 +1,7 @@
 // Copyright (c) Kusari <https://www.kusari.dev/>
 // SPDX-License-Identifier: MIT
 
-package mcp
+package ai
 
 import (
 	"context"

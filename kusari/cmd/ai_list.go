@@ -17,7 +17,7 @@ func list() *cobra.Command {
 		Short: "List supported coding agents and installation status",
 		Long: `Display all supported coding agents and whether Kusari Inspector
 is currently installed for each one.`,
-		Example: `  kusari mcp list`,
+		Example: `  kusari ai list`,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clients := mcpinstall.GetAllClients()
@@ -35,7 +35,7 @@ is currently installed for each one.`,
 
 func printListHeader() {
 	fmt.Println(strings.Repeat("=", 70))
-	fmt.Println("Kusari Inspector MCP Server - Supported Clients")
+	fmt.Println("Kusari AI Integrations - Supported Clients")
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 }
@@ -74,8 +74,8 @@ func printClientStatuses(statuses []mcpinstall.ClientStatus) {
 		len(statuses), installedCount, len(statuses)-installedCount)
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  kusari mcp install <client>    Install for a specific client")
-	fmt.Println("  kusari mcp uninstall <client>  Remove from a specific client")
+	fmt.Println("  kusari ai install <client>    Install for a specific client")
+	fmt.Println("  kusari ai uninstall <client>  Remove from a specific client")
 	fmt.Println()
 	fmt.Println(strings.Repeat("=", 70))
 }
