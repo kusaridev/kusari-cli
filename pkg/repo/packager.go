@@ -5,6 +5,8 @@ package repo
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,13 +102,60 @@ func createMeta(rev string, full bool) (*api.BundleMeta, error) {
 		return nil, fmt.Errorf("failed to run git status: %w", err)
 	}
 
+	// Get current commit SHA for incremental scanning support
+	commitSHA, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		// Non-fatal: commit SHA is optional for incremental scanning
+		commitSHA = []byte{}
+	}
+
+	// Get list of changed files for incremental scanning support
+	var changedFiles []string
+	if !full && rev != "" {
+		// For diff scans, get the list of files that changed (tracked files)
+		diffOutput, err := exec.Command("git", "diff", "--name-only", rev).Output()
+		if err == nil && len(diffOutput) > 0 {
+			files := strings.SplitSeq(strings.TrimSpace(string(diffOutput)), "\n")
+			for f := range files {
+				if f != "" {
+					changedFiles = append(changedFiles, f)
+				}
+			}
+		}
+
+		// Also include untracked files (new files not yet added to git)
+		untrackedOutput, err := exec.Command("git", "ls-files", "--others", "--exclude-standard").Output()
+		if err == nil && len(untrackedOutput) > 0 {
+			files := strings.SplitSeq(strings.TrimSpace(string(untrackedOutput)), "\n")
+			for f := range files {
+				if f != "" {
+					changedFiles = append(changedFiles, f)
+				}
+			}
+		}
+	}
+
+	// Compute content hashes for changed files (for incremental scanning)
+	changedFileHashes := make(map[string]string)
+	for _, file := range changedFiles {
+		hash, err := computeFileHash(file)
+		if err != nil {
+			// Skip files that can't be hashed (deleted, binary, etc.)
+			continue
+		}
+		changedFileHashes[file] = hash
+	}
+
 	meta := &api.BundleMeta{
-		PatchName:     patchName,
-		CurrentBranch: strings.TrimSpace(string(branch)),
-		DirName:       filepath.Base(repoDir),
-		DiffCmd:       rev,
-		Remote:        strings.TrimSpace(string(remote)),
-		GitDirty:      len(status) != 0,
+		PatchName:         patchName,
+		CurrentBranch:     strings.TrimSpace(string(branch)),
+		DirName:           filepath.Base(repoDir),
+		DiffCmd:           rev,
+		Remote:            strings.TrimSpace(string(remote)),
+		GitDirty:          len(status) != 0,
+		CommitSHA:         strings.TrimSpace(string(commitSHA)),
+		ChangedFiles:      changedFiles,
+		ChangedFileHashes: changedFileHashes,
 	}
 	if full {
 		meta.ScanType = "full"
@@ -131,4 +180,14 @@ func createMeta(rev string, full bool) (*api.BundleMeta, error) {
 	}
 
 	return meta, nil
+}
+
+// computeFileHash computes SHA256 hash of a file's contents
+func computeFileHash(filePath string) (string, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(content)
+	return hex.EncodeToString(hash[:]), nil
 }

@@ -1,25 +1,35 @@
 package url
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"path"
 	"strings"
 )
 
-// CreateSortString creates a URL-encoded sort string from user ID and epoch.
-/* Sort Key format:
+// hashRemote creates a short hash of the remote URL for use in sort keys.
+// Returns first 8 characters of SHA256 hash.
+func hashRemote(remote string) string {
+	if remote == "" {
+		return "local"
+	}
+	hash := sha256.Sum256([]byte(remote))
+	return hex.EncodeToString(hash[:])[:8]
+}
 
-cli-user: cli-user|{{user sub}}|{{epoch}}
-cli-user-full: cli-user-full|{{user sub}}|{{epoch}}
-cli-api: cli-api|machine|{{epoch}}
-cli-api-full: cli-api-full|machine|{{epoch}}
-cli-user: cli-user|{{user sub}}|{{timestamp}}|status|{{status}}
-cli-user-full: cli-user-full|{{user sub}}|{{timestamp}}|status|{{status}}
-cli-api: cli-api|machine|{{timestamp}}|status|{{status}}
-cli-api-full: cli-api-full|machine|{{timestamp}}|status|{{status}}
+// CreateSortString creates a URL-encoded sort string from user ID, epoch, and repo metadata.
+/* Sort Key format (NEW - includes repo metadata for incremental scanning):
+
+cli-user: cli-user|{{remoteHash}}|{{dirName}}|{{branch}}|{{user sub}}|{{epoch}}
+cli-user-full: cli-user-full|{{remoteHash}}|{{dirName}}|{{branch}}|{{user sub}}|{{epoch}}
+cli-api: cli-api|{{remoteHash}}|{{dirName}}|{{branch}}|machine|{{epoch}}
+cli-api-full: cli-api-full|{{remoteHash}}|{{dirName}}|{{branch}}|machine|{{epoch}}
+
+Status entries append: |status|{{status}}
 */
-func CreateSortString(userID string, epoch string, full, isMachine bool) string {
+func CreateSortString(userID, epoch string, full, isMachine bool, remote, dirName, branch string) string {
 	var prefix string
 
 	if !isMachine {
@@ -35,7 +45,10 @@ func CreateSortString(userID string, epoch string, full, isMachine bool) string 
 		userID = "machine"
 	}
 
-	sortString := fmt.Sprintf("%s|%s|%s", prefix, userID, epoch)
+	remoteHash := hashRemote(remote)
+
+	// New format: prefix|remoteHash|dirName|branch|userID|epoch
+	sortString := fmt.Sprintf("%s|%s|%s|%s|%s|%s", prefix, remoteHash, dirName, branch, userID, epoch)
 	return url.QueryEscape(sortString)
 }
 

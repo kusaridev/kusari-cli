@@ -84,6 +84,30 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		os.Exit(1)
 	}
 
+	// For diff scans (not full), check cache first
+	if !full && wait {
+		cacheResult, cacheErr := CheckCache(dir, rev, verbose)
+		if cacheErr != nil {
+			// "no changes to scan" is a valid case - return early
+			if strings.Contains(cacheErr.Error(), "no changes to scan") {
+				fmt.Fprintf(os.Stderr, "No changes to scan (git diff is empty against %s)\n", rev)
+				return nil
+			}
+			// Other cache errors - log and continue with scan
+			if verbose {
+				fmt.Fprintf(os.Stderr, "Cache check error: %v\n", cacheErr)
+			}
+		} else if cacheResult != nil && cacheResult.Hit {
+			// Cache hit - output cached results
+			fmt.Fprintf(os.Stderr, "✓ Returning cached results (no changes since last scan)\n")
+			if cacheResult.ConsoleURL != "" {
+				fmt.Fprintf(os.Stderr, "View results at: %s\n", cacheResult.ConsoleURL)
+			}
+			fmt.Print(cacheResult.Results)
+			return nil
+		}
+	}
+
 	// Check if this is a monorepo - only for risk checks (full scans)
 	// Diff scans can work fine on monorepos since they're analyzing changes
 	if full {
@@ -225,7 +249,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		return err
 	}
 
-	sortString := urlBuilder.CreateSortString(userID, epoch, full, isMachine)
+	sortString := urlBuilder.CreateSortString(userID, epoch, full, isMachine, meta.Remote, meta.DirName, meta.CurrentBranch)
 
 	var consoleFullUrl *string
 	var consoleUrlErr error
@@ -249,7 +273,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
-		return queryForResult(platformUrl, epoch, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose)
+		return queryForResult(platformUrl, sortString, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose, dir, rev)
 	}
 	return nil
 }
@@ -258,7 +282,7 @@ func cleanupWorkingDirectory(tempDir string) {
 	_ = os.RemoveAll(tempDir)
 }
 
-func queryForResult(platformUrl string, epoch string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool) error {
+func queryForResult(platformUrl string, sortKey string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string) error {
 	maxAttempts := 750
 	attempt := 0
 	sleepDuration := time.Second
@@ -279,10 +303,10 @@ func queryForResult(platformUrl string, epoch string, accessToken string, consol
 	if full {
 		scanType = "risk-check"
 	}
-	// Build URL
+	// Build URL - sortKey is already URL-encoded from CreateSortString
 	fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s&op=beginswith&scanType=%s",
 		strings.TrimSuffix(platformUrl, "/"),
-		epoch,
+		sortKey,
 		scanType)
 
 	for attempt < maxAttempts {
@@ -349,6 +373,13 @@ func queryForResult(platformUrl string, epoch string, accessToken string, consol
 
 						fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
 						fmt.Print(sarifOutput) // stdout
+
+						// Save to cache for diff scans
+						if !full && repoDir != "" {
+							if err := SaveToCache(repoDir, baseRef, sarifOutput, *consoleFullUrl, verbose); err != nil && verbose {
+								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", err)
+							}
+						}
 						return nil
 					}
 
@@ -363,18 +394,37 @@ func queryForResult(platformUrl string, epoch string, accessToken string, consol
 					)
 					if err != nil {
 						fmt.Print(cleanedContent) // stdout
+						// Save to cache for diff scans (save cleaned content for re-rendering)
+						if !full && repoDir != "" {
+							if cacheErr := SaveToCache(repoDir, baseRef, cleanedContent, *consoleFullUrl, verbose); cacheErr != nil && verbose {
+								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
+							}
+						}
 						return nil
 					}
 
 					rendered, err := r.Render(cleanedContent)
 					if err != nil {
 						fmt.Print(cleanedContent) // stdout
+						// Save to cache for diff scans
+						if !full && repoDir != "" {
+							if cacheErr := SaveToCache(repoDir, baseRef, cleanedContent, *consoleFullUrl, verbose); cacheErr != nil && verbose {
+								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
+							}
+						}
 						return nil
 					}
 
 					fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
 
 					fmt.Print(rendered) // stdout
+
+					// Save to cache for diff scans (save rendered content for immediate reuse)
+					if !full && repoDir != "" {
+						if cacheErr := SaveToCache(repoDir, baseRef, rendered, *consoleFullUrl, verbose); cacheErr != nil && verbose {
+							fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
+						}
+					}
 					return nil
 				}
 
