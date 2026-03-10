@@ -209,3 +209,20 @@ func (c *Client) GetPackagesWithLifecycle(ctx context.Context, params map[string
 
 	return json.RawMessage(respBody), nil
 }
+
+// GetSoftwareIDsByRepo finds software IDs by repository metadata (forge, org, repo, subrepo_path).
+func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, subrepoPath string) (json.RawMessage, error) {
+	params := map[string]string{
+		"forge":        forge,
+		"org":          org,
+		"repo":         repo,
+		"subrepo_path": subrepoPath,
+	}
+
+	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/software/id/by-repo", params, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(respBody), nil
+}

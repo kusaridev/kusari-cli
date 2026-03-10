@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/kusaridev/kusari-cli/pkg/pico"
@@ -22,6 +23,7 @@ func software() *cobra.Command {
 
 	cmd.AddCommand(picoSoftwareList())
 	cmd.AddCommand(picoSoftwareGet())
+	cmd.AddCommand(picoSoftwareCurrent())
 
 	return cmd
 }
@@ -110,6 +112,61 @@ func picoSoftwareGet() *cobra.Command {
 			return nil
 		},
 	}
+
+	return cmd
+}
+
+func picoSoftwareCurrent() *cobra.Command {
+	var repoPath string
+
+	cmd := &cobra.Command{
+		Use:   "current",
+		Short: "Find software IDs for the current repository",
+		Long:  "Find software IDs by extracting repository information from git remote (forge, org, repo, subrepo_path)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if platformTenant == "" {
+				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			}
+
+			// Extract git remote info
+			repoInfo, err := pico.ExtractGitRemoteInfo(repoPath)
+			if err != nil {
+				return fmt.Errorf("failed to extract git remote info: %w", err)
+			}
+
+			if verbose {
+				fmt.Fprintf(os.Stderr, "Querying software for:\n")
+				fmt.Fprintf(os.Stderr, "  Forge: %s\n", repoInfo.Forge)
+				fmt.Fprintf(os.Stderr, "  Org: %s\n", repoInfo.Org)
+				fmt.Fprintf(os.Stderr, "  Repo: %s\n", repoInfo.Repo)
+				fmt.Fprintf(os.Stderr, "  Subrepo Path: %s\n", repoInfo.SubrepoPath)
+			}
+
+			client := pico.NewClient(platformTenant)
+
+			ctx := context.Background()
+			result, err := client.GetSoftwareIDsByRepo(ctx, repoInfo.Forge, repoInfo.Org, repoInfo.Repo, repoInfo.SubrepoPath)
+			if err != nil {
+				return fmt.Errorf("failed to fetch software IDs: %w", err)
+			}
+
+			// Pretty print JSON
+			var formatted interface{}
+			if err := json.Unmarshal(result, &formatted); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
+			}
+
+			output, err := json.MarshalIndent(formatted, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to format output: %w", err)
+			}
+
+			fmt.Println(string(output))
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&repoPath, "repo-path", "", "Path to git repository (defaults to current directory)")
 
 	return cmd
 }
