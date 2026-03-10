@@ -50,7 +50,7 @@ func mockServer(t *testing.T, statusCode int, response interface{}) *httptest.Se
 
 		data, err := json.Marshal(response)
 		require.NoError(t, err)
-		w.Write(data)
+		_, _ = w.Write(data)
 	}))
 }
 
