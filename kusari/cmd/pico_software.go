@@ -24,6 +24,8 @@ func software() *cobra.Command {
 	cmd.AddCommand(picoSoftwareList())
 	cmd.AddCommand(picoSoftwareGet())
 	cmd.AddCommand(picoSoftwareCurrent())
+	cmd.AddCommand(picoSoftwareVulnerabilities())
+	cmd.AddCommand(picoSoftwareVulnerabilityByID())
 
 	return cmd
 }
@@ -167,6 +169,103 @@ func picoSoftwareCurrent() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&repoPath, "repo-path", "", "Path to git repository (defaults to current directory)")
+
+	return cmd
+}
+
+func picoSoftwareVulnerabilities() *cobra.Command {
+	var page int
+	var size int
+
+	cmd := &cobra.Command{
+		Use:   "vulnerabilities <software-id>",
+		Short: "Get vulnerabilities for a software",
+		Long:  "Get paginated list of vulnerabilities affecting a specific software/application by its ID",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			softwareID, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid software ID: %w", err)
+			}
+
+			if platformTenant == "" {
+				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			}
+
+			client := pico.NewClient(platformTenant)
+
+			ctx := context.Background()
+			result, err := client.GetSoftwareVulnerabilities(ctx, softwareID, page, size)
+			if err != nil {
+				return fmt.Errorf("failed to fetch software vulnerabilities: %w", err)
+			}
+
+			// Pretty print JSON
+			var formatted interface{}
+			if err := json.Unmarshal(result, &formatted); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
+			}
+
+			output, err := json.MarshalIndent(formatted, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to format output: %w", err)
+			}
+
+			fmt.Println(string(output))
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&page, "page", 0, "Page number (default: 0)")
+	cmd.Flags().IntVar(&size, "size", 1000, "Page size (default: 1000)")
+
+	return cmd
+}
+
+func picoSoftwareVulnerabilityByID() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "vulnerability <software-id> <vuln-id>",
+		Short: "Get detailed vulnerability information for a software",
+		Long:  "Get detailed information about how a specific vulnerability affects a specific software, including remediation plans",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			softwareID, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid software ID: %w", err)
+			}
+
+			vulnID, err := strconv.Atoi(args[1])
+			if err != nil {
+				return fmt.Errorf("invalid vulnerability ID: %w", err)
+			}
+
+			if platformTenant == "" {
+				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			}
+
+			client := pico.NewClient(platformTenant)
+
+			ctx := context.Background()
+			result, err := client.GetSoftwareVulnerabilityByID(ctx, softwareID, vulnID)
+			if err != nil {
+				return fmt.Errorf("failed to fetch software vulnerability details: %w", err)
+			}
+
+			// Pretty print JSON
+			var formatted interface{}
+			if err := json.Unmarshal(result, &formatted); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
+			}
+
+			output, err := json.MarshalIndent(formatted, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to format output: %w", err)
+			}
+
+			fmt.Println(string(output))
+			return nil
+		},
+	}
 
 	return cmd
 }

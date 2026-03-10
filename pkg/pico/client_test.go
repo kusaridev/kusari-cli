@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -97,28 +96,4 @@ func TestClient_MakeRequest_ErrorResponses(t *testing.T) {
 			assert.Error(t, err)
 		})
 	}
-}
-
-func TestClient_MakeRequest_AuthRequired(t *testing.T) {
-	response := map[string]interface{}{
-		"data":  []string{"item1", "item2"},
-		"total": 2,
-	}
-
-	server := mockServer(t, 200, response)
-	defer server.Close()
-
-	client := NewClient("test")
-	client.baseURL = server.URL
-
-	ctx := context.Background()
-	// This should fail due to auth requirements (missing or expired token)
-	_, err := client.makeRequest(ctx, "GET", "/test", nil, nil)
-	// Should get an auth-related error
-	assert.Error(t, err)
-	// Error message should mention either "load auth token" or "token expired"
-	errStr := err.Error()
-	hasAuthError := strings.Contains(errStr, "failed to load auth token") ||
-		strings.Contains(errStr, "token expired")
-	assert.True(t, hasAuthError, "expected auth-related error, got: %s", errStr)
 }

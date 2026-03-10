@@ -33,7 +33,7 @@ func NewClient(tenant string) *Client {
 		tenant:  tenant,
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 90 * time.Second,
 		},
 	}
 }
@@ -182,6 +182,36 @@ func (c *Client) GetSoftwareList(ctx context.Context, search string, page, size 
 // GetSoftwareByID retrieves detailed information about a specific software by ID.
 func (c *Client) GetSoftwareByID(ctx context.Context, softwareID int) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v1/software/%d", softwareID)
+	respBody, err := c.makeRequest(ctx, "GET", path, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(respBody), nil
+}
+
+// GetSoftwareVulnerabilities retrieves vulnerabilities for a specific software by ID.
+func (c *Client) GetSoftwareVulnerabilities(ctx context.Context, softwareID, page, size int) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v1/software/%d/vulnerabilities", softwareID)
+	params := make(map[string]string)
+	if page >= 0 {
+		params["page"] = fmt.Sprintf("%d", page)
+	}
+	if size > 0 {
+		params["size"] = fmt.Sprintf("%d", size)
+	}
+
+	respBody, err := c.makeRequest(ctx, "GET", path, params, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(respBody), nil
+}
+
+// GetSoftwareVulnerabilityByID retrieves detailed information about how a specific vulnerability affects a specific software.
+func (c *Client) GetSoftwareVulnerabilityByID(ctx context.Context, softwareID, vulnID int) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v1/software/%d/vulnerabilities/%d", softwareID, vulnID)
 	respBody, err := c.makeRequest(ctx, "GET", path, nil, nil)
 	if err != nil {
 		return nil, err
