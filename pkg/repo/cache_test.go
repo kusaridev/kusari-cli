@@ -17,8 +17,8 @@ func TestLoadCache_EmptyFile(t *testing.T) {
 	// Create a temp directory for test
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	require.NoError(t, os.Setenv("HOME", tmpDir))
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	cache, err := loadCache()
 	require.NoError(t, err)
@@ -30,8 +30,8 @@ func TestLoadCache_EmptyFile(t *testing.T) {
 func TestSaveAndLoadCache(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	require.NoError(t, os.Setenv("HOME", tmpDir))
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	// Create cache directory
 	kusariDir := filepath.Join(tmpDir, ".kusari")
@@ -92,8 +92,8 @@ func TestCleanupOldEntries(t *testing.T) {
 func TestClearCache(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	require.NoError(t, os.Setenv("HOME", tmpDir))
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	// Create cache directory and file
 	kusariDir := filepath.Join(tmpDir, ".kusari")
@@ -113,8 +113,8 @@ func TestClearCache(t *testing.T) {
 func TestClearCache_NoFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	require.NoError(t, os.Setenv("HOME", tmpDir))
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	// Clear cache when no file exists should not error
 	err := ClearCache()
@@ -124,8 +124,8 @@ func TestClearCache_NoFile(t *testing.T) {
 func TestLoadCache_CorruptedFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	require.NoError(t, os.Setenv("HOME", tmpDir))
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	// Create cache directory with corrupted file
 	kusariDir := filepath.Join(tmpDir, ".kusari")
@@ -172,8 +172,8 @@ func TestCacheResult_Fields(t *testing.T) {
 func TestCheckCache_NoEntry(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	require.NoError(t, os.Setenv("HOME", tmpDir))
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	result, err := CheckCache("/nonexistent/repo", "HEAD", false)
 	require.NoError(t, err)
