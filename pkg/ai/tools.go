@@ -6,6 +6,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,7 +14,10 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/kusaridev/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/pkg/pico"
 	"github.com/kusaridev/kusari-cli/pkg/repo"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ScanToolResult contains the result of a scan operation.
@@ -247,4 +251,602 @@ func captureOutput(fn func() error) (stdout string, stderr string, err error) {
 	stderr = <-errCh
 
 	return stdout, stderr, err
+}
+
+// getPicoClient returns a Pico client, initializing it if needed.
+// Auto-authenticates via browser if no valid credentials are found.
+func (s *Server) getPicoClient(ctx context.Context) (*pico.Client, error) {
+	if s.picoClient != nil {
+		return s.picoClient, nil
+	}
+
+	// Ensure we have valid authentication
+	if err := s.ensureAuthenticated(ctx); err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// Load workspace to get tenant
+	workspace, err := auth.LoadWorkspace(s.config.PlatformURL, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load workspace: %w", err)
+	}
+
+	if workspace.Tenant == "" {
+		return nil, fmt.Errorf("this workspace does not have a tenant associated with it. Please run 'kusari auth select-workspace' to select a workspace that has a tenant configured")
+	}
+
+	if s.config.Verbose {
+		fmt.Fprintf(os.Stderr, "[kusari-ai] Initializing Pico client with tenant: %s\n", workspace.Tenant)
+	}
+
+	s.picoClient = pico.NewClient(workspace.Tenant)
+	return s.picoClient, nil
+}
+
+// handleGetSoftwareIDsByRepo handles the get_software_ids_by_repo tool.
+// Uses programmatic traversal to walk up parent directories until software is found.
+func (s *Server) handleGetSoftwareIDsByRepo(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareIDsByRepoArgs) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	repoPath := args.RepoPath
+	if repoPath == "" {
+		repoPath, _ = os.Getwd()
+	}
+
+	// Try current directory first, then traverse upwards
+	currentPath := repoPath
+	maxDepth := 10 // Prevent infinite loops
+	attempts := []string{}
+
+	for i := 0; i < maxDepth; i++ {
+		// Extract git repo info from current path
+		repoInfo, err := pico.ExtractGitRemoteInfo(currentPath)
+		if err != nil {
+			// Not a git repo, try parent
+			parent := filepath.Dir(currentPath)
+			if parent == currentPath {
+				// Reached filesystem root
+				break
+			}
+			currentPath = parent
+			continue
+		}
+
+		attempts = append(attempts, fmt.Sprintf("Attempting: forge=%s, org=%s, repo=%s, subrepo_path=%s",
+			repoInfo.Forge, repoInfo.Org, repoInfo.Repo, repoInfo.SubrepoPath))
+
+		// Query API with repo info
+		result, err := client.GetSoftwareIDsByRepo(ctx, repoInfo.Forge, repoInfo.Org, repoInfo.Repo, repoInfo.SubrepoPath)
+		if err != nil {
+			// Try parent directory
+			parent := filepath.Dir(currentPath)
+			if parent == currentPath {
+				// Reached filesystem root
+				attempts = append(attempts, fmt.Sprintf("Error at path %s: %v", currentPath, err))
+				break
+			}
+			attempts = append(attempts, fmt.Sprintf("Not found at %s, trying parent directory", currentPath))
+			currentPath = parent
+			continue
+		}
+
+		// Success! Return the result
+		var formatted interface{}
+		if err := json.Unmarshal(result, &formatted); err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+				},
+				IsError: true,
+			}, nil, nil
+		}
+
+		output, err := json.MarshalIndent(formatted, "", "  ")
+		if err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+				},
+				IsError: true,
+			}, nil, nil
+		}
+
+		successMsg := fmt.Sprintf("Found software at: %s\n\n%s", currentPath, string(output))
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: successMsg},
+			},
+		}, nil, nil
+	}
+
+	// If we get here, we didn't find any software
+	attemptLog := strings.Join(attempts, "\n")
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: fmt.Sprintf("No software found after traversing parent directories.\n\nSearch attempts:\n%s\n\nMake sure this repository has been uploaded to Kusari platform using 'kusari platform upload'.", attemptLog)},
+		},
+		IsError: true,
+	}, nil, nil
+}
+
+// handleGetSoftwareVulnerabilities handles the get_software_vulnerabilities tool.
+func (s *Server) handleGetSoftwareVulnerabilities(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareVulnerabilitiesArgs) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	result, err := client.GetSoftwareVulnerabilities(ctx, args.SoftwareID, args.Page, args.Size)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error fetching vulnerabilities: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	var formatted interface{}
+	if err := json.Unmarshal(result, &formatted); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
+}
+
+// handleGetSoftwareVulnerabilityByID handles the get_software_vulnerability_by_id tool.
+func (s *Server) handleGetSoftwareVulnerabilityByID(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareVulnerabilityByIDArgs) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	result, err := client.GetSoftwareVulnerabilityByID(ctx, args.SoftwareID, args.VulnID)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error fetching vulnerability details: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	var formatted interface{}
+	if err := json.Unmarshal(result, &formatted); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
+}
+
+// handleGetVulnerabilities handles the get_vulnerabilities tool.
+func (s *Server) handleGetVulnerabilities(ctx context.Context, req *mcp.CallToolRequest, args GetVulnerabilitiesArgs) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	result, err := client.GetVulnerabilities(ctx, args.Search, args.KusariScore, args.Page, args.Size)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error fetching vulnerabilities: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	var formatted interface{}
+	if err := json.Unmarshal(result, &formatted); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
+}
+
+// handleGetVulnerabilityByID handles the get_vulnerability_by_id tool.
+func (s *Server) handleGetVulnerabilityByID(ctx context.Context, req *mcp.CallToolRequest, args GetVulnerabilityByIDArgs) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	result, err := client.GetVulnerabilityByExternalID(ctx, args.ExternalID)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error fetching vulnerability: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	var formatted interface{}
+	if err := json.Unmarshal(result, &formatted); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
+}
+
+// handleSearchPackages handles the search_packages tool.
+func (s *Server) handleSearchPackages(ctx context.Context, req *mcp.CallToolRequest, args SearchPackagesArgs) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	result, err := client.SearchPackages(ctx, args.Name, args.Version)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error searching packages: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	var formatted interface{}
+	if err := json.Unmarshal(result, &formatted); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
+}
+
+// handleGetSoftwareList handles the get_software_list tool.
+func (s *Server) handleGetSoftwareList(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareListArgs) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	result, err := client.GetSoftwareList(ctx, args.Search, args.Page, args.Size)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error fetching software list: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	var formatted interface{}
+	if err := json.Unmarshal(result, &formatted); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
+}
+
+// handleGetSoftwareDetails handles the get_software_details tool.
+func (s *Server) handleGetSoftwareDetails(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareDetailsArgs) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	result, err := client.GetSoftwareByID(ctx, args.SoftwareID)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error fetching software details: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	var formatted interface{}
+	if err := json.Unmarshal(result, &formatted); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
+}
+
+// handleGetStats handles the get_stats tool.
+func (s *Server) handleGetStats(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	result, err := client.GetStats(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error fetching stats: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	var formatted interface{}
+	if err := json.Unmarshal(result, &formatted); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
+}
+
+// handleGetPackagesWithLifecycle handles the get_packages_with_lifecycle tool.
+func (s *Server) handleGetPackagesWithLifecycle(ctx context.Context, req *mcp.CallToolRequest, args GetPackagesWithLifecycleArgs) (*mcp.CallToolResult, any, error) {
+	client, err := s.getPicoClient(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	// Build params map
+	params := make(map[string]string)
+	if args.IsEOL != nil {
+		params["is_eol"] = fmt.Sprintf("%t", *args.IsEOL)
+	}
+	if args.IsDeprecated != nil {
+		params["is_deprecated"] = fmt.Sprintf("%t", *args.IsDeprecated)
+	}
+	if args.HasLifecycleRisk != nil {
+		params["has_lifecycle_risk"] = fmt.Sprintf("%t", *args.HasLifecycleRisk)
+	}
+	if args.DaysUntilEOLMax != nil {
+		params["days_until_eol_max"] = fmt.Sprintf("%d", *args.DaysUntilEOLMax)
+	}
+	if args.DaysUntilEOLMin != nil {
+		params["days_until_eol_min"] = fmt.Sprintf("%d", *args.DaysUntilEOLMin)
+	}
+	if args.Ecosystem != "" {
+		params["ecosystem"] = args.Ecosystem
+	}
+	if args.SoftwareID != nil {
+		params["software_id"] = fmt.Sprintf("%d", *args.SoftwareID)
+	}
+	if args.Sort != "" {
+		params["sort"] = args.Sort
+	}
+	if args.Page > 0 {
+		params["page"] = fmt.Sprintf("%d", args.Page)
+	}
+	if args.Size > 0 {
+		params["size"] = fmt.Sprintf("%d", args.Size)
+	}
+
+	result, err := client.GetPackagesWithLifecycle(ctx, params)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error fetching packages: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	var formatted interface{}
+	if err := json.Unmarshal(result, &formatted); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
 }
