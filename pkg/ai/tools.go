@@ -44,7 +44,7 @@ func (s *Server) executeScanLocalChanges(ctx context.Context, args ScanLocalChan
 	}
 
 	// Ensure we have valid authentication before scanning
-	if err := s.ensureAuthenticated(ctx); err != nil {
+	if err := s.ensureAuthenticated(); err != nil {
 		return nil, fmt.Errorf("authentication required: %w", err)
 	}
 
@@ -66,28 +66,6 @@ func (s *Server) executeScanLocalChanges(ctx context.Context, args ScanLocalChan
 			"", // no comment platform for MCP
 		)
 	})
-
-	// If scan fails due to auth, try to re-authenticate and retry once
-	if err != nil && isAuthError(err) {
-		fmt.Fprintln(os.Stderr, "[kusari-ai] Authentication error during scan, attempting re-authentication...")
-		if authErr := s.triggerBrowserAuth(ctx); authErr != nil {
-			return nil, fmt.Errorf("re-authentication failed: %w", authErr)
-		}
-
-		// Retry the scan after re-auth
-		stdout, stderr, err = captureOutput(func() error {
-			return repo.Scan(
-				repoPath,
-				baseRef,
-				s.config.PlatformURL,
-				s.config.ConsoleURL,
-				s.config.Verbose,
-				true,
-				outputFormat,
-				"",
-			)
-		})
-	}
 
 	if err != nil {
 		return nil, fmt.Errorf("scan failed: %w", err)
@@ -255,13 +233,13 @@ func captureOutput(fn func() error) (stdout string, stderr string, err error) {
 
 // getPicoClient returns a Pico client, initializing it if needed.
 // Auto-authenticates via browser if no valid credentials are found.
-func (s *Server) getPicoClient(ctx context.Context) (*pico.Client, error) {
+func (s *Server) getPicoClient() (*pico.Client, error) {
 	if s.picoClient != nil {
 		return s.picoClient, nil
 	}
 
 	// Ensure we have valid authentication
-	if err := s.ensureAuthenticated(ctx); err != nil {
+	if err := s.ensureAuthenticated(); err != nil {
 		return nil, fmt.Errorf("authentication failed: %w", err)
 	}
 
@@ -286,7 +264,7 @@ func (s *Server) getPicoClient(ctx context.Context) (*pico.Client, error) {
 // handleGetSoftwareIDsByRepo handles the get_software_ids_by_repo tool.
 // Uses programmatic traversal to walk up parent directories until software is found.
 func (s *Server) handleGetSoftwareIDsByRepo(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareIDsByRepoArgs) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -379,7 +357,7 @@ func (s *Server) handleGetSoftwareIDsByRepo(ctx context.Context, req *mcp.CallTo
 
 // handleGetSoftwareVulnerabilities handles the get_software_vulnerabilities tool.
 func (s *Server) handleGetSoftwareVulnerabilities(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareVulnerabilitiesArgs) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -428,7 +406,7 @@ func (s *Server) handleGetSoftwareVulnerabilities(ctx context.Context, req *mcp.
 
 // handleGetSoftwareVulnerabilityByID handles the get_software_vulnerability_by_id tool.
 func (s *Server) handleGetSoftwareVulnerabilityByID(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareVulnerabilityByIDArgs) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -477,7 +455,7 @@ func (s *Server) handleGetSoftwareVulnerabilityByID(ctx context.Context, req *mc
 
 // handleGetVulnerabilities handles the get_vulnerabilities tool.
 func (s *Server) handleGetVulnerabilities(ctx context.Context, req *mcp.CallToolRequest, args GetVulnerabilitiesArgs) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -526,7 +504,7 @@ func (s *Server) handleGetVulnerabilities(ctx context.Context, req *mcp.CallTool
 
 // handleGetVulnerabilityByID handles the get_vulnerability_by_id tool.
 func (s *Server) handleGetVulnerabilityByID(ctx context.Context, req *mcp.CallToolRequest, args GetVulnerabilityByIDArgs) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -575,7 +553,7 @@ func (s *Server) handleGetVulnerabilityByID(ctx context.Context, req *mcp.CallTo
 
 // handleSearchPackages handles the search_packages tool.
 func (s *Server) handleSearchPackages(ctx context.Context, req *mcp.CallToolRequest, args SearchPackagesArgs) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -624,7 +602,7 @@ func (s *Server) handleSearchPackages(ctx context.Context, req *mcp.CallToolRequ
 
 // handleGetSoftwareList handles the get_software_list tool.
 func (s *Server) handleGetSoftwareList(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareListArgs) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -673,7 +651,7 @@ func (s *Server) handleGetSoftwareList(ctx context.Context, req *mcp.CallToolReq
 
 // handleGetSoftwareDetails handles the get_software_details tool.
 func (s *Server) handleGetSoftwareDetails(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareDetailsArgs) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -722,7 +700,7 @@ func (s *Server) handleGetSoftwareDetails(ctx context.Context, req *mcp.CallTool
 
 // handleGetStats handles the get_stats tool.
 func (s *Server) handleGetStats(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -771,7 +749,7 @@ func (s *Server) handleGetStats(ctx context.Context, req *mcp.CallToolRequest, a
 
 // handleGetPackagesWithLifecycle handles the get_packages_with_lifecycle tool.
 func (s *Server) handleGetPackagesWithLifecycle(ctx context.Context, req *mcp.CallToolRequest, args GetPackagesWithLifecycleArgs) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient(ctx)
+	client, err := s.getPicoClient()
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{

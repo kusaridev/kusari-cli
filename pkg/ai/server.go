@@ -5,6 +5,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -137,6 +138,14 @@ type GetPackagesWithLifecycleArgs struct {
 // registerTools registers all MCP tools with the server.
 func (s *Server) registerTools() {
 	s.tools = []ToolDefinition{
+		{
+			Name:        "authenticate",
+			Description: "Authenticate with Kusari platform via browser OAuth. Call this tool when you receive authentication errors from other tools. Opens a browser window for login and automatically selects the first available workspace. Returns authentication status and workspace information.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
 		{
 			Name:        "scan_local_changes",
 			Description: "Scan uncommitted changes in the current git repository for security vulnerabilities, secrets, and SAST issues. This performs a diff-based scan of your local changes using AWS Lambda.",
@@ -368,6 +377,12 @@ func (s *Server) registerTools() {
 		},
 	}
 
+	// Register authenticate tool (must be first - used when other tools fail with auth errors)
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "authenticate",
+		Description: "Authenticate with Kusari platform via browser OAuth. Call this tool when you receive authentication errors from other tools.",
+	}, s.handleAuthenticateTool)
+
 	// Register scan_local_changes
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "scan_local_changes",
@@ -442,6 +457,35 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 // Tool handlers - implemented using internal packages
+
+func (s *Server) handleAuthenticateTool(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+	result, err := s.handleAuthenticate(ctx)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Authentication error: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	// Format the result as JSON
+	output, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: fmt.Sprintf("Error formatting result: %v", err)},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(output)},
+		},
+	}, nil, nil
+}
 
 func (s *Server) handleScanLocalChanges(ctx context.Context, req *mcp.CallToolRequest, args ScanLocalChangesArgs) (*mcp.CallToolResult, any, error) {
 	result, err := s.executeScanLocalChanges(ctx, args)

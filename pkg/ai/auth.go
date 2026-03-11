@@ -31,26 +31,23 @@ func isAuthError(err error) bool {
 		strings.Contains(errStr, "failed to load auth token")
 }
 
-// ensureAuthenticated checks if we have a valid token and triggers browser auth if not.
-// This is designed for MCP server use - it auto-selects the first workspace.
-func (s *Server) ensureAuthenticated(ctx context.Context) error {
+// ensureAuthenticated checks if we have a valid token.
+// Returns an error if authentication is needed (token missing or expired).
+// The caller should handle the error by calling the authenticate tool.
+func (s *Server) ensureAuthenticated() error {
 	// Try to load existing token
 	token, err := auth.LoadToken("kusari")
-	if err == nil {
-		// Token exists, check if expired
-		if err := auth.CheckTokenExpiry(token); err == nil {
-			// Token is valid
-			return nil
-		}
-		// Token expired, need to re-auth
-		fmt.Fprintln(os.Stderr, "[kusari-ai] Token expired, initiating re-authentication...")
-	} else {
-		// No token, need to auth
-		fmt.Fprintln(os.Stderr, "[kusari-ai] No authentication token found, initiating browser login...")
+	if err != nil {
+		return fmt.Errorf("authentication required: no stored token found. Please call the 'authenticate' tool to log in")
 	}
 
-	// Trigger browser-based authentication
-	return s.triggerBrowserAuth(ctx)
+	// Token exists, check if expired
+	if err := auth.CheckTokenExpiry(token); err != nil {
+		return fmt.Errorf("authentication required: token is expired. Please call the 'authenticate' tool to refresh your session")
+	}
+
+	// Token is valid
+	return nil
 }
 
 // triggerBrowserAuth opens a browser for OAuth and auto-selects the first workspace.
@@ -119,4 +116,56 @@ func (s *Server) triggerBrowserAuth(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// AuthenticateResult contains the result of an authentication operation.
+type AuthenticateResult struct {
+	Success   bool   `json:"success"`
+	Message   string `json:"message"`
+	Workspace string `json:"workspace,omitempty"`
+	Tenant    string `json:"tenant,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// handleAuthenticate handles the authenticate tool call.
+// This opens a browser for OAuth authentication and auto-selects the first workspace.
+func (s *Server) handleAuthenticate(ctx context.Context) (*AuthenticateResult, error) {
+	// Check if already authenticated
+	token, err := auth.LoadToken("kusari")
+	if err == nil {
+		if err := auth.CheckTokenExpiry(token); err == nil {
+			// Already have a valid token
+			workspace, _ := auth.LoadWorkspace(s.config.PlatformURL, "")
+			return &AuthenticateResult{
+				Success:   true,
+				Message:   "Already authenticated with a valid token",
+				Workspace: workspace.Description,
+				Tenant:    workspace.Tenant,
+			}, nil
+		}
+	}
+
+	// Perform authentication
+	if err := s.triggerBrowserAuth(ctx); err != nil {
+		return &AuthenticateResult{
+			Success: false,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	// Load workspace info to return in result
+	workspace, err := auth.LoadWorkspace(s.config.PlatformURL, "")
+	if err != nil {
+		return &AuthenticateResult{
+			Success: true,
+			Message: "Authentication successful, but could not load workspace info",
+		}, nil
+	}
+
+	return &AuthenticateResult{
+		Success:   true,
+		Message:   "Authentication successful!",
+		Workspace: workspace.Description,
+		Tenant:    workspace.Tenant,
+	}, nil
 }
