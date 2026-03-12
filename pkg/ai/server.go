@@ -80,8 +80,8 @@ type GetSoftwareIDsByRepoArgs struct {
 // GetSoftwareVulnerabilitiesArgs defines the input for get_software_vulnerabilities tool.
 type GetSoftwareVulnerabilitiesArgs struct {
 	SoftwareID int `json:"software_id" mcp:"The ID of the software to retrieve vulnerabilities for."`
-	Page       int `json:"page,omitempty" mcp:"Page number for pagination (default 0)."`
-	Size       int `json:"size,omitempty" mcp:"Number of results per page (default 20, max 100)."`
+	Page       int `json:"page,omitempty" mcp:"Page number for pagination. 0-based (0 = first page). IMPORTANT: Do NOT specify this - omit it to get first page results. Default: 0."`
+	Size       int `json:"size,omitempty" mcp:"Number of results per page (default 1000)."`
 }
 
 // GetSoftwareVulnerabilityByIDArgs defines the input for get_software_vulnerability_by_id tool.
@@ -94,8 +94,8 @@ type GetSoftwareVulnerabilityByIDArgs struct {
 type GetVulnerabilitiesArgs struct {
 	Search      string `json:"search,omitempty" mcp:"Search glob for affected/vulnerable package name."`
 	KusariScore string `json:"kusari_score,omitempty" mcp:"Minimum Kusari score to filter on (0-10)."`
-	Page        int    `json:"page,omitempty" mcp:"Page number for pagination (default 0)."`
-	Size        int    `json:"size,omitempty" mcp:"Number of results per page (default 20, max 100)."`
+	Page        int    `json:"page,omitempty" mcp:"Page number. 0-based (0 = first page). Omit this parameter to get first page. Default: 0."`
+	Size        int    `json:"size,omitempty" mcp:"Number of results per page (default 20)."`
 }
 
 // GetVulnerabilityByIDArgs defines the input for get_vulnerability_by_id tool.
@@ -112,8 +112,8 @@ type SearchPackagesArgs struct {
 // GetSoftwareListArgs defines the input for get_software_list tool.
 type GetSoftwareListArgs struct {
 	Search string `json:"search" mcp:"Search term to filter software by name."`
-	Page   int    `json:"page,omitempty" mcp:"Page number for pagination (default 0)."`
-	Size   int    `json:"size,omitempty" mcp:"Number of results per page (default 20, max 100)."`
+	Page   int    `json:"page,omitempty" mcp:"Page number. 0-based (0 = first page). Omit this parameter to get first page. Default: 0."`
+	Size   int    `json:"size,omitempty" mcp:"Number of results per page (default 20)."`
 }
 
 // GetSoftwareDetailsArgs defines the input for get_software_details tool.
@@ -123,16 +123,16 @@ type GetSoftwareDetailsArgs struct {
 
 // GetPackagesWithLifecycleArgs defines the input for get_packages_with_lifecycle tool.
 type GetPackagesWithLifecycleArgs struct {
-	IsEOL              *bool  `json:"is_eol,omitempty" mcp:"Filter by end-of-life status."`
-	IsDeprecated       *bool  `json:"is_deprecated,omitempty" mcp:"Filter by deprecation status."`
-	HasLifecycleRisk   *bool  `json:"has_lifecycle_risk,omitempty" mcp:"Returns packages that are deprecated, EOL, or have upcoming EOL date."`
-	DaysUntilEOLMax    *int   `json:"days_until_eol_max,omitempty" mcp:"Maximum days until EOL."`
-	DaysUntilEOLMin    *int   `json:"days_until_eol_min,omitempty" mcp:"Minimum days until EOL."`
-	Ecosystem          string `json:"ecosystem,omitempty" mcp:"Filter by package ecosystem (npm, pypi, golang, maven, cargo)."`
-	SoftwareID         *int   `json:"software_id,omitempty" mcp:"Filter to packages used by this specific software ID."`
-	Sort               string `json:"sort,omitempty" mcp:"Sort order (default: impact_desc)."`
-	Page               int    `json:"page,omitempty" mcp:"Page number for pagination (default 0)."`
-	Size               int    `json:"size,omitempty" mcp:"Number of results per page (default 100, max 1000)."`
+	IsEOL            *bool  `json:"is_eol,omitempty" mcp:"Filter by end-of-life status."`
+	IsDeprecated     *bool  `json:"is_deprecated,omitempty" mcp:"Filter by deprecation status."`
+	HasLifecycleRisk *bool  `json:"has_lifecycle_risk,omitempty" mcp:"Returns packages that are deprecated, EOL, or have upcoming EOL date."`
+	DaysUntilEOLMax  *int   `json:"days_until_eol_max,omitempty" mcp:"Maximum days until EOL."`
+	DaysUntilEOLMin  *int   `json:"days_until_eol_min,omitempty" mcp:"Minimum days until EOL."`
+	Ecosystem        string `json:"ecosystem,omitempty" mcp:"Filter by package ecosystem (npm, pypi, golang, maven, cargo)."`
+	SoftwareID       *int   `json:"software_id,omitempty" mcp:"Filter to packages used by this specific software ID."`
+	Sort             string `json:"sort,omitempty" mcp:"Sort order (default: impact_desc)."`
+	Page             int    `json:"page,omitempty" mcp:"Page number. 0-based (0 = first page). Omit this parameter to get first page. Default: 0."`
+	Size             int    `json:"size,omitempty" mcp:"Number of results per page (default 100)."`
 }
 
 // registerTools registers all MCP tools with the server.
@@ -173,7 +173,7 @@ func (s *Server) registerTools() {
 		},
 		{
 			Name:        "get_software_ids_by_repo",
-			Description: "STEP 1: Find software IDs for the current repository. Use this FIRST when the user asks about vulnerabilities affecting them/their code. Automatically traverses parent directories in monorepos to find registered software. Returns software IDs needed for get_software_vulnerabilities.",
+			Description: "STEP 1: Find software IDs for the current repository. Use this FIRST when the user asks about vulnerabilities affecting them/their code. Automatically traverses parent directories in monorepos to find registered software. Returns software IDs needed for get_software_vulnerabilities. IMPORTANT: If multiple software components are found, you MUST use AskUserQuestion to let the user select which software they want to query. Always include an 'All software components' option to query all of them.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -187,7 +187,7 @@ func (s *Server) registerTools() {
 		},
 		{
 			Name:        "get_software_vulnerabilities",
-			Description: "STEP 2: Get all vulnerabilities affecting a specific software by its ID (from get_software_ids_by_repo). Use this to answer 'what vulnerabilities are affecting me?'. Returns list with vulnerability IDs, severity, CVEs, and affected packages.",
+			Description: "STEP 2: Get all vulnerabilities affecting a specific software by its ID (from get_software_ids_by_repo). Use this to answer 'what vulnerabilities are affecting me?'. Returns list with vulnerability IDs, severity, CVEs, and affected packages. IMPORTANT: Do NOT specify the 'page' parameter - leave it at default (0) to get results from the first page. After getting the vulnerability list, you MUST call get_software_vulnerability_by_id for EACH vulnerability to get detailed remediation information BEFORE suggesting any fixes to the user.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -197,11 +197,11 @@ func (s *Server) registerTools() {
 					},
 					"page": map[string]interface{}{
 						"type":        "number",
-						"description": "Page number for pagination (default 0).",
+						"description": "Page number for pagination. 0-based (0 = first page, 1 = second page, etc.). IMPORTANT: Do NOT specify this parameter unless you need to access pages beyond the first page. Omit it to get the first page of results.",
 					},
 					"size": map[string]interface{}{
 						"type":        "number",
-						"description": "Number of results per page (default 20, max 100).",
+						"description": "Number of results per page (default 1000).",
 					},
 				},
 				"required": []string{"software_id"},
@@ -209,7 +209,7 @@ func (s *Server) registerTools() {
 		},
 		{
 			Name:        "get_software_vulnerability_by_id",
-			Description: "STEP 3: Get detailed fix information for a specific vulnerability. Use when user wants to fix/remediate a vulnerability. Returns AI-generated remediation plan, exploit details, affected code paths, and step-by-step fix guidance.",
+			Description: "STEP 3: Get detailed fix information for a specific vulnerability. CRITICAL: You MUST call this for EACH vulnerability from get_software_vulnerabilities BEFORE suggesting any fixes to the user. This returns AI-generated remediation plans, exploit details, affected code paths, and step-by-step fix guidance. Do NOT suggest fixes based only on get_software_vulnerabilities output - you need the detailed information from THIS tool first.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -241,11 +241,11 @@ func (s *Server) registerTools() {
 					},
 					"page": map[string]interface{}{
 						"type":        "number",
-						"description": "Page number for pagination (default 0)",
+						"description": "Page number. 0-based (0 = first page). Omit to get first page. Default: 0",
 					},
 					"size": map[string]interface{}{
 						"type":        "number",
-						"description": "Number of results per page (default 20, max 100)",
+						"description": "Number of results per page (default 20)",
 					},
 				},
 			},
@@ -294,11 +294,11 @@ func (s *Server) registerTools() {
 					},
 					"page": map[string]interface{}{
 						"type":        "number",
-						"description": "Page number for pagination (default 0)",
+						"description": "Page number. 0-based (0 = first page). Omit to get first page. Default: 0",
 					},
 					"size": map[string]interface{}{
 						"type":        "number",
-						"description": "Number of results per page (default 20, max 100)",
+						"description": "Number of results per page (default 20)",
 					},
 				},
 				"required": []string{"search"},
@@ -316,14 +316,6 @@ func (s *Server) registerTools() {
 					},
 				},
 				"required": []string{"software_id"},
-			},
-		},
-		{
-			Name:        "get_stats",
-			Description: "Get aggregate statistics about the user's vulnerabilities including counts by severity. Good for getting an overview of security posture.",
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
 			},
 		},
 		{
@@ -366,11 +358,11 @@ func (s *Server) registerTools() {
 					},
 					"page": map[string]interface{}{
 						"type":        "number",
-						"description": "Page number for pagination (default 0)",
+						"description": "Page number. 0-based (0 = first page). Omit to get first page. Default: 0",
 					},
 					"size": map[string]interface{}{
 						"type":        "number",
-						"description": "Number of results per page (default 100, max 1000)",
+						"description": "Number of results per page (default 100)",
 					},
 				},
 			},
@@ -392,17 +384,17 @@ func (s *Server) registerTools() {
 	// Register Pico API tools - Priority tools (vulnerability workflow)
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_software_ids_by_repo",
-		Description: "STEP 1: Find software IDs for the current repository. Use this FIRST when the user asks about vulnerabilities affecting them/their code.",
+		Description: "STEP 1: Find software IDs for the current repository. Use this FIRST when the user asks about vulnerabilities affecting them/their code. IMPORTANT: If multiple software components are found, you MUST use AskUserQuestion to let the user select which software they want to query. Always include an 'All software components' option to query all of them.",
 	}, s.handleGetSoftwareIDsByRepo)
 
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_software_vulnerabilities",
-		Description: "STEP 2: Get all vulnerabilities affecting a specific software by its ID (from get_software_ids_by_repo). Use this to answer 'what vulnerabilities are affecting me?'.",
+		Description: "STEP 2: Get all vulnerabilities affecting a specific software by its ID (from get_software_ids_by_repo). Use this to answer 'what vulnerabilities are affecting me?'. IMPORTANT: Do NOT specify the 'page' parameter - omit it to get the first page. After getting the list, you MUST call get_software_vulnerability_by_id for EACH vulnerability to get detailed remediation info BEFORE suggesting fixes.",
 	}, s.handleGetSoftwareVulnerabilities)
 
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_software_vulnerability_by_id",
-		Description: "STEP 3: Get detailed fix information for a specific vulnerability. Use when user wants to fix/remediate a vulnerability. Returns AI-generated remediation plan.",
+		Description: "STEP 3: Get detailed fix information for a specific vulnerability. CRITICAL: Call this for EACH vulnerability BEFORE suggesting fixes. Returns AI-generated remediation plan, exploit details, and step-by-step guidance.",
 	}, s.handleGetSoftwareVulnerabilityByID)
 
 	// Register remaining Pico API tools
@@ -430,11 +422,6 @@ func (s *Server) registerTools() {
 		Name:        "get_software_details",
 		Description: "Get detailed information about a specific software/application including its vulnerabilities and dependencies.",
 	}, s.handleGetSoftwareDetails)
-
-	mcp.AddTool(s.mcpServer, &mcp.Tool{
-		Name:        "get_stats",
-		Description: "Get aggregate statistics about the user's vulnerabilities including counts by severity.",
-	}, s.handleGetStats)
 
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_packages_with_lifecycle",

@@ -74,12 +74,28 @@ func (s *Server) executeScanLocalChanges(ctx context.Context, args ScanLocalChan
 	// Extract console URL from stderr
 	consoleURL := extractConsoleURL(stderr)
 
-	// Format results with console URL banner
-	results := stdout
-	if results == "" {
-		results = "Scan completed successfully."
+	// Format results with status messages from stderr and scan results from stdout
+	var resultBuilder strings.Builder
+
+	// Include status messages from stderr (if any)
+	if stderr != "" {
+		// Clean up stderr - remove ANSI codes and format nicely
+		cleanStderr := strings.TrimSpace(stderr)
+		if cleanStderr != "" {
+			resultBuilder.WriteString("## Scan Progress\n\n")
+			resultBuilder.WriteString(cleanStderr)
+			resultBuilder.WriteString("\n\n---\n\n")
+		}
 	}
-	results = formatResultWithConsoleURL(results, consoleURL)
+
+	// Add the main scan results
+	if stdout == "" {
+		resultBuilder.WriteString("Scan completed successfully.")
+	} else {
+		resultBuilder.WriteString(stdout)
+	}
+
+	results := formatResultWithConsoleURL(resultBuilder.String(), consoleURL)
 
 	return &ScanToolResult{
 		Success:    true,
@@ -261,8 +277,20 @@ func (s *Server) getPicoClient() (*pico.Client, error) {
 	return s.picoClient, nil
 }
 
+// SoftwareIDDetail represents a single software entry from the API response
+type SoftwareIDDetail struct {
+	SoftwareID   int    `json:"software_id"`
+	SoftwareName string `json:"software_name"`
+	Version      string `json:"software_version"`
+	Forge        string `json:"forge"`
+	Org          string `json:"org"`
+	Repo         string `json:"repo"`
+	SubrepoPath  string `json:"subrepo_path"`
+	Type         string `json:"type"`
+}
+
 // handleGetSoftwareIDsByRepo handles the get_software_ids_by_repo tool.
-// Uses programmatic traversal to walk up parent directories until software is found.
+// Queries without subrepo_path to get all software in the repository, then intelligently selects or lists options.
 func (s *Server) handleGetSoftwareIDsByRepo(ctx context.Context, req *mcp.CallToolRequest, args GetSoftwareIDsByRepoArgs) (*mcp.CallToolResult, any, error) {
 	client, err := s.getPicoClient()
 	if err != nil {
@@ -279,12 +307,12 @@ func (s *Server) handleGetSoftwareIDsByRepo(ctx context.Context, req *mcp.CallTo
 		repoPath, _ = os.Getwd()
 	}
 
-	// Try current directory first, then traverse upwards
+	// Try current directory first, then traverse upwards to find git root
 	currentPath := repoPath
 	maxDepth := 10 // Prevent infinite loops
 	attempts := []string{}
 
-	for i := 0; i < maxDepth; i++ {
+	for range maxDepth {
 		// Extract git repo info from current path
 		repoInfo, err := pico.ExtractGitRemoteInfo(currentPath)
 		if err != nil {
@@ -298,11 +326,11 @@ func (s *Server) handleGetSoftwareIDsByRepo(ctx context.Context, req *mcp.CallTo
 			continue
 		}
 
-		attempts = append(attempts, fmt.Sprintf("Attempting: forge=%s, org=%s, repo=%s, subrepo_path=%s",
-			repoInfo.Forge, repoInfo.Org, repoInfo.Repo, repoInfo.SubrepoPath))
+		attempts = append(attempts, fmt.Sprintf("Found git repo: forge=%s, org=%s, repo=%s",
+			repoInfo.Forge, repoInfo.Org, repoInfo.Repo))
 
-		// Query API with repo info
-		result, err := client.GetSoftwareIDsByRepo(ctx, repoInfo.Forge, repoInfo.Org, repoInfo.Repo, repoInfo.SubrepoPath)
+		// Query API WITHOUT subrepo_path to get all software in this repository
+		result, err := client.GetSoftwareIDsByRepo(ctx, repoInfo.Forge, repoInfo.Org, repoInfo.Repo, "")
 		if err != nil {
 			// Try parent directory
 			parent := filepath.Dir(currentPath)
@@ -311,14 +339,14 @@ func (s *Server) handleGetSoftwareIDsByRepo(ctx context.Context, req *mcp.CallTo
 				attempts = append(attempts, fmt.Sprintf("Error at path %s: %v", currentPath, err))
 				break
 			}
-			attempts = append(attempts, fmt.Sprintf("Not found at %s, trying parent directory", currentPath))
+			attempts = append(attempts, "No software found for this repo, trying parent directory")
 			currentPath = parent
 			continue
 		}
 
-		// Success! Return the result
-		var formatted interface{}
-		if err := json.Unmarshal(result, &formatted); err != nil {
+		// Parse the array response
+		var softwareList []SoftwareIDDetail
+		if err := json.Unmarshal(result, &softwareList); err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
@@ -327,20 +355,52 @@ func (s *Server) handleGetSoftwareIDsByRepo(ctx context.Context, req *mcp.CallTo
 			}, nil, nil
 		}
 
-		output, err := json.MarshalIndent(formatted, "", "  ")
-		if err != nil {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
-				},
-				IsError: true,
-			}, nil, nil
+		if len(softwareList) == 0 {
+			// No software found, try parent
+			parent := filepath.Dir(currentPath)
+			if parent == currentPath {
+				break
+			}
+			attempts = append(attempts, "API returned empty array, trying parent directory")
+			currentPath = parent
+			continue
 		}
 
-		successMsg := fmt.Sprintf("Found software at: %s\n\n%s", currentPath, string(output))
+		// Calculate relative path from git root to determine which software matches user's location
+		relPath := ""
+		if repoInfo.SubrepoPath != "" && repoInfo.SubrepoPath != "." {
+			relPath = repoInfo.SubrepoPath
+		}
+
+		// Try to find exact match based on current directory
+		var bestMatch *SoftwareIDDetail
+		for i := range softwareList {
+			sw := &softwareList[i]
+			if sw.SubrepoPath == relPath || (relPath == "" && sw.SubrepoPath == ".") {
+				bestMatch = sw
+				break
+			}
+		}
+
+		// Format the response
+		var responseText string
+		if len(softwareList) == 1 {
+			// Only one software found - use it automatically
+			output, _ := json.MarshalIndent(softwareList[0], "", "  ")
+			responseText = fmt.Sprintf("Found 1 software in this repository:\n\n%s\n\nUse software_id=%d for subsequent queries.", string(output), softwareList[0].SoftwareID)
+		} else if bestMatch != nil {
+			// Multiple software found, but we have an exact match for user's location
+			output, _ := json.MarshalIndent(bestMatch, "", "  ")
+			responseText = fmt.Sprintf("Found %d software entries in this repository. Based on your current directory, selected:\n\n%s\n\nUse software_id=%d for subsequent queries.\n\nTo see all available software, the full list is available if needed.", len(softwareList), string(output), bestMatch.SoftwareID)
+		} else {
+			// Multiple software found, no exact match - list all options and instruct Claude to prompt user
+			output, _ := json.MarshalIndent(softwareList, "", "  ")
+			responseText = fmt.Sprintf("Found %d software components tracked in this repository:\n\n%s\n\nACTION REQUIRED: You MUST use AskUserQuestion to let the user select which software component(s) they want to query. Present each software as an option using the format: 'software_name (subrepo_path)' or just 'software_name' if subrepo_path is '.'. ALWAYS include an option for 'All software components' to query all of them at once.", len(softwareList), string(output))
+		}
+
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: successMsg},
+				&mcp.TextContent{Text: responseText},
 			},
 		}, nil, nil
 	}
@@ -367,7 +427,14 @@ func (s *Server) handleGetSoftwareVulnerabilities(ctx context.Context, req *mcp.
 		}, nil, nil
 	}
 
-	result, err := client.GetSoftwareVulnerabilities(ctx, args.SoftwareID, args.Page, args.Size)
+	// Apply defaults for pagination
+	page := args.Page
+	size := args.Size
+	if size == 0 {
+		size = 1000 // Default to 1000 like CLI command
+	}
+
+	result, err := client.GetSoftwareVulnerabilities(ctx, args.SoftwareID, page, size)
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -465,7 +532,14 @@ func (s *Server) handleGetVulnerabilities(ctx context.Context, req *mcp.CallTool
 		}, nil, nil
 	}
 
-	result, err := client.GetVulnerabilities(ctx, args.Search, args.KusariScore, args.Page, args.Size)
+	// Apply defaults for pagination
+	page := args.Page
+	size := args.Size
+	if size == 0 {
+		size = 20 // Default to 20 like CLI command
+	}
+
+	result, err := client.GetVulnerabilities(ctx, args.Search, args.KusariScore, page, size)
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -612,7 +686,14 @@ func (s *Server) handleGetSoftwareList(ctx context.Context, req *mcp.CallToolReq
 		}, nil, nil
 	}
 
-	result, err := client.GetSoftwareList(ctx, args.Search, args.Page, args.Size)
+	// Apply defaults for pagination
+	page := args.Page
+	size := args.Size
+	if size == 0 {
+		size = 20 // Default to 20 like CLI command
+	}
+
+	result, err := client.GetSoftwareList(ctx, args.Search, page, size)
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -698,55 +779,6 @@ func (s *Server) handleGetSoftwareDetails(ctx context.Context, req *mcp.CallTool
 	}, nil, nil
 }
 
-// handleGetStats handles the get_stats tool.
-func (s *Server) handleGetStats(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
-	client, err := s.getPicoClient()
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
-			},
-			IsError: true,
-		}, nil, nil
-	}
-
-	result, err := client.GetStats(ctx)
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Error fetching stats: %v", err)},
-			},
-			IsError: true,
-		}, nil, nil
-	}
-
-	var formatted interface{}
-	if err := json.Unmarshal(result, &formatted); err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Error parsing response: %v", err)},
-			},
-			IsError: true,
-		}, nil, nil
-	}
-
-	output, err := json.MarshalIndent(formatted, "", "  ")
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("Error formatting output: %v", err)},
-			},
-			IsError: true,
-		}, nil, nil
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: string(output)},
-		},
-	}, nil, nil
-}
-
 // handleGetPackagesWithLifecycle handles the get_packages_with_lifecycle tool.
 func (s *Server) handleGetPackagesWithLifecycle(ctx context.Context, req *mcp.CallToolRequest, args GetPackagesWithLifecycleArgs) (*mcp.CallToolResult, any, error) {
 	client, err := s.getPicoClient()
@@ -788,9 +820,12 @@ func (s *Server) handleGetPackagesWithLifecycle(ctx context.Context, req *mcp.Ca
 	if args.Page > 0 {
 		params["page"] = fmt.Sprintf("%d", args.Page)
 	}
-	if args.Size > 0 {
-		params["size"] = fmt.Sprintf("%d", args.Size)
+	// Apply default for size
+	size := args.Size
+	if size == 0 {
+		size = 100 // Default to 100 like CLI command
 	}
+	params["size"] = fmt.Sprintf("%d", size)
 
 	result, err := client.GetPackagesWithLifecycle(ctx, params)
 	if err != nil {

@@ -220,16 +220,6 @@ func (c *Client) GetSoftwareVulnerabilityByID(ctx context.Context, softwareID, v
 	return json.RawMessage(respBody), nil
 }
 
-// GetStats retrieves aggregate vulnerability statistics.
-func (c *Client) GetStats(ctx context.Context) (json.RawMessage, error) {
-	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/stats", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
-}
-
 // GetPackagesWithLifecycle retrieves packages filtered by lifecycle status.
 func (c *Client) GetPackagesWithLifecycle(ctx context.Context, params map[string]string) (json.RawMessage, error) {
 	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/packages/lifecycle", params, nil)
@@ -241,12 +231,17 @@ func (c *Client) GetPackagesWithLifecycle(ctx context.Context, params map[string
 }
 
 // GetSoftwareIDsByRepo finds software IDs by repository metadata (forge, org, repo, subrepo_path).
+// subrepoPath is optional - pass empty string to query all software in the repository.
 func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, subrepoPath string) (json.RawMessage, error) {
 	params := map[string]string{
-		"forge":        forge,
-		"org":          org,
-		"repo":         repo,
-		"subrepo_path": subrepoPath,
+		"forge": forge,
+		"org":   org,
+		"repo":  repo,
+	}
+
+	// Only include subrepo_path if it's not empty
+	if subrepoPath != "" {
+		params["subrepo_path"] = subrepoPath
 	}
 
 	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/software/id/by-repo", params, nil)

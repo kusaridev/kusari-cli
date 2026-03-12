@@ -309,8 +309,8 @@ func Upload(
 	if parsedURL, err := url.Parse(tenantEndpoint); err == nil {
 		hostname := parsedURL.Hostname()
 		// Extract subdomain (e.g., "parth" from "parth.api.dev.kusari.cloud")
-		if idx := strings.Index(hostname, "."); idx != -1 {
-			tenantName = hostname[:idx]
+		if before, _, ok := strings.Cut(hostname, "."); ok {
+			tenantName = before
 		} else {
 			tenantName = hostname
 		}
