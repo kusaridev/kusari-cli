@@ -389,12 +389,12 @@ func (s *Server) registerTools() {
 
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_software_vulnerabilities",
-		Description: "STEP 2: Get all vulnerabilities affecting a specific software by its ID (from get_software_ids_by_repo). Use this to answer 'what vulnerabilities are affecting me?'. IMPORTANT: Do NOT specify the 'page' parameter - omit it to get the first page. After getting the list, you MUST call get_software_vulnerability_by_id for EACH vulnerability to get detailed remediation info BEFORE suggesting fixes.",
+		Description: "STEP 2: Get all vulnerabilities affecting a specific software by its ID (from get_software_ids_by_repo). Use this to answer 'what vulnerabilities are affecting me?'. IMPORTANT: Do NOT specify the 'page' parameter - omit it to get the first page. After getting the list, if there are multiple vulnerabilities, you MUST use AskUserQuestion to let the user select which vulnerability they want detailed remediation information for. Present each vulnerability with its ID and summary. Include an 'All vulnerabilities' option if the user wants details for all.",
 	}, s.handleGetSoftwareVulnerabilities)
 
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_software_vulnerability_by_id",
-		Description: "STEP 3: Get detailed fix information for a specific vulnerability. CRITICAL: Call this for EACH vulnerability BEFORE suggesting fixes. Returns AI-generated remediation plan, exploit details, and step-by-step guidance.",
+		Description: "STEP 3: Get detailed fix information for a specific vulnerability AFTER the user has selected it. Returns AI-generated remediation plan, exploit details, and step-by-step guidance. Only call this after asking the user which vulnerability they want details for (unless there's only one vulnerability or the user explicitly asks for all).",
 	}, s.handleGetSoftwareVulnerabilityByID)
 
 	// Register remaining Pico API tools
