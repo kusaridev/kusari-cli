@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultAuthEndpoint = "https://auth.us.kusari.cloud/"
-	defaultPlatformURL  = "https://api.us.kusari.cloud"
+	defaultPlatformURL  = "https://platform.api.us.kusari.cloud/"
 )
 
 // NewClientFromWorkspace creates a Pico client using the stored workspace configuration.

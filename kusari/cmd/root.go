@@ -141,6 +141,7 @@ func Execute() error {
 	rootCmd.AddCommand(Repo())
 	rootCmd.AddCommand(Platform())
 	rootCmd.AddCommand(KusariConfiguration())
+	rootCmd.AddCommand(AI())
 
 	return rootCmd.Execute()
 }

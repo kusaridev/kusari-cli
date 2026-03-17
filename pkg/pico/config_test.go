@@ -11,5 +11,5 @@ import (
 
 func TestConstants(t *testing.T) {
 	assert.Equal(t, "https://auth.us.kusari.cloud/", defaultAuthEndpoint)
-	assert.Equal(t, "https://api.us.kusari.cloud", defaultPlatformURL)
+	assert.Equal(t, "https://platform.api.us.kusari.cloud/", defaultPlatformURL)
 }
