@@ -120,3 +120,16 @@ before:
     - go mod tidy
     - go generate ./...
     - go test ./...
+
+nfpms:
+  - id: kusari
+    package_name: kusari-cli
+    vendor: Kusari
+    homepage: https://github.com/kusaridev/kusari-cli
+    maintainer: Kusari Inc
+    description: Command line interface for Kusari
+    license: MIT
+
+    formats:
+      - rpm
+      - deb
