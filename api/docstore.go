@@ -36,11 +36,13 @@ type WorkspaceInspectorResult struct {
 }
 
 type Analysis struct {
-	Proceed        bool              `docstore:"proceed" json:"proceed"`
-	Results        string            `docstore:"results" json:"results"` // markdown content
-	RawLLMAnalysis *SecurityAnalysis `docstore:"rawLLMAnalysis" json:"rawLLMAnalysis"`
-	Score          int               `dynamodbav:"score" docstore:"score" json:"score"`
-	Health         Health            `dynamodbav:"health" docstore:"health" json:"health"`
+	Proceed                                bool              `docstore:"proceed" json:"proceed"`
+	Results                                string            `docstore:"results" json:"results"` // markdown content
+	RawLLMAnalysis                         *SecurityAnalysis `docstore:"rawLLMAnalysis" json:"rawLLMAnalysis"`
+	Score                                  int               `dynamodbav:"score" docstore:"score" json:"score"`
+	Health                                 Health            `dynamodbav:"health" docstore:"health" json:"health"`
+	TruncatedCommentWithoutCodeMitigations string            `dynamodbav:"truncatedCommentWithoutCodeMitigations" docstore:"truncatedCommentWithoutCodeMitigations" json:"truncatedCommentWithoutCodeMitigations"` // Good for Status Checks
+	TruncatedCommentWithCodeMitigations    string            `dynamodbav:"truncatedCommentWithCodeMitigations" docstore:"truncatedCommentWithCodeMitigations" json:"truncatedCommentWithCodeMitigations"`          // Good for PR comments
 	// Add other analysis fields as needed
 }
 

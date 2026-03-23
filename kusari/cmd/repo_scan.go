@@ -15,17 +15,20 @@ var (
 	wait            bool
 	outputFormat    string
 	commentPlatform string
+	fullOutput      bool
 )
 
 func init() {
 	scancmd.Flags().BoolVarP(&wait, "wait", "w", true, "wait for results")
 	scancmd.Flags().StringVarP(&outputFormat, "output-format", "", "markdown", "output format (markdown or sarif)")
 	scancmd.Flags().StringVar(&commentPlatform, "comment", "", "post results as a comment to the specified platform's PR/MR (e.g., 'gitlab', 'github')")
+	scancmd.Flags().BoolVar(&fullOutput, "full-output", false, "output full results instead of truncated")
 
 	// Bind flags to viper
 	mustBindPFlag("wait", scancmd.Flags().Lookup("wait"))
 	mustBindPFlag("output-format", scancmd.Flags().Lookup("output-format"))
 	mustBindPFlag("comment", scancmd.Flags().Lookup("comment"))
+	mustBindPFlag("full-output", scancmd.Flags().Lookup("full-output"))
 }
 
 func scan() *cobra.Command {
@@ -40,7 +43,7 @@ func scan() *cobra.Command {
 		dir := args[0]
 		ref := args[1]
 
-		return repo.Scan(dir, ref, platformUrl, consoleUrl, verbose, wait, outputFormat, commentPlatform)
+		return repo.Scan(dir, ref, platformUrl, consoleUrl, verbose, wait, outputFormat, commentPlatform, fullOutput)
 	}
 
 	return scancmd
@@ -58,5 +61,6 @@ var scancmd = &cobra.Command{
 		wait = viper.GetBool("wait")
 		outputFormat = viper.GetString("output-format")
 		commentPlatform = viper.GetString("comment")
+		fullOutput = viper.GetBool("full-output")
 	},
 }
