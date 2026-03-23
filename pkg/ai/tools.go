@@ -63,7 +63,8 @@ func (s *Server) executeScanLocalChanges(ctx context.Context, args ScanLocalChan
 			s.config.Verbose,
 			true, // wait for results
 			outputFormat,
-			"", // no comment platform for MCP
+			"",   // no comment platform for MCP
+			true, // full output to get complete results in MCP response
 		)
 	})
 

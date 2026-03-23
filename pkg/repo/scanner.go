@@ -48,14 +48,14 @@ var (
 	workingDir string
 )
 
-func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string, commentPlatform string) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, commentPlatform, nil)
+func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string, commentPlatform string, fullOutput bool) error {
+	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, commentPlatform, fullOutput, nil)
 }
 
 func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
 	// default to outputformat "markdown" for now for risk check as it will link to console
 	// commentPlatform is empty for risk-check as it's not typically run in MR context
-	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", "", nil)
+	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", "", false, nil)
 }
 
 // scanMock facilitates use of mock values for testing
@@ -67,7 +67,7 @@ type scanMock struct {
 }
 
 func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, full bool, outputFormat string,
-	commentPlatform string, mock *scanMock) error {
+	commentPlatform string, fullOutput bool, mock *scanMock) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
 		fmt.Fprintf(os.Stderr, " rev: %s\n", rev)
@@ -273,7 +273,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
-		return queryForResult(platformUrl, sortString, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose, dir, rev)
+		return queryForResult(platformUrl, sortString, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose, dir, rev, fullOutput)
 	}
 	return nil
 }
@@ -282,7 +282,7 @@ func cleanupWorkingDirectory(tempDir string) {
 	_ = os.RemoveAll(tempDir)
 }
 
-func queryForResult(platformUrl string, sortKey string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string) error {
+func queryForResult(platformUrl string, sortKey string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool) error {
 	maxAttempts := 750
 	attempt := 0
 	sleepDuration := time.Second
@@ -384,7 +384,14 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 					}
 
 					// Clean and format results for stdout
-					rawContent := results[0].Analysis.Results
+					var rawContent string
+					if fullOutput {
+						rawContent = results[0].Analysis.Results
+					} else {
+						rawContent = results[0].Analysis.TruncatedCommentWithCodeMitigations
+					}
+					rawContent = replaceConsoleLink(rawContent, *consoleFullUrl)
+					fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
 					cleanedContent := removeImageLines(rawContent)
 
 					// Render with glamour to stdout
@@ -414,8 +421,6 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 						}
 						return nil
 					}
-
-					fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
 
 					fmt.Print(rendered) // stdout
 
@@ -646,6 +651,22 @@ func detectMonoRepo(path string) (bool, []string, error) {
 	}
 
 	return len(indicators) > 0, indicators, nil
+}
+
+// replaceConsoleLink replaces any console URL in content with the provided consoleFullUrl.
+// It matches bare URLs sharing the same scheme+host as consoleFullUrl.
+func replaceConsoleLink(content, consoleFullUrl string) string {
+	// Extract scheme+host from consoleFullUrl to build the match prefix
+	// e.g. "https://console.us.kusari.cloud"
+	schemeHost := consoleFullUrl
+	if i := strings.Index(consoleFullUrl, "://"); i != -1 {
+		rest := consoleFullUrl[i+3:]
+		if j := strings.Index(rest, "/"); j != -1 {
+			schemeHost = consoleFullUrl[:i+3+j]
+		}
+	}
+	pattern := regexp.MustCompile(`https?://` + regexp.QuoteMeta(strings.TrimPrefix(strings.TrimPrefix(schemeHost, "https://"), "http://")) + `[^\s\)]*`)
+	return pattern.ReplaceAllString(content, consoleFullUrl)
 }
 
 func removeImageLines(content string) string {
