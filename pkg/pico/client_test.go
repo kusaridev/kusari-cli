@@ -15,29 +15,27 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	tenant := "demo"
-	client := NewClient(tenant)
+	baseURL := "https://demo.api.us.kusari.cloud"
+	client := NewClient(baseURL)
 
 	assert.NotNil(t, client)
-	assert.Equal(t, tenant, client.tenant)
-	assert.Equal(t, "https://demo.api.us.kusari.cloud", client.baseURL)
+	assert.Equal(t, baseURL, client.baseURL)
 	assert.NotNil(t, client.httpClient)
 }
 
-func TestNewClient_URLConstruction(t *testing.T) {
+func TestNewClient_URLPassthrough(t *testing.T) {
 	tests := []struct {
-		tenant      string
-		expectedURL string
+		baseURL string
 	}{
-		{"demo", "https://demo.api.us.kusari.cloud"},
-		{"test", "https://test.api.us.kusari.cloud"},
-		{"prod", "https://prod.api.us.kusari.cloud"},
+		{"https://demo.api.us.kusari.cloud"},
+		{"https://test.api.us.kusari.cloud"},
+		{"https://demo.api.dev.kusari.cloud"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.tenant, func(t *testing.T) {
-			client := NewClient(tt.tenant)
-			assert.Equal(t, tt.expectedURL, client.baseURL)
+		t.Run(tt.baseURL, func(t *testing.T) {
+			client := NewClient(tt.baseURL)
+			assert.Equal(t, tt.baseURL, client.baseURL)
 		})
 	}
 }
@@ -87,8 +85,7 @@ func TestClient_MakeRequest_ErrorResponses(t *testing.T) {
 			server := mockServer(t, tt.statusCode, tt.response)
 			defer server.Close()
 
-			client := NewClient("test")
-			client.baseURL = server.URL
+			client := NewClient(server.URL)
 
 			ctx := context.Background()
 			// This will fail due to auth, but we're testing error response handling

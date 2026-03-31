@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/kusaridev/kusari-cli/pkg/constants"
 )
 
 func TestGetHash(t *testing.T) {
@@ -943,9 +941,9 @@ func TestUpload_ValidationErrors(t *testing.T) {
 			err := Upload(
 				tt.filePath,
 				tt.tenantURL,
-				constants.DefaultPlatformURL,
-				"",
-				"",
+				"", // platformUrl
+				"", // alias
+				"", // docType
 				tt.isOpenVex,
 				tt.tag,
 				tt.softwareID,
