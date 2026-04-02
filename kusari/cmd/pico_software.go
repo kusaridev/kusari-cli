@@ -40,11 +40,11 @@ func picoSoftwareList() *cobra.Command {
 		Short: "List software/applications",
 		Long:  "List internal software/applications being tracked",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if platformTenant == "" {
+			if platformTenantEndpoint == "" {
 				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
 			}
 
-			client := pico.NewClient(platformTenant)
+			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSoftwareList(ctx, search, page, size)
@@ -87,11 +87,11 @@ func picoSoftwareGet() *cobra.Command {
 				return fmt.Errorf("invalid software ID: %w", err)
 			}
 
-			if platformTenant == "" {
+			if platformTenantEndpoint == "" {
 				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
 			}
 
-			client := pico.NewClient(platformTenant)
+			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSoftwareByID(ctx, softwareID)
@@ -188,11 +188,11 @@ func picoSoftwareVulnerabilities() *cobra.Command {
 				return fmt.Errorf("invalid software ID: %w", err)
 			}
 
-			if platformTenant == "" {
+			if platformTenantEndpoint == "" {
 				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
 			}
 
-			client := pico.NewClient(platformTenant)
+			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSoftwareVulnerabilities(ctx, softwareID, page, size)
@@ -239,11 +239,11 @@ func picoSoftwareVulnerabilityByID() *cobra.Command {
 				return fmt.Errorf("invalid vulnerability ID: %w", err)
 			}
 
-			if platformTenant == "" {
+			if platformTenantEndpoint == "" {
 				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
 			}
 
-			client := pico.NewClient(platformTenant)
+			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSoftwareVulnerabilityByID(ctx, softwareID, vulnID)

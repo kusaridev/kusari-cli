@@ -55,7 +55,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	// Initialize Pico client - load tenant from workspace
 	workspace, err := auth.LoadWorkspace(cfg.PlatformURL, "")
 	if err == nil && workspace.Tenant != "" {
-		s.picoClient = pico.NewClient(workspace.Tenant)
+		s.picoClient = pico.NewClient(fmt.Sprintf("https://%s.api.us.kusari.cloud", workspace.Tenant))
 	}
 	// Note: picoClient may be nil if not authenticated yet, handlers will check
 

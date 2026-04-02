@@ -18,19 +18,14 @@ import (
 
 // Client handles HTTP requests to the Kusari Pico API.
 type Client struct {
-	tenant     string
 	baseURL    string
 	httpClient *http.Client
 }
 
 // NewClient creates a new Pico API client.
-// Tenant is required - it will be used to construct the API base URL.
-func NewClient(tenant string) *Client {
-	// Always use US environment for production
-	baseURL := fmt.Sprintf("https://%s.api.us.kusari.cloud", tenant)
-
+// baseURL is the full tenant endpoint URL (e.g., "https://demo.api.us.kusari.cloud").
+func NewClient(baseURL string) *Client {
 	return &Client{
-		tenant:  tenant,
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,

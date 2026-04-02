@@ -36,11 +36,11 @@ func picoVulnerabilitiesList() *cobra.Command {
 		Short: "List vulnerabilities",
 		Long:  "List vulnerabilities with optional filters for search and severity",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if platformTenant == "" {
+			if platformTenantEndpoint == "" {
 				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
 			}
 
-			client := pico.NewClient(platformTenant)
+			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetVulnerabilities(ctx, search, kusariScore, page, size)
@@ -81,11 +81,11 @@ func picoVulnerabilitiesGet() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			externalID := args[0]
 
-			if platformTenant == "" {
+			if platformTenantEndpoint == "" {
 				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
 			}
 
-			client := pico.NewClient(platformTenant)
+			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetVulnerabilityByExternalID(ctx, externalID)

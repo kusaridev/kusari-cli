@@ -274,7 +274,7 @@ func (s *Server) getPicoClient() (*pico.Client, error) {
 		fmt.Fprintf(os.Stderr, "[kusari-ai] Initializing Pico client with tenant: %s\n", workspace.Tenant)
 	}
 
-	s.picoClient = pico.NewClient(workspace.Tenant)
+	s.picoClient = pico.NewClient(fmt.Sprintf("https://%s.api.us.kusari.cloud", workspace.Tenant))
 	return s.picoClient, nil
 }
 

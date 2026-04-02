@@ -185,7 +185,7 @@ func Upload(
 
 	accessToken := token.AccessToken
 
-	// Set default platform URL if not provided
+	// Use default platform URL for workspace operations if not provided
 	if platformUrl == "" {
 		platformUrl = constants.DefaultPlatformURL
 	}
@@ -349,7 +349,7 @@ func Upload(
 			for i, ssau := range validSSaus {
 				i, ssau := i, ssau // Capture loop variables
 				g.Go(func() error {
-					result, err := queryForIngestionStatusWithTimeout(ctx, platformUrl, tenantName, ssau.docRef, accessToken, workspace, func(statusItem *IngestionStatusItem) {
+					result, err := queryForIngestionStatusWithTimeout(ctx, tenantEndpoint, tenantName, ssau.docRef, accessToken, workspace, func(statusItem *IngestionStatusItem) {
 						// Update results with interim status changes (started, processing, etc.)
 						resultsMutex.Lock()
 						results[i] = ingestionResult{
