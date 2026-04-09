@@ -22,9 +22,9 @@ This includes MCP server configuration and agent skills.
 
 If no client is specified, an interactive menu will let you select from supported clients.
 
-Supported clients: claude, cursor, windsurf, cline, continue`,
+Supported clients: claude-code, claude-desktop, cline, continue, cursor, windsurf`,
 		Example: `  kusari ai uninstall           # Interactive selection
-  kusari ai uninstall claude    # Uninstall from Claude Code
+  kusari ai uninstall claude-code    # Uninstall from Claude Code
   kusari ai uninstall cursor    # Uninstall from Cursor`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
