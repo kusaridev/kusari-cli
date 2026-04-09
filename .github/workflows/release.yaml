@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -109,7 +109,7 @@ jobs:
           cyclonedx-gomod app -licenses -json -output cyclonedx_build.json -main ./kusari
 
       # Ingest image SBOM
-      - uses: kusaridev/kusari-ingest@de095cf0055369199682c3ec9ecf0d9207b2e26a #v2.0.8
+      - uses: kusaridev/kusari-ingest@14254efe0f3b815554af60089d0078eb9e912db3 #v2.0.9
         name: Kusari ingestion for image SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
@@ -122,7 +122,7 @@ jobs:
           document-type: 'image'
 
       # Ingest build SBOM
-      - uses: kusaridev/kusari-ingest@de095cf0055369199682c3ec9ecf0d9207b2e26a #v2.0.8
+      - uses: kusaridev/kusari-ingest@14254efe0f3b815554af60089d0078eb9e912db3 #v2.0.9
         name: Kusari ingestion for build SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
@@ -170,7 +170,7 @@ jobs:
   #       with:
   #         persist-credentials: false
   #     - name: Login to GitHub Container Registry
-  #       uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+  #       uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
   #       with:
   #         registry: ghcr.io
   #         username: ${{ github.actor }}
