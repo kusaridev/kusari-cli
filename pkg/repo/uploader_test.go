@@ -729,6 +729,8 @@ type mockResponse struct {
 	body   string
 }
 
+// I don't think this actually tests anything. We should get rid of it, or extract
+// upload metadata building into a func and test it here.
 func TestUploadMetadata(t *testing.T) {
 	tests := []struct {
 		name                       string
@@ -744,6 +746,7 @@ func TestUploadMetadata(t *testing.T) {
 		org                        string
 		repo                       string
 		subrepoPath                string
+		commitSha                  string
 		expectedMeta               map[string]string
 	}{
 		{
@@ -798,6 +801,7 @@ func TestUploadMetadata(t *testing.T) {
 			org:                        "org",
 			repo:                       "repo",
 			subrepoPath:                "path/to/subrepo",
+			commitSha:                  "commitSha",
 			expectedMeta: map[string]string{
 				"alias":                         "alias",
 				"type":                          "image",
@@ -811,6 +815,7 @@ func TestUploadMetadata(t *testing.T) {
 				"org":                           "org",
 				"repo":                          "repo",
 				"subrepo_path":                  "path/to/subrepo",
+				"commit_sha":                    "commitSha",
 			},
 		},
 		{
@@ -863,6 +868,10 @@ func TestUploadMetadata(t *testing.T) {
 			}
 			if tt.subrepoPath != "" {
 				uploadMeta["subrepo_path"] = tt.subrepoPath
+			}
+			// Commit SHA
+			if tt.commitSha != "" {
+				uploadMeta["commit_sha"] = tt.commitSha
 			}
 
 			// Verify expected metadata
@@ -957,6 +966,7 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				"", // org
 				"", // repo
 				"", // subrepoPath
+				"", // commit sha
 			)
 
 			if !tt.expectError {
