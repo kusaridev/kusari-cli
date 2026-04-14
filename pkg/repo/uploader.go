@@ -155,6 +155,7 @@ func Upload(
 	org string,
 	repo string,
 	subrepoPath string,
+	commitSha string,
 ) error {
 	// Validate required configuration
 	if filePath == "" {
@@ -284,6 +285,10 @@ func Upload(
 	}
 	if subrepoPath != "" {
 		uploadMeta["subrepo_path"] = subrepoPath
+	}
+	// Commit SHA
+	if commitSha != "" {
+		uploadMeta["commit_sha"] = commitSha
 	}
 
 	var ssaus []sbomSubjectAndURI

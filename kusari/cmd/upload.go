@@ -26,6 +26,7 @@ var (
 	uploadOrg                        string
 	uploadRepo                       string
 	uploadSubrepoPath                string
+	uploadCommitSha                  string
 )
 
 func init() {
@@ -45,6 +46,7 @@ func init() {
 	uploadcmd.Flags().StringVar(&uploadOrg, "org", "", "Organization/owner name in the forge")
 	uploadcmd.Flags().StringVar(&uploadRepo, "repo", "", "Repository name in the forge")
 	uploadcmd.Flags().StringVar(&uploadSubrepoPath, "subrepo-path", "", "Path to subrepo within the repository (e.g., app/frontend)")
+	uploadcmd.Flags().StringVar(&uploadCommitSha, "commit-sha", "", "Commit SHA (from git) (optional, for SBOMs only)")
 
 	// Bind flags to viper
 	mustBindPFlag("file-path", uploadcmd.Flags().Lookup("file-path"))
@@ -63,6 +65,7 @@ func init() {
 	mustBindPFlag("org", uploadcmd.Flags().Lookup("org"))
 	mustBindPFlag("repo", uploadcmd.Flags().Lookup("repo"))
 	mustBindPFlag("subrepo-path", uploadcmd.Flags().Lookup("subrepo-path"))
+	mustBindPFlag("commit-sha", uploadcmd.Flags().Lookup("commit-sha"))
 }
 
 func upload() *cobra.Command {
@@ -88,6 +91,7 @@ func upload() *cobra.Command {
 			uploadOrg,
 			uploadRepo,
 			uploadSubrepoPath,
+			uploadCommitSha,
 		)
 	}
 

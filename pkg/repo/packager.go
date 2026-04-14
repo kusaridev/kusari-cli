@@ -61,7 +61,9 @@ func packageDirectory(full bool) (int64, error) {
 		args = append(args, patchFile)
 	}
 
-	if err := exec.Command("tar", args...).Run(); err != nil {
+	tc2 := exec.Command("tar", args...)
+	tc2.Env = append(tc2.Env, "COPYFILE_DISABLE=1")
+	if err := tc2.Run(); err != nil {
 		return 0, fmt.Errorf("error tarring Inspector metadata: %w", err)
 	}
 	// Compress it
