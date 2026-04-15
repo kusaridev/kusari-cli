@@ -6,8 +6,8 @@ require (
 	github.com/briandowns/spinner v1.23.2
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/huh v1.0.0
-	github.com/coreos/go-oidc/v3 v3.17.0
-	github.com/modelcontextprotocol/go-sdk v1.4.1
+	github.com/coreos/go-oidc/v3 v3.18.0
+	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
