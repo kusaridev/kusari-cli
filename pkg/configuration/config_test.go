@@ -101,7 +101,7 @@ func TestUpdateWithChanges(t *testing.T) {
 	require.NoError(t, UpdateConfig())
 
 	// Make sure the new file kept the user change
-	expectedConfig := "status_check_name: Kusari Inspectormatic"
+	expectedConfig := "github_action_version_pinning_check_enabled: false"
 	readContent, err := os.ReadFile(destFile)
 	require.NoError(t, err)
 	require.Contains(t, string(readContent), expectedConfig)
