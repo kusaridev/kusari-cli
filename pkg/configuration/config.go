@@ -17,10 +17,8 @@ var ErrFileExists = fmt.Errorf("file %s exists, not overwriting (specify '--forc
 var DefaultConfig = configuration.Config{
 	GitHubActionVersionPinningCheckEnabled: true,
 	ContainerVersionPinningCheckEnabled:    true,
-	StatusCheckName:                        "Kusari Inspector",
 	PostCommentOnFailure:                   true,
 	PostCommentOnSuccess:                   false,
-	FullCodeReviewEnabled:                  false,
 	// SBOM Generation is disabled by default to avoid breaking existing implementations
 	SBOMGenerationEnabled:      false,
 	SBOMComponentName:          "", // Empty means use GitHub repo name as default
