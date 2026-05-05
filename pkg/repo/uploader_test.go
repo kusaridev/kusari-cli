@@ -739,7 +739,6 @@ func TestUploadMetadata(t *testing.T) {
 		tag                        string
 		softwareID                 string
 		sbomSubject                string
-		componentName              string
 		sbomSubjectNameOverride    string
 		sbomSubjectVersionOverride string
 		forge                      string
@@ -773,18 +772,16 @@ func TestUploadMetadata(t *testing.T) {
 			},
 		},
 		{
-			name:          "combined with existing fields",
-			alias:         "my-alias",
-			componentName: "my-component",
-			forge:         "github.com",
-			org:           "testorg",
-			repo:          "testrepo",
+			name:  "combined with existing fields",
+			alias: "my-alias",
+			forge: "github.com",
+			org:   "testorg",
+			repo:  "testrepo",
 			expectedMeta: map[string]string{
-				"alias":          "my-alias",
-				"component_name": "my-component",
-				"forge":          "github.com",
-				"org":            "testorg",
-				"repo":           "testrepo",
+				"alias": "my-alias",
+				"forge": "github.com",
+				"org":   "testorg",
+				"repo":  "testrepo",
 			},
 		},
 		{
@@ -794,7 +791,6 @@ func TestUploadMetadata(t *testing.T) {
 			tag:                        "v1.0",
 			softwareID:                 "12345",
 			sbomSubject:                "subject",
-			componentName:              "component",
 			sbomSubjectNameOverride:    "name-override",
 			sbomSubjectVersionOverride: "version-override",
 			forge:                      "github.com",
@@ -808,7 +804,6 @@ func TestUploadMetadata(t *testing.T) {
 				"tag":                           "v1.0",
 				"software_id":                   "12345",
 				"sbom_subject":                  "subject",
-				"component_name":                "component",
 				"sbom_subject_name_override":    "name-override",
 				"sbom_subject_version_override": "version-override",
 				"forge":                         "github.com",
@@ -846,9 +841,6 @@ func TestUploadMetadata(t *testing.T) {
 			}
 			if tt.sbomSubject != "" {
 				uploadMeta["sbom_subject"] = tt.sbomSubject
-			}
-			if tt.componentName != "" {
-				uploadMeta["component_name"] = tt.componentName
 			}
 			if tt.sbomSubjectNameOverride != "" {
 				uploadMeta["sbom_subject_name_override"] = tt.sbomSubjectNameOverride
@@ -957,7 +949,6 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				tt.tag,
 				tt.softwareID,
 				tt.sbomSubject,
-				"",
 				"",
 				"",
 				false,

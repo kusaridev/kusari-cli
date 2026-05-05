@@ -110,13 +110,12 @@ type StatusMeta struct {
 
 // IngestionStatusItem represents an item in the pico-ingestion-status DynamoDB table
 type IngestionStatusItem struct {
-	Workspace     string     `json:"workspace"`      // partition key
-	Sort          string     `json:"sort"`           // sort key
-	DocumentType  string     `json:"document_type"`  // SBOM, VEX, etc.
-	DocumentName  string     `json:"document_name"`  // Name of the ingested document
-	ComponentName string     `json:"component_name"` // Component name from upload metadata
-	TTL           int64      `json:"ttl"`            // TTL in Unix epoch seconds
-	StatusMeta    StatusMeta `json:"statusMeta"`
+	Workspace    string     `json:"workspace"`     // partition key
+	Sort         string     `json:"sort"`          // sort key
+	DocumentType string     `json:"document_type"` // SBOM, VEX, etc.
+	DocumentName string     `json:"document_name"` // Name of the ingested document
+	TTL          int64      `json:"ttl"`           // TTL in Unix epoch seconds
+	StatusMeta   StatusMeta `json:"statusMeta"`
 }
 
 type cdxSBOM struct {
@@ -146,7 +145,6 @@ func Upload(
 	tag string,
 	softwareID string,
 	sbomSubject string,
-	componentName string,
 	sbomSubjectNameOverride string,
 	sbomSubjectVersionOverride string,
 	checkBlockedPackages bool,
@@ -264,9 +262,6 @@ func Upload(
 	if sbomSubject != "" { // only used for VEX
 		uploadMeta["sbom_subject"] = sbomSubject
 	}
-	if componentName != "" {
-		uploadMeta["component_name"] = componentName
-	}
 	if sbomSubjectNameOverride != "" { // only used for SBOM
 		uploadMeta["sbom_subject_name_override"] = sbomSubjectNameOverride
 	}
@@ -324,12 +319,11 @@ func Upload(
 	// Query ingestion status for each uploaded document
 	if wait && workspace != "" && tenantName != "" {
 		type ingestionResult struct {
-			docRef        string
-			documentName  string
-			componentName string
-			status        string
-			userMessage   string
-			err           error
+			docRef       string
+			documentName string
+			status       string
+			userMessage  string
+			err          error
 		}
 
 		// Filter out empty docRefs
@@ -358,11 +352,10 @@ func Upload(
 						// Update results with interim status changes (started, processing, etc.)
 						resultsMutex.Lock()
 						results[i] = ingestionResult{
-							docRef:        ssau.docRef,
-							documentName:  statusItem.DocumentName,
-							componentName: statusItem.ComponentName,
-							status:        statusItem.StatusMeta.Status,
-							userMessage:   statusItem.StatusMeta.UserMessage,
+							docRef:       ssau.docRef,
+							documentName: statusItem.DocumentName,
+							status:       statusItem.StatusMeta.Status,
+							userMessage:  statusItem.StatusMeta.UserMessage,
 						}
 						// Print live status update (truncate docRef for readability)
 						shortDocRef := ssau.docRef
@@ -382,11 +375,10 @@ func Upload(
 						}
 					} else if result != nil {
 						results[i] = ingestionResult{
-							docRef:        ssau.docRef,
-							documentName:  result.DocumentName,
-							componentName: result.ComponentName,
-							status:        result.StatusMeta.Status,
-							userMessage:   result.StatusMeta.UserMessage,
+							docRef:       ssau.docRef,
+							documentName: result.DocumentName,
+							status:       result.StatusMeta.Status,
+							userMessage:  result.StatusMeta.UserMessage,
 						}
 					}
 					resultsMutex.Unlock()
@@ -402,8 +394,8 @@ func Upload(
 			// Display results in a table
 			fmt.Fprintf(os.Stderr, "\nIngestion Results:\n")
 			w := tabwriter.NewWriter(os.Stderr, 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintln(w, "STATUS\tDOCUMENT NAME\tCOMPONENT NAME\tDOCUMENT REF\tMESSAGE")
-			_, _ = fmt.Fprintln(w, "------\t-------------\t--------------\t------------\t-------")
+			_, _ = fmt.Fprintln(w, "STATUS\tDOCUMENT NAME\tDOCUMENT REF\tMESSAGE")
+			_, _ = fmt.Fprintln(w, "------\t-------------\t------------\t-------")
 			for _, r := range results {
 				statusSymbol := "✓"
 				if r.status == "failed" || r.err != nil {
@@ -413,10 +405,6 @@ func Upload(
 				if docName == "" {
 					docName = "-"
 				}
-				compName := r.componentName
-				if compName == "" {
-					compName = "-"
-				}
 				message := r.userMessage
 				if r.err != nil {
 					message = r.err.Error()
@@ -424,7 +412,7 @@ func Upload(
 				if message == "" {
 					message = "-"
 				}
-				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", statusSymbol, docName, compName, r.docRef, message)
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", statusSymbol, docName, r.docRef, message)
 			}
 			_ = w.Flush()
 		}
