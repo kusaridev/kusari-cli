@@ -23,7 +23,6 @@ var DefaultConfig = configuration.Config{
 	FullCodeReviewEnabled:                  false,
 	// SBOM Generation is disabled by default to avoid breaking existing implementations
 	SBOMGenerationEnabled:      false,
-	SBOMComponentName:          "", // Empty means use GitHub repo name as default
 	SBOMSubjectNameOverride:    "",
 	SBOMSubjectVersionOverride: "",
 }
@@ -93,7 +92,7 @@ func mergeConfigs(defaultConfig configuration.Config, existingConfig map[string]
 		yamlTag := field.Tag.Get("yaml")
 
 		// Parse the yaml tag to extract just the field name (before any comma)
-		// e.g., "sbom_component_name,omitempty" -> "sbom_component_name"
+		// e.g., "sbom_subject_name_override,omitempty" -> "sbom_subject_name_override"
 		yamlFieldName := yamlTag
 		if commaIdx := findComma(yamlTag); commaIdx != -1 {
 			yamlFieldName = yamlTag[:commaIdx]
