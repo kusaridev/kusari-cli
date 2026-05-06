@@ -6,7 +6,7 @@ Command line interface for Kusari.
 
 1. Have [Go installed](https://go.dev/doc/install).
 
-1. `go install github.com/kusaridev/kusari-cli/kusari@latest`
+1. `go install github.com/kusaridev/kusari-cli/v2/kusari@latest`
 
 Alternatively, you can install pre-built binaries for supported platforms from
 the [GitHub releases page](https://github.com/kusaridev/kusari-cli/releases).

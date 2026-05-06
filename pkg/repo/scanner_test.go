@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kusaridev/kusari-cli/api"
-	"github.com/kusaridev/kusari-cli/pkg/login"
+	"github.com/kusaridev/kusari-cli/v2/api"
+	"github.com/kusaridev/kusari-cli/v2/pkg/login"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

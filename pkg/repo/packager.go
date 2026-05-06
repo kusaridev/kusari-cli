@@ -17,7 +17,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/kusaridev/kusari-cli/api"
+	"github.com/kusaridev/kusari-cli/v2/api"
 )
 
 // PackageDirectory creates a zip file from a directory

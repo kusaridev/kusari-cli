@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kusaridev/kusari-cli/api"
+	"github.com/kusaridev/kusari-cli/v2/api"
 	"github.com/stretchr/testify/assert"
 )
 

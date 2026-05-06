@@ -6,7 +6,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/kusaridev/kusari-cli/pkg/configuration"
+	"github.com/kusaridev/kusari-cli/v2/pkg/configuration"
 	"github.com/spf13/cobra"
 )
 

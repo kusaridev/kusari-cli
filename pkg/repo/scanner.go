@@ -20,13 +20,13 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/charmbracelet/glamour"
-	"github.com/kusaridev/kusari-cli/api"
-	"github.com/kusaridev/kusari-cli/pkg/auth"
-	"github.com/kusaridev/kusari-cli/pkg/github"
-	"github.com/kusaridev/kusari-cli/pkg/gitlab"
-	"github.com/kusaridev/kusari-cli/pkg/login"
-	"github.com/kusaridev/kusari-cli/pkg/sarif"
-	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
+	"github.com/kusaridev/kusari-cli/v2/api"
+	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
+	"github.com/kusaridev/kusari-cli/v2/pkg/github"
+	"github.com/kusaridev/kusari-cli/v2/pkg/gitlab"
+	"github.com/kusaridev/kusari-cli/v2/pkg/login"
+	"github.com/kusaridev/kusari-cli/v2/pkg/sarif"
+	urlBuilder "github.com/kusaridev/kusari-cli/v2/pkg/url"
 )
 
 const (

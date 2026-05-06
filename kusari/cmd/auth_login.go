@@ -6,8 +6,8 @@ package cmd
 import (
 	"fmt"
 
-	l "github.com/kusaridev/kusari-cli/pkg/login"
-	"github.com/kusaridev/kusari-cli/pkg/port"
+	l "github.com/kusaridev/kusari-cli/v2/pkg/login"
+	"github.com/kusaridev/kusari-cli/v2/pkg/port"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

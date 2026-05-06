@@ -12,8 +12,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/kusaridev/kusari-cli/pkg/auth"
-	urlBuilder "github.com/kusaridev/kusari-cli/pkg/url"
+	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
+	urlBuilder "github.com/kusaridev/kusari-cli/v2/pkg/url"
 )
 
 func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, platformUrl string, verbose bool, useSso bool) error {

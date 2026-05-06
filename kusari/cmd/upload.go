@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kusaridev/kusari-cli/pkg/repo"
+	"github.com/kusaridev/kusari-cli/v2/pkg/repo"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kusaridev/kusari-cli/pkg/mcpinstall"
+	"github.com/kusaridev/kusari-cli/v2/pkg/mcpinstall"
 	"github.com/spf13/cobra"
 )
 
