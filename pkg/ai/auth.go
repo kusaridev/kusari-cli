@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kusaridev/kusari-cli/pkg/auth"
-	"github.com/kusaridev/kusari-cli/pkg/login"
-	"github.com/kusaridev/kusari-cli/pkg/port"
+	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
+	"github.com/kusaridev/kusari-cli/v2/pkg/login"
+	"github.com/kusaridev/kusari-cli/v2/pkg/port"
 )
 
 const (

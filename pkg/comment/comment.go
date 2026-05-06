@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/kusaridev/kusari-cli/api"
+	"github.com/kusaridev/kusari-cli/v2/api"
 )
 
 //go:embed templates/analysisComment.tmpl

@@ -7,7 +7,7 @@ This guide walks through using the Kusari MCP Server with Claude Code.
 
 ## Prerequisites
 
-- Kusari CLI installed (`go install github.com/kusaridev/kusari-cli/kusari@latest`)
+- Kusari CLI installed (`go install github.com/kusaridev/kusari-cli/v2/kusari@latest`)
 - Claude Code (VS Code extension) installed
 - Kusari account ([sign up at console.kusari.cloud](https://console.kusari.cloud))
 

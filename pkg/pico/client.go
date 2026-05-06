@@ -13,7 +13,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/kusaridev/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
 )
 
 // Client handles HTTP requests to the Kusari Pico API.

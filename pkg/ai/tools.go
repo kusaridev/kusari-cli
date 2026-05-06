@@ -14,9 +14,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kusaridev/kusari-cli/pkg/auth"
-	"github.com/kusaridev/kusari-cli/pkg/pico"
-	"github.com/kusaridev/kusari-cli/pkg/repo"
+	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
+	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
+	"github.com/kusaridev/kusari-cli/v2/pkg/repo"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/kusaridev/kusari-cli/api"
+	"github.com/kusaridev/kusari-cli/v2/api"
 )
 
 // SARIF 2.1.0 structures

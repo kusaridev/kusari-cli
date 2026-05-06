@@ -20,9 +20,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/kusaridev/kusari-cli/pkg/auth"
-	"github.com/kusaridev/kusari-cli/pkg/constants"
-	"github.com/kusaridev/kusari-cli/pkg/login"
+	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
+	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
+	"github.com/kusaridev/kusari-cli/v2/pkg/login"
 	"golang.org/x/sync/errgroup"
 )
 

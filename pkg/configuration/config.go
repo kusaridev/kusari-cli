@@ -6,7 +6,7 @@ import (
 	"os"
 	"reflect"
 
-	"github.com/kusaridev/kusari-cli/api/configuration"
+	"github.com/kusaridev/kusari-cli/v2/api/configuration"
 	"gopkg.in/yaml.v3"
 )
 

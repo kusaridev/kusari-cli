@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"github.com/kusaridev/kusari-cli/kusari/cmd"
+	"github.com/kusaridev/kusari-cli/v2/kusari/cmd"
 )
 
 var (

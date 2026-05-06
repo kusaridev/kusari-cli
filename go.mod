@@ -1,4 +1,4 @@
-module github.com/kusaridev/kusari-cli
+module github.com/kusaridev/kusari-cli/v2
 
 go 1.25.9
 

@@ -6,7 +6,7 @@ package pico
 import (
 	"fmt"
 
-	"github.com/kusaridev/kusari-cli/pkg/auth"
+	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
 )
 
 const (

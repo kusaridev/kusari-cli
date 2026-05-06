@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kusaridev/kusari-cli/pkg/ai"
+	"github.com/kusaridev/kusari-cli/v2/pkg/ai"
 	"github.com/spf13/cobra"
 )
 

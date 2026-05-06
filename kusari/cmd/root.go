@@ -8,7 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/kusaridev/kusari-cli/pkg/constants"
+	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"

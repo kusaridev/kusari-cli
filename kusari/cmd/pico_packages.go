@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/kusaridev/kusari-cli/pkg/pico"
+	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
 	"github.com/spf13/cobra"
 )
 

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kusaridev/kusari-cli/pkg/constants"
+	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
 	"gopkg.in/yaml.v3"
 )
 
