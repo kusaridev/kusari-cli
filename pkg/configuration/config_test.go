@@ -155,7 +155,6 @@ func TestUpdatePreservesSBOMConfig(t *testing.T) {
 
 	// Verify SBOM fields are preserved
 	require.Contains(t, content, "sbom_generation_enabled: true")
-	require.Contains(t, content, "sbom_component_name: my-custom-component")
 	require.Contains(t, content, "sbom_subject_name_override: custom-subject")
 	require.Contains(t, content, "sbom_subject_version_override: v1.0.0")
 
@@ -165,7 +164,6 @@ func TestUpdatePreservesSBOMConfig(t *testing.T) {
 // Test that default SBOM config has generation disabled
 func TestDefaultSBOMConfigDisabled(t *testing.T) {
 	require.False(t, DefaultConfig.SBOMGenerationEnabled, "SBOM generation should be disabled by default")
-	require.Empty(t, DefaultConfig.SBOMComponentName, "SBOM component name should be empty by default")
 	require.Empty(t, DefaultConfig.SBOMSubjectNameOverride, "SBOM subject name override should be empty by default")
 	require.Empty(t, DefaultConfig.SBOMSubjectVersionOverride, "SBOM subject version override should be empty by default")
 }
@@ -192,7 +190,6 @@ func TestGeneratedConfigOmitsEmptySBOMFields(t *testing.T) {
 	require.Contains(t, content, "sbom_generation_enabled: false")
 
 	// Empty string fields should NOT be present (they have omitempty)
-	require.NotContains(t, content, "sbom_component_name")
 	require.NotContains(t, content, "sbom_subject_name_override")
 	require.NotContains(t, content, "sbom_subject_version_override")
 

@@ -10,7 +10,6 @@ type Config struct {
 
 	// SBOM Generation Configuration (for merged PRs to main/master)
 	SBOMGenerationEnabled      bool   `yaml:"sbom_generation_enabled"`                 // Enable SBOM generation on merged PRs (default: false)
-	SBOMComponentName          string `yaml:"sbom_component_name,omitempty"`           // Custom component name for SBOM (default: GitHub repo name)
 	SBOMSubjectNameOverride    string `yaml:"sbom_subject_name_override,omitempty"`    // Override SBOM subject name in Kusari Platform
 	SBOMSubjectVersionOverride string `yaml:"sbom_subject_version_override,omitempty"` // Override SBOM subject version in Kusari Platform
 }

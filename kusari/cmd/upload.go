@@ -4,6 +4,9 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/kusaridev/kusari-cli/pkg/repo"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -38,6 +41,9 @@ func init() {
 	uploadcmd.Flags().StringVar(&uploadSoftwareID, "software-id", "", "Kusari Platform Software ID value to set in the document wrapper upload meta (optional)")
 	uploadcmd.Flags().StringVar(&uploadSbomSubject, "sbom-subject", "", "Kusari Platform Software sbom subject substring value to set in the document wrapper upload meta (optional, for OpenVEX docs only)")
 	uploadcmd.Flags().StringVar(&uploadComponentName, "component-name", "", "Kusari Platform component name (optional)")
+	if err := uploadcmd.Flags().MarkDeprecated("component-name", "see https://docs.us.kusari.cloud/software/components for info on how to assign and use Components"); err != nil {
+		panic(err)
+	}
 	uploadcmd.Flags().BoolVar(&uploadCheckBlocked, "check-blocked-packages", false, "Check if any of the SBOMs uses a package contained in the blocked package list")
 	uploadcmd.Flags().StringVar(&uploadSbomSubjectNameOverride, "sbom-subject-name-override", "", "SBOM Subject Name override (optional, for SBOMs only)")
 	uploadcmd.Flags().StringVar(&uploadSbomSubjectVersionOverride, "sbom-subject-version-override", "", "SBOM Subject Version override (optional, from SBOMs only)")
@@ -72,6 +78,13 @@ func upload() *cobra.Command {
 	uploadcmd.RunE = func(cmd *cobra.Command, args []string) error {
 		cmd.SilenceUsage = true
 
+		// CLI uses of --component-name are warned about by cobra's MarkDeprecated.
+		// Cover the config-file and env-var paths here.
+		if uploadComponentName != "" && !cmd.Flags().Changed("component-name") {
+			fmt.Fprintln(os.Stderr, "The component-name config value is no longer supported. "+
+				"See https://docs.us.kusari.cloud/software/components for info on how to assign and use Components.")
+		}
+
 		return repo.Upload(
 			uploadFilePath,
 			platformTenantEndpoint,
@@ -82,7 +95,6 @@ func upload() *cobra.Command {
 			uploadTag,
 			uploadSoftwareID,
 			uploadSbomSubject,
-			uploadComponentName,
 			uploadSbomSubjectNameOverride,
 			uploadSbomSubjectVersionOverride,
 			uploadCheckBlocked,
