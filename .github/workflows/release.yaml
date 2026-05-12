@@ -59,7 +59,7 @@ jobs:
             --tags=latest,sha-${{ github.sha }},$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]//g')
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # main
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # main
       - name: Install syft
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
 
@@ -109,7 +109,7 @@ jobs:
           cyclonedx-gomod app -licenses -json -output cyclonedx_build.json -main ./kusari
 
       # Ingest image SBOM
-      - uses: kusaridev/kusari-ingest@f6364f92bbc6996d2e6d2f4a6b1a4f6b3adf43b6 #v2.1.0
+      - uses: kusaridev/kusari-ingest@971c85708b1eb4c3731c6cedc01796357e7a17ef #v3.0.0
         name: Kusari ingestion for image SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
@@ -122,7 +122,7 @@ jobs:
           document-type: 'image'
 
       # Ingest build SBOM
-      - uses: kusaridev/kusari-ingest@f6364f92bbc6996d2e6d2f4a6b1a4f6b3adf43b6 #v2.1.0
+      - uses: kusaridev/kusari-ingest@971c85708b1eb4c3731c6cedc01796357e7a17ef #v3.0.0
         name: Kusari ingestion for build SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
@@ -182,7 +182,7 @@ jobs:
   #         format: "spdx-json"
   #         output: "spdx.sbom.json"
   #     - name: Install cosign
-  #       uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # main
+  #       uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # main
   #     - name: Sign image and sbom
   #       run: |
   #         #!/usr/bin/env bash
