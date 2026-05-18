@@ -31,6 +31,7 @@ func Platform() *cobra.Command {
 	platformCmd.AddCommand(vulnerabilities())
 	platformCmd.AddCommand(packages())
 	platformCmd.AddCommand(software())
+	platformCmd.AddCommand(components())
 
 	return platformCmd
 }

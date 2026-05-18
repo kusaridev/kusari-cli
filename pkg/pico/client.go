@@ -225,6 +225,66 @@ func (c *Client) GetPackagesWithLifecycle(ctx context.Context, params map[string
 	return json.RawMessage(respBody), nil
 }
 
+// ListComponents retrieves a list of components with optional filters.
+// params keys correspond to the OpenAPI query parameters (search, status_filter, filter, sort,
+// tags, exclude_tags, has_tags, page, size). Empty values are omitted.
+func (c *Client) ListComponents(ctx context.Context, params map[string]string) (json.RawMessage, error) {
+	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/components", params, nil)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(respBody), nil
+}
+
+// CreateComponent creates a new component. displayName and meta are optional (pass "" / nil to omit).
+func (c *Client) CreateComponent(ctx context.Context, name, displayName string, meta map[string]any) (json.RawMessage, error) {
+	body := map[string]any{"name": name}
+	if displayName != "" {
+		body["display_name"] = displayName
+	}
+	if meta != nil {
+		body["meta"] = meta
+	}
+
+	respBody, err := c.makeRequest(ctx, "POST", "/pico/v1/components", nil, body)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(respBody), nil
+}
+
+// GetComponentByID retrieves a specific component by ID.
+func (c *Client) GetComponentByID(ctx context.Context, compID int) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v1/components/%d", compID)
+	respBody, err := c.makeRequest(ctx, "GET", path, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(respBody), nil
+}
+
+// UpdateComponent updates a component's display_name and/or meta. Pass nil for fields to leave unchanged.
+func (c *Client) UpdateComponent(ctx context.Context, compID int, displayName *string, meta map[string]any) error {
+	body := map[string]any{}
+	if displayName != nil {
+		body["display_name"] = *displayName
+	}
+	if meta != nil {
+		body["meta"] = meta
+	}
+
+	path := fmt.Sprintf("/pico/v1/components/%d", compID)
+	_, err := c.makeRequest(ctx, "PATCH", path, nil, body)
+	return err
+}
+
+// DeleteComponent deletes a component, unassigning any linked software first.
+func (c *Client) DeleteComponent(ctx context.Context, compID int) error {
+	path := fmt.Sprintf("/pico/v1/components/%d", compID)
+	_, err := c.makeRequest(ctx, "DELETE", path, nil, nil)
+	return err
+}
+
 // GetSoftwareIDsByRepo finds software IDs by repository metadata (forge, org, repo, subrepo_path).
 // subrepoPath is optional - pass empty string to query all software in the repository.
 func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, subrepoPath string) (json.RawMessage, error) {
