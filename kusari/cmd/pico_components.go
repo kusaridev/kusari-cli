@@ -25,6 +25,7 @@ func components() *cobra.Command {
 	cmd.AddCommand(picoComponentsCreate())
 	cmd.AddCommand(picoComponentsUpdate())
 	cmd.AddCommand(picoComponentsDelete())
+	cmd.AddCommand(picoComponentsAssignSoftware())
 
 	return cmd
 }
@@ -256,6 +257,46 @@ func picoComponentsDelete() *cobra.Command {
 			}
 
 			fmt.Printf("Component %d deleted\n", compID)
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func picoComponentsAssignSoftware() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "assign-software <component-id> <software-id> [<software-id>...]",
+		Short: "Assign software to a component",
+		Long:  "Bulk-assign one or more software entries to a component. Each software is moved from any prior component into the target component. Atomic — if any software ID does not exist, no changes are made. Maximum 100 software IDs per call.",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			compID, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid component ID: %w", err)
+			}
+
+			softwareIDs := make([]int, 0, len(args)-1)
+			for _, a := range args[1:] {
+				id, err := strconv.Atoi(a)
+				if err != nil {
+					return fmt.Errorf("invalid software ID %q: %w", a, err)
+				}
+				softwareIDs = append(softwareIDs, id)
+			}
+
+			if platformTenantEndpoint == "" {
+				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			}
+
+			client := pico.NewClient(platformTenantEndpoint)
+
+			ctx := context.Background()
+			if err := client.AssignSoftwareToComponent(ctx, compID, softwareIDs); err != nil {
+				return fmt.Errorf("failed to assign software to component: %w", err)
+			}
+
+			fmt.Printf("Assigned %d software ID(s) to component %d\n", len(softwareIDs), compID)
 			return nil
 		},
 	}

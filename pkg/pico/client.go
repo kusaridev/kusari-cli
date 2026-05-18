@@ -285,6 +285,15 @@ func (c *Client) DeleteComponent(ctx context.Context, compID int) error {
 	return err
 }
 
+// AssignSoftwareToComponent bulk-assigns the given software IDs to the component.
+// The request is atomic — if any software ID does not exist, no changes are made.
+func (c *Client) AssignSoftwareToComponent(ctx context.Context, compID int, softwareIDs []int) error {
+	path := fmt.Sprintf("/pico/v1/components/%d/software", compID)
+	body := map[string]any{"software_ids": softwareIDs}
+	_, err := c.makeRequest(ctx, "POST", path, nil, body)
+	return err
+}
+
 // GetSoftwareIDsByRepo finds software IDs by repository metadata (forge, org, repo, subrepo_path).
 // subrepoPath is optional - pass empty string to query all software in the repository.
 func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, subrepoPath string) (json.RawMessage, error) {
