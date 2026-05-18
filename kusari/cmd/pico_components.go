@@ -26,6 +26,7 @@ func components() *cobra.Command {
 	cmd.AddCommand(picoComponentsUpdate())
 	cmd.AddCommand(picoComponentsDelete())
 	cmd.AddCommand(picoComponentsAssignSoftware())
+	cmd.AddCommand(picoComponentsRemoveSoftware())
 
 	return cmd
 }
@@ -297,6 +298,42 @@ func picoComponentsAssignSoftware() *cobra.Command {
 			}
 
 			fmt.Printf("Assigned %d software ID(s) to component %d\n", len(softwareIDs), compID)
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func picoComponentsRemoveSoftware() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "remove-software <component-id> <software-id>",
+		Short: "Remove a software entry from a component",
+		Long:  "Remove the link between a component and a single software entry. Returns an error if no such link exists.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			compID, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid component ID: %w", err)
+			}
+
+			softwareID, err := strconv.Atoi(args[1])
+			if err != nil {
+				return fmt.Errorf("invalid software ID: %w", err)
+			}
+
+			if platformTenantEndpoint == "" {
+				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			}
+
+			client := pico.NewClient(platformTenantEndpoint)
+
+			ctx := context.Background()
+			if err := client.RemoveSoftwareFromComponent(ctx, compID, softwareID); err != nil {
+				return fmt.Errorf("failed to remove software from component: %w", err)
+			}
+
+			fmt.Printf("Software %d removed from component %d\n", softwareID, compID)
 			return nil
 		},
 	}

@@ -294,6 +294,14 @@ func (c *Client) AssignSoftwareToComponent(ctx context.Context, compID int, soft
 	return err
 }
 
+// RemoveSoftwareFromComponent removes the link between a single software and a component.
+// Returns an error wrapping the API 404 if no such link exists.
+func (c *Client) RemoveSoftwareFromComponent(ctx context.Context, compID, softwareID int) error {
+	path := fmt.Sprintf("/pico/v1/components/%d/software/%d", compID, softwareID)
+	_, err := c.makeRequest(ctx, "DELETE", path, nil, nil)
+	return err
+}
+
 // GetSoftwareIDsByRepo finds software IDs by repository metadata (forge, org, repo, subrepo_path).
 // subrepoPath is optional - pass empty string to query all software in the repository.
 func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, subrepoPath string) (json.RawMessage, error) {
