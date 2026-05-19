@@ -32,27 +32,36 @@ var (
 	uploadCommitSha                  string
 )
 
-func init() {
-	uploadcmd.Flags().StringVarP(&uploadFilePath, "file-path", "f", "", "Path to file or directory to upload (required)")
-	uploadcmd.Flags().StringVarP(&uploadAlias, "alias", "a", "", "Alias that supersedes the subject in Kusari platform (optional)")
-	uploadcmd.Flags().StringVarP(&uploadDocumentType, "document-type", "d", "", "Type of the document (image or build) sbom (optional)")
-	uploadcmd.Flags().BoolVar(&uploadOpenVex, "openvex", false, "Indicate that this is an OpenVEX document (optional, only works with files)")
-	uploadcmd.Flags().StringVar(&uploadTag, "tag", "", "Tag value to set in the document wrapper upload meta (optional, e.g. govulncheck)")
-	uploadcmd.Flags().StringVar(&uploadSoftwareID, "software-id", "", "Kusari Platform Software ID value to set in the document wrapper upload meta (optional)")
-	uploadcmd.Flags().StringVar(&uploadSbomSubject, "sbom-subject", "", "Kusari Platform Software sbom subject substring value to set in the document wrapper upload meta (optional, for OpenVEX docs only)")
-	uploadcmd.Flags().StringVar(&uploadComponentName, "component-name", "", "Kusari Platform component name (optional)")
-	if err := uploadcmd.Flags().MarkDeprecated("component-name", "see https://docs.us.kusari.cloud/software/components for info on how to assign and use Components"); err != nil {
+// addUploadFlags registers the upload-related flags on a cobra command.
+// When includeFilePath is true, --file-path is registered too; generate
+// derives the file path from --output instead.
+func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
+	if includeFilePath {
+		cmd.Flags().StringVarP(&uploadFilePath, "file-path", "f", "", "Path to file or directory to upload (required)")
+	}
+	cmd.Flags().StringVarP(&uploadAlias, "alias", "a", "", "Alias that supersedes the subject in Kusari platform (optional)")
+	cmd.Flags().StringVarP(&uploadDocumentType, "document-type", "d", "", "Type of the document (image or build) sbom (optional)")
+	cmd.Flags().BoolVar(&uploadOpenVex, "openvex", false, "Indicate that this is an OpenVEX document (optional, only works with files)")
+	cmd.Flags().StringVar(&uploadTag, "tag", "", "Tag value to set in the document wrapper upload meta (optional, e.g. govulncheck)")
+	cmd.Flags().StringVar(&uploadSoftwareID, "software-id", "", "Kusari Platform Software ID value to set in the document wrapper upload meta (optional)")
+	cmd.Flags().StringVar(&uploadSbomSubject, "sbom-subject", "", "Kusari Platform Software sbom subject substring value to set in the document wrapper upload meta (optional, for OpenVEX docs only)")
+	cmd.Flags().StringVar(&uploadComponentName, "component-name", "", "Kusari Platform component name (optional)")
+	if err := cmd.Flags().MarkDeprecated("component-name", "see https://docs.us.kusari.cloud/software/components for info on how to assign and use Components"); err != nil {
 		panic(err)
 	}
-	uploadcmd.Flags().BoolVar(&uploadCheckBlocked, "check-blocked-packages", false, "Check if any of the SBOMs uses a package contained in the blocked package list")
-	uploadcmd.Flags().StringVar(&uploadSbomSubjectNameOverride, "sbom-subject-name-override", "", "SBOM Subject Name override (optional, for SBOMs only)")
-	uploadcmd.Flags().StringVar(&uploadSbomSubjectVersionOverride, "sbom-subject-version-override", "", "SBOM Subject Version override (optional, from SBOMs only)")
-	uploadcmd.Flags().BoolVar(&uploadWait, "wait", true, "Wait for ingestion status (default: true)")
-	uploadcmd.Flags().StringVar(&uploadForge, "forge", "", "Source forge for the SBOM (e.g., github.com, gitlab.com)")
-	uploadcmd.Flags().StringVar(&uploadOrg, "org", "", "Organization/owner name in the forge")
-	uploadcmd.Flags().StringVar(&uploadRepo, "repo", "", "Repository name in the forge")
-	uploadcmd.Flags().StringVar(&uploadSubrepoPath, "subrepo-path", "", "Path to subrepo within the repository (e.g., app/frontend)")
-	uploadcmd.Flags().StringVar(&uploadCommitSha, "commit-sha", "", "Commit SHA (from git) (optional, for SBOMs only)")
+	cmd.Flags().BoolVar(&uploadCheckBlocked, "check-blocked-packages", false, "Check if any of the SBOMs uses a package contained in the blocked package list")
+	cmd.Flags().StringVar(&uploadSbomSubjectNameOverride, "sbom-subject-name-override", "", "SBOM Subject Name override (optional, for SBOMs only)")
+	cmd.Flags().StringVar(&uploadSbomSubjectVersionOverride, "sbom-subject-version-override", "", "SBOM Subject Version override (optional, from SBOMs only)")
+	cmd.Flags().BoolVar(&uploadWait, "wait", true, "Wait for ingestion status (default: true)")
+	cmd.Flags().StringVar(&uploadForge, "forge", "", "Source forge for the SBOM (e.g., github.com, gitlab.com)")
+	cmd.Flags().StringVar(&uploadOrg, "org", "", "Organization/owner name in the forge")
+	cmd.Flags().StringVar(&uploadRepo, "repo", "", "Repository name in the forge")
+	cmd.Flags().StringVar(&uploadSubrepoPath, "subrepo-path", "", "Path to subrepo within the repository (e.g., app/frontend)")
+	cmd.Flags().StringVar(&uploadCommitSha, "commit-sha", "", "Commit SHA (from git) (optional, for SBOMs only)")
+}
+
+func init() {
+	addUploadFlags(uploadcmd, true)
 
 	// Bind flags to viper
 	mustBindPFlag("file-path", uploadcmd.Flags().Lookup("file-path"))
