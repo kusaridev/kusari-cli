@@ -131,7 +131,7 @@ func install(ctx context.Context, binPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(archive)
+	defer func() { _ = os.Remove(archive) }()
 
 	s.Suffix = " extracting"
 	tmp := binPath + ".tmp"
@@ -159,7 +159,7 @@ func downloadAndVerify(ctx context.Context, url, wantHex string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("download %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
 	}
@@ -170,18 +170,18 @@ func downloadAndVerify(ctx context.Context, url, wantHex string) (string, error)
 	}
 	h := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 
 	got := hex.EncodeToString(h.Sum(nil))
 	if !strings.EqualFold(got, wantHex) {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 		return "", fmt.Errorf("checksum mismatch for %s: got %s, want %s", url, got, wantHex)
 	}
 	return f.Name(), nil
@@ -192,12 +192,12 @@ func extractTarGz(archivePath, destPath string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return err
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -215,7 +215,7 @@ func extractTarGz(archivePath, destPath string) error {
 			return err
 		}
 		if _, err := io.Copy(out, tr); err != nil {
-			out.Close()
+			_ = out.Close()
 			return err
 		}
 		return out.Close()
