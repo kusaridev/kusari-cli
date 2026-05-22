@@ -60,14 +60,31 @@ func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
 	cmd.Flags().StringVar(&uploadCommitSha, "commit-sha", "", "Commit SHA (from git) (optional, for SBOMs only)")
 }
 
-// uploadFlagKeys is the canonical list of upload-related viper keys, kept
-// centralized so bindUploadFlagsToViper and loadUploadFromViper stay in
-// sync with addUploadFlags.
-var uploadFlagKeys = []string{
-	"file-path", "alias", "document-type", "openvex", "tag",
-	"software-id", "sbom-subject", "component-name", "check-blocked-packages",
-	"sbom-subject-name-override", "sbom-subject-version-override",
-	"wait", "forge", "org", "repo", "subrepo-path", "commit-sha",
+// uploadStringVars / uploadBoolVars are the single source of truth for the
+// upload-related viper keys and their backing package-level variables.
+// bindUploadFlagsToViper and loadUploadFromViper both iterate these maps,
+// so adding a new flag is a one-place change.
+var uploadStringVars = map[string]*string{
+	"file-path":                     &uploadFilePath,
+	"alias":                         &uploadAlias,
+	"document-type":                 &uploadDocumentType,
+	"tag":                           &uploadTag,
+	"software-id":                   &uploadSoftwareID,
+	"sbom-subject":                  &uploadSbomSubject,
+	"component-name":                &uploadComponentName,
+	"sbom-subject-name-override":    &uploadSbomSubjectNameOverride,
+	"sbom-subject-version-override": &uploadSbomSubjectVersionOverride,
+	"forge":                         &uploadForge,
+	"org":                           &uploadOrg,
+	"repo":                          &uploadRepo,
+	"subrepo-path":                  &uploadSubrepoPath,
+	"commit-sha":                    &uploadCommitSha,
+}
+
+var uploadBoolVars = map[string]*bool{
+	"openvex":                &uploadOpenVex,
+	"check-blocked-packages": &uploadCheckBlocked,
+	"wait":                   &uploadWait,
 }
 
 // bindUploadFlagsToViper points viper at the upload-related flags on the
@@ -76,33 +93,28 @@ var uploadFlagKeys = []string{
 // bound at once. Flags absent on cmd (e.g. --file-path on generate) are
 // skipped.
 func bindUploadFlagsToViper(cmd *cobra.Command) {
-	for _, key := range uploadFlagKeys {
+	bind := func(key string) {
 		if f := cmd.Flags().Lookup(key); f != nil {
 			mustBindPFlag(key, f)
 		}
+	}
+	for key := range uploadStringVars {
+		bind(key)
+	}
+	for key := range uploadBoolVars {
+		bind(key)
 	}
 }
 
 // loadUploadFromViper materializes env-var/config/CLI values into the
 // package-level upload* vars in viper's precedence order.
 func loadUploadFromViper() {
-	uploadFilePath = viper.GetString("file-path")
-	uploadAlias = viper.GetString("alias")
-	uploadDocumentType = viper.GetString("document-type")
-	uploadOpenVex = viper.GetBool("openvex")
-	uploadTag = viper.GetString("tag")
-	uploadSoftwareID = viper.GetString("software-id")
-	uploadSbomSubject = viper.GetString("sbom-subject")
-	uploadComponentName = viper.GetString("component-name")
-	uploadCheckBlocked = viper.GetBool("check-blocked-packages")
-	uploadSbomSubjectNameOverride = viper.GetString("sbom-subject-name-override")
-	uploadSbomSubjectVersionOverride = viper.GetString("sbom-subject-version-override")
-	uploadWait = viper.GetBool("wait")
-	uploadForge = viper.GetString("forge")
-	uploadOrg = viper.GetString("org")
-	uploadRepo = viper.GetString("repo")
-	uploadSubrepoPath = viper.GetString("subrepo-path")
-	uploadCommitSha = viper.GetString("commit-sha")
+	for key, ptr := range uploadStringVars {
+		*ptr = viper.GetString(key)
+	}
+	for key, ptr := range uploadBoolVars {
+		*ptr = viper.GetBool(key)
+	}
 }
 
 // uploadPreRun wires both the rebind and the load. Reused by upload and
