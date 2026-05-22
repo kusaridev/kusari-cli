@@ -39,7 +39,8 @@ Examples:
   kusari platform generate --upload --tenant demo -- --path .
   kusari platform generate --upload --tag govulncheck --forge github.com \
     --org myorg --repo myrepo -- --path .`,
-		Args: cobra.ArbitraryArgs,
+		Args:   cobra.ArbitraryArgs,
+		PreRun: uploadPreRun,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 

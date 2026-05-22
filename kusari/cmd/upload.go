@@ -60,27 +60,60 @@ func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
 	cmd.Flags().StringVar(&uploadCommitSha, "commit-sha", "", "Commit SHA (from git) (optional, for SBOMs only)")
 }
 
+// uploadFlagKeys is the canonical list of upload-related viper keys, kept
+// centralized so bindUploadFlagsToViper and loadUploadFromViper stay in
+// sync with addUploadFlags.
+var uploadFlagKeys = []string{
+	"file-path", "alias", "document-type", "openvex", "tag",
+	"software-id", "sbom-subject", "component-name", "check-blocked-packages",
+	"sbom-subject-name-override", "sbom-subject-version-override",
+	"wait", "forge", "org", "repo", "subrepo-path", "commit-sha",
+}
+
+// bindUploadFlagsToViper points viper at the upload-related flags on the
+// given command. Called at PreRun time (not init) because viper holds one
+// *pflag.Flag per key — only the active command's flag instances can be
+// bound at once. Flags absent on cmd (e.g. --file-path on generate) are
+// skipped.
+func bindUploadFlagsToViper(cmd *cobra.Command) {
+	for _, key := range uploadFlagKeys {
+		if f := cmd.Flags().Lookup(key); f != nil {
+			mustBindPFlag(key, f)
+		}
+	}
+}
+
+// loadUploadFromViper materializes env-var/config/CLI values into the
+// package-level upload* vars in viper's precedence order.
+func loadUploadFromViper() {
+	uploadFilePath = viper.GetString("file-path")
+	uploadAlias = viper.GetString("alias")
+	uploadDocumentType = viper.GetString("document-type")
+	uploadOpenVex = viper.GetBool("openvex")
+	uploadTag = viper.GetString("tag")
+	uploadSoftwareID = viper.GetString("software-id")
+	uploadSbomSubject = viper.GetString("sbom-subject")
+	uploadComponentName = viper.GetString("component-name")
+	uploadCheckBlocked = viper.GetBool("check-blocked-packages")
+	uploadSbomSubjectNameOverride = viper.GetString("sbom-subject-name-override")
+	uploadSbomSubjectVersionOverride = viper.GetString("sbom-subject-version-override")
+	uploadWait = viper.GetBool("wait")
+	uploadForge = viper.GetString("forge")
+	uploadOrg = viper.GetString("org")
+	uploadRepo = viper.GetString("repo")
+	uploadSubrepoPath = viper.GetString("subrepo-path")
+	uploadCommitSha = viper.GetString("commit-sha")
+}
+
+// uploadPreRun wires both the rebind and the load. Reused by upload and
+// "platform generate" so .env file and env-var values reach generate too.
+func uploadPreRun(cmd *cobra.Command, _ []string) {
+	bindUploadFlagsToViper(cmd)
+	loadUploadFromViper()
+}
+
 func init() {
 	addUploadFlags(uploadcmd, true)
-
-	// Bind flags to viper
-	mustBindPFlag("file-path", uploadcmd.Flags().Lookup("file-path"))
-	mustBindPFlag("alias", uploadcmd.Flags().Lookup("alias"))
-	mustBindPFlag("document-type", uploadcmd.Flags().Lookup("document-type"))
-	mustBindPFlag("openvex", uploadcmd.Flags().Lookup("openvex"))
-	mustBindPFlag("tag", uploadcmd.Flags().Lookup("tag"))
-	mustBindPFlag("software-id", uploadcmd.Flags().Lookup("software-id"))
-	mustBindPFlag("sbom-subject", uploadcmd.Flags().Lookup("sbom-subject"))
-	mustBindPFlag("component-name", uploadcmd.Flags().Lookup("component-name"))
-	mustBindPFlag("check-blocked-packages", uploadcmd.Flags().Lookup("check-blocked-packages"))
-	mustBindPFlag("sbom-subject-name-override", uploadcmd.Flags().Lookup("sbom-subject-name-override"))
-	mustBindPFlag("sbom-subject-version-override", uploadcmd.Flags().Lookup("sbom-subject-version-override"))
-	mustBindPFlag("wait", uploadcmd.Flags().Lookup("wait"))
-	mustBindPFlag("forge", uploadcmd.Flags().Lookup("forge"))
-	mustBindPFlag("org", uploadcmd.Flags().Lookup("org"))
-	mustBindPFlag("repo", uploadcmd.Flags().Lookup("repo"))
-	mustBindPFlag("subrepo-path", uploadcmd.Flags().Lookup("subrepo-path"))
-	mustBindPFlag("commit-sha", uploadcmd.Flags().Lookup("commit-sha"))
 }
 
 func upload() *cobra.Command {
@@ -149,24 +182,6 @@ Examples:
 
   # Dev/Testing: Upload using full tenant endpoint (overrides --tenant)
   kusari platform upload --file-path sbom.json --tenant-endpoint https://demo.api.dev.kusari.cloud`,
-	Args: cobra.NoArgs,
-	PreRun: func(cmd *cobra.Command, args []string) {
-		// Update from viper (this gets env vars + config + flags)
-		uploadFilePath = viper.GetString("file-path")
-		uploadAlias = viper.GetString("alias")
-		uploadDocumentType = viper.GetString("document-type")
-		uploadOpenVex = viper.GetBool("openvex")
-		uploadTag = viper.GetString("tag")
-		uploadSoftwareID = viper.GetString("software-id")
-		uploadSbomSubject = viper.GetString("sbom-subject")
-		uploadComponentName = viper.GetString("component-name")
-		uploadCheckBlocked = viper.GetBool("check-blocked-packages")
-		uploadSbomSubjectNameOverride = viper.GetString("sbom-subject-name-override")
-		uploadSbomSubjectVersionOverride = viper.GetString("sbom-subject-version-override")
-		uploadWait = viper.GetBool("wait")
-		uploadForge = viper.GetString("forge")
-		uploadOrg = viper.GetString("org")
-		uploadRepo = viper.GetString("repo")
-		uploadSubrepoPath = viper.GetString("subrepo-path")
-	},
+	Args:   cobra.NoArgs,
+	PreRun: uploadPreRun,
 }
