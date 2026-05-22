@@ -124,6 +124,16 @@ func uploadPreRun(cmd *cobra.Command, _ []string) {
 	loadUploadFromViper()
 }
 
+// warnIfDeprecatedComponentName prints the deprecation message when
+// component-name was sourced from config/env. CLI uses are already
+// warned about by cobra's MarkDeprecated; this covers the gap.
+func warnIfDeprecatedComponentName(cmd *cobra.Command) {
+	if uploadComponentName != "" && !cmd.Flags().Changed("component-name") {
+		fmt.Fprintln(os.Stderr, "The component-name config value is no longer supported. "+
+			"See https://docs.us.kusari.cloud/software/components for info on how to assign and use Components.")
+	}
+}
+
 func init() {
 	addUploadFlags(uploadcmd, true)
 }
@@ -131,13 +141,7 @@ func init() {
 func upload() *cobra.Command {
 	uploadcmd.RunE = func(cmd *cobra.Command, args []string) error {
 		cmd.SilenceUsage = true
-
-		// CLI uses of --component-name are warned about by cobra's MarkDeprecated.
-		// Cover the config-file and env-var paths here.
-		if uploadComponentName != "" && !cmd.Flags().Changed("component-name") {
-			fmt.Fprintln(os.Stderr, "The component-name config value is no longer supported. "+
-				"See https://docs.us.kusari.cloud/software/components for info on how to assign and use Components.")
-		}
+		warnIfDeprecatedComponentName(cmd)
 
 		return repo.Upload(
 			uploadFilePath,
