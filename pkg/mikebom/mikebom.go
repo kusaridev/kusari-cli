@@ -40,6 +40,12 @@ const EnvBinOverride = "KUSARI_MIKEBOM_BIN"
 // downloading. Useful in CI / regulated environments.
 const EnvNoAutoInstall = "KUSARI_NO_AUTO_INSTALL"
 
+// downloadTimeout bounds the total wall-clock time for fetching a MikeBOM
+// release asset (connect + TLS + headers + body). Generous enough for slow
+// links to complete a multi-MB download; short enough that a hung server
+// surfaces an error in reasonable time.
+const downloadTimeout = 2 * time.Minute
+
 // EnsureAvailable returns the filesystem path to a verified mikebom binary
 // matching the pinned Version, installing it on first use.
 func EnsureAvailable(ctx context.Context) (string, error) {
@@ -151,6 +157,9 @@ func install(ctx context.Context, binPath string) (string, error) {
 }
 
 func downloadAndVerify(ctx context.Context, url, wantHex string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
