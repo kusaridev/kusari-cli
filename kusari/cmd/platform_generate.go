@@ -58,7 +58,7 @@ Examples:
 			// multi-format and multi-output cases loudly rather than silently
 			// uploading only the first.
 			if generateUpload && (countFlag(args, "--output") > 1 || strings.Contains(userFormat, ",")) {
-				return fmt.Errorf("--upload does not support multi-format generation; pass a single --format and a single --output, or omit --upload and run 'kusari platform upload' separately for each file")
+				return fmt.Errorf("--upload does not support multi-format generation; pass at most one --format and at most one --output")
 			}
 
 			defaultOutput := defaultSbomFilename(userFormat)
