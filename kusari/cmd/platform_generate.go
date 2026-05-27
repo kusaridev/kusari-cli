@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -21,8 +22,10 @@ func generate() *cobra.Command {
 		Long: `Generate an SBOM by invoking "mikebom sbom scan". MikeBOM is
 downloaded and verified on first use to ~/.kusari/bin/mikebom-<version>.
 
-Defaults "--offline" and "--output project.cdx.json" are supplied
-automatically. Pass --output or --offline=false after "--" to override.
+Defaults "--offline" and a format-appropriate "--output"
+(project.cdx.json for CycloneDX, project.spdx.json for SPDX) are
+supplied automatically. Pass --output or --offline=false after "--"
+to override.
 
 Anything after "--" is passed verbatim to mikebom as flags to "sbom scan".
 
@@ -49,12 +52,23 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 
+			userFormat := flagValue(args, "--format")
+
+			// --upload can only carry one file to the platform. Reject the
+			// multi-format and multi-output cases loudly rather than silently
+			// uploading only the first.
+			if generateUpload && (countFlag(args, "--output") > 1 || strings.Contains(userFormat, ",")) {
+				return fmt.Errorf("--upload does not support multi-format generation; pass a single --format and a single --output, or omit --upload and run 'kusari platform upload' separately for each file")
+			}
+
+			defaultOutput := defaultSbomFilename(userFormat)
+
 			scanArgs := []string{"sbom", "scan"}
 			if !hasFlag(args, "--offline") {
 				scanArgs = append(scanArgs, "--offline")
 			}
 			if !hasFlag(args, "--output") {
-				scanArgs = append(scanArgs, "--output", "project.cdx.json")
+				scanArgs = append(scanArgs, "--output", defaultOutput)
 			}
 			scanArgs = append(scanArgs, args...)
 			if err := mikebom.Run(cmd.Context(), scanArgs, os.Stdin, os.Stdout, os.Stderr); err != nil {
@@ -66,7 +80,7 @@ Examples:
 			}
 			warnIfDeprecatedComponentName(cmd)
 			return repo.Upload(
-				sbomOutputPath(args),
+				sbomOutputPath(args, defaultOutput),
 				platformTenantEndpoint,
 				platformUrl,
 				uploadAlias,
@@ -99,26 +113,51 @@ Examples:
 }
 
 func hasFlag(args []string, name string) bool {
+	return countFlag(args, name) > 0
+}
+
+func countFlag(args []string, name string) int {
+	n := 0
 	for _, a := range args {
 		if a == name || strings.HasPrefix(a, name+"=") {
-			return true
+			n++
 		}
 	}
-	return false
+	return n
 }
 
 // sbomOutputPath returns the path that mikebom will write the SBOM to,
 // derived from any user-supplied --output flag (handles "--output PATH",
-// "--output=PATH", and the per-format "--output FMT=PATH" form).
-func sbomOutputPath(args []string) string {
+// "--output=PATH", and the per-format "--output FMT=PATH" form). When the
+// user did not supply --output, defaultPath is returned — this must match
+// the value injected as the --output default in scanArgs so the upload
+// step finds the file mikebom actually wrote.
+func sbomOutputPath(args []string, defaultPath string) string {
 	raw := flagValue(args, "--output")
 	if raw == "" {
-		return "project.cdx.json"
+		return defaultPath
 	}
 	if _, path, ok := strings.Cut(raw, "="); ok {
 		return path
 	}
 	return raw
+}
+
+// defaultSbomFilename picks a sensible default output path for mikebom's
+// "--format" value. Without this, "--format spdx-3-json" would write SPDX
+// content to project.cdx.json (the previous hardcoded default), producing
+// a misleading file name.
+func defaultSbomFilename(format string) string {
+	switch {
+	case format == "" || format == "cyclonedx-json":
+		// Empty matches mikebom's own default (cyclonedx-json).
+		return "project.cdx.json"
+	case strings.HasPrefix(format, "spdx-"):
+		return "project.spdx.json"
+	default:
+		// Unknown / future format: avoid pretending it's CycloneDX.
+		return "project.sbom.json"
+	}
 }
 
 func flagValue(args []string, name string) string {
