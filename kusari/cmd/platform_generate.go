@@ -40,8 +40,8 @@ Environment variables:
 Examples:
   kusari platform generate -- --path .
   kusari platform generate --upload --tenant demo -- --path .
-  kusari platform generate --upload --tag govulncheck --forge github.com \
-    --org myorg --repo myrepo -- --path .`,
+  kusari platform generate --upload --forge github.com --org myorg \
+    --repo myrepo -- --path .`,
 		Args: cobra.ArbitraryArgs,
 		PreRun: func(cmd *cobra.Command, args []string) {
 			if !generateUpload {
@@ -103,11 +103,14 @@ Examples:
 	}
 	cmd.Flags().BoolVar(&generateUpload, "upload", false, "After generating, upload the SBOM to the Kusari platform")
 	addUploadFlags(cmd, false)
-	// --openvex doesn't make sense for an SBOM produced by "mikebom sbom scan";
-	// hide it from help to avoid the confusing "tag must be specified" error a
-	// user would hit downstream in repo.Upload's OpenVEX validation.
-	if err := cmd.Flags().MarkHidden("openvex"); err != nil {
-		panic(err)
+	// These flags are VEX-document-wrapper metadata and don't apply to the
+	// SBOM that "mikebom sbom scan" produces. Hide them from help to avoid
+	// the confusing errors a user would hit downstream in repo.Upload's
+	// OpenVEX validation.
+	for _, flag := range []string{"openvex", "tag", "sbom-subject"} {
+		if err := cmd.Flags().MarkHidden(flag); err != nil {
+			panic(err)
+		}
 	}
 	return cmd
 }
