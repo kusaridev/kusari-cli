@@ -30,8 +30,9 @@ to override.
 Anything after "--" is passed verbatim to mikebom as flags to "sbom scan".
 
 When --upload is set, the generated SBOM is uploaded to the Kusari
-platform after generation. All "kusari platform upload" flags except
---file-path are accepted; the file path is taken from --output.
+platform after generation. Most "kusari platform upload" flags are
+accepted; --file-path is replaced by --output, and the VEX-only
+flags --openvex, --tag, and --sbom-subject are not applicable here.
 
 Environment variables:
   KUSARI_MIKEBOM_BIN     Use this binary instead of downloading.
