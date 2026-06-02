@@ -7,7 +7,7 @@ package mikebom
 
 const (
 	Version = "0.1.0-alpha.42"
-	Repo    = "kusari-sandbox/mikebom"
+	Repo    = "kusari-oss/mikebom"
 )
 
 // asset names + SHA256 hashes per GOOS/GOARCH, taken from the upstream
