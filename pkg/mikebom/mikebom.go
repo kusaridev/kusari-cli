@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package mikebom lazy-installs and invokes a pinned version of MikeBOM
-// (https://github.com/kusari-sandbox/mikebom) as a prerequisite of kusari
+// (https://github.com/kusari-oss/mikebom) as a prerequisite of kusari
 // subcommands that need it.
 package mikebom
 

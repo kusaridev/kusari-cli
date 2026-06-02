@@ -14,7 +14,7 @@ if [[ -z "${TAG}" ]]; then
     exit 2
 fi
 VERSION="${TAG#v}"
-REPO="kusari-sandbox/mikebom"
+REPO="kusari-oss/mikebom"
 OUT="$(cd "$(dirname "$0")/.." && pwd)/pkg/mikebom/versions.go"
 
 SUMS="$(curl -fsSL "https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS")"
