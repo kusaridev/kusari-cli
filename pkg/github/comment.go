@@ -69,13 +69,6 @@ func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*comment.
 
 	// Check if there are any issues to report
 	hasIssues, issueCount := comment.CheckForIssues(analysis)
-	if !hasIssues {
-		return &comment.CommentResult{
-			Posted:      false,
-			IssuesFound: 0,
-			Message:     "No issues found - skipping comment",
-		}, nil
-	}
 
 	// Determine API URL
 	apiURL := opts.GitHubURL
@@ -83,9 +76,6 @@ func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*comment.
 		apiURL = defaultGitHubAPIURL
 	}
 	apiURL = strings.TrimSuffix(apiURL, "/")
-
-	// Format comment body from analysis results
-	commentBody := comment.FormatComment(analysis, opts.ConsoleURL)
 
 	// Check for existing Kusari summary comment and update if found
 	existingCommentID, err := findExistingKusariComment(apiURL, opts.Owner, opts.Repo, opts.PRNumber, opts.Token)
@@ -100,6 +90,18 @@ func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*comment.
 			fmt.Fprintf(os.Stderr, "No existing Kusari summary comment found\n")
 		}
 	}
+
+	// If no issues and no existing comment, nothing to do
+	if !hasIssues && existingCommentID == 0 {
+		return &comment.CommentResult{
+			Posted:      false,
+			IssuesFound: 0,
+			Message:     "No issues found - skipping comment",
+		}, nil
+	}
+
+	// Format comment body from analysis results
+	commentBody := comment.FormatComment(analysis, opts.ConsoleURL)
 
 	if existingCommentID > 0 {
 		// Update existing comment
