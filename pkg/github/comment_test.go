@@ -40,19 +40,50 @@ func TestPostComment(t *testing.T) {
 			expectIssues:  0,
 		},
 		{
-			name: "no issues - should proceed true",
+			name: "no issues and no existing comment - skip",
 			analysis: &api.SecurityAnalysis{
 				ShouldProceed:  true,
 				FailedAnalysis: false,
 			},
 			setupServer: func() *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					t.Fatal("Server should not be called when no issues")
+					if r.Method == "GET" && r.URL.Path == "/repos/owner/repo/issues/1/comments" {
+						w.Header().Set("Content-Type", "application/json")
+						_ = json.NewEncoder(w).Encode([]issueComment{})
+						return
+					}
+					t.Fatalf("Unexpected request: %s %s", r.Method, r.URL.Path)
 				}))
 			},
 			expectPosted:  false,
 			expectError:   false,
 			expectMessage: "No issues found - skipping comment",
+			expectIssues:  0,
+		},
+		{
+			name: "no issues but existing comment - update to all-clear",
+			analysis: &api.SecurityAnalysis{
+				ShouldProceed:  true,
+				FailedAnalysis: false,
+			},
+			setupServer: func() *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch {
+					case r.Method == "GET" && r.URL.Path == "/repos/owner/repo/issues/1/comments":
+						w.Header().Set("Content-Type", "application/json")
+						_ = json.NewEncoder(w).Encode([]issueComment{
+							{ID: 456, Body: "#### Kusari Analysis Results:\n<!-- IGNORE_KUSARI_COMMENT -->"},
+						})
+					case r.Method == "PATCH" && r.URL.Path == "/repos/owner/repo/issues/comments/456":
+						w.WriteHeader(http.StatusOK)
+					default:
+						t.Fatalf("Unexpected request: %s %s", r.Method, r.URL.Path)
+					}
+				}))
+			},
+			expectPosted:  true,
+			expectError:   false,
+			expectMessage: "Updated comment with 0 issue(s) to PR #1",
 			expectIssues:  0,
 		},
 		{
