@@ -265,35 +265,73 @@ func TestPostComment(t *testing.T) {
 	tests := []struct {
 		name          string
 		analysis      *api.SecurityAnalysis
+		setupServer   func(t *testing.T) *httptest.Server
 		expectPosted  bool
-		expectMessage string
 		expectIssues  int
+		expectMessage string
 	}{
 		{
-			name:          "nil analysis",
-			analysis:      nil,
-			expectPosted:  false,
-			expectMessage: "No analysis results available",
-			expectIssues:  0,
-		},
-		{
-			name: "no issues",
-			analysis: &api.SecurityAnalysis{
-				ShouldProceed:  true,
-				FailedAnalysis: false,
+			name:     "nil analysis",
+			analysis: nil,
+			setupServer: func(t *testing.T) *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					t.Fatalf("Server should not be called for nil analysis")
+				}))
 			},
 			expectPosted:  false,
-			expectMessage: "No issues found",
 			expectIssues:  0,
+			expectMessage: "No analysis results available",
+		},
+		{
+			name:     "no issues and no existing comment - skip",
+			analysis: &api.SecurityAnalysis{ShouldProceed: true},
+			setupServer: func(t *testing.T) *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == "GET" {
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = w.Write([]byte("[]"))
+						return
+					}
+					t.Fatalf("Unexpected request: %s %s", r.Method, r.URL.Path)
+				}))
+			},
+			expectPosted:  false,
+			expectIssues:  0,
+			expectMessage: "No issues found",
+		},
+		{
+			name:     "no issues but existing comment - update to all-clear",
+			analysis: &api.SecurityAnalysis{ShouldProceed: true},
+			setupServer: func(t *testing.T) *httptest.Server {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch r.Method {
+					case "GET":
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = w.Write([]byte(`[{"id": 999, "body": "#### Kusari Analysis Results:\n<!-- IGNORE_KUSARI_COMMENT -->"}]`))
+					case "PUT":
+						w.WriteHeader(http.StatusOK)
+						_, _ = w.Write([]byte(`{"id": 999}`))
+					default:
+						t.Fatalf("Unexpected request: %s %s", r.Method, r.URL.Path)
+					}
+				}))
+			},
+			expectPosted:  true,
+			expectIssues:  0,
+			expectMessage: "Updated",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			server := tt.setupServer(t)
+			defer server.Close()
+
 			opts := CommentOptions{
 				ProjectID:   "123",
 				MergeReqIID: "1",
 				Token:       "test-token",
+				GitLabURL:   server.URL,
 			}
 
 			result, err := PostComment(tt.analysis, opts)
