@@ -16,6 +16,7 @@ var (
 	outputFormat    string
 	commentPlatform string
 	fullOutput      bool
+	overrideBranch  string
 )
 
 func init() {
@@ -23,12 +24,14 @@ func init() {
 	scancmd.Flags().StringVarP(&outputFormat, "output-format", "", "markdown", "output format (markdown or sarif)")
 	scancmd.Flags().StringVar(&commentPlatform, "comment", "", "post results as a comment to the specified platform's PR/MR (e.g., 'gitlab', 'github')")
 	scancmd.Flags().BoolVar(&fullOutput, "full-output", false, "output full results instead of truncated")
+	scancmd.Flags().StringVar(&overrideBranch, "override-branch", "", "override the detected branch name (useful in CI environments with detached HEAD state)")
 
 	// Bind flags to viper
 	mustBindPFlag("wait", scancmd.Flags().Lookup("wait"))
 	mustBindPFlag("output-format", scancmd.Flags().Lookup("output-format"))
 	mustBindPFlag("comment", scancmd.Flags().Lookup("comment"))
 	mustBindPFlag("full-output", scancmd.Flags().Lookup("full-output"))
+	mustBindPFlag("override-branch", scancmd.Flags().Lookup("override-branch"))
 }
 
 func scan() *cobra.Command {
@@ -43,7 +46,7 @@ func scan() *cobra.Command {
 		dir := args[0]
 		ref := args[1]
 
-		return repo.Scan(dir, ref, platformUrl, consoleUrl, verbose, wait, outputFormat, commentPlatform, fullOutput)
+		return repo.Scan(dir, ref, platformUrl, consoleUrl, verbose, wait, outputFormat, commentPlatform, fullOutput, overrideBranch)
 	}
 
 	return scancmd
@@ -62,5 +65,6 @@ var scancmd = &cobra.Command{
 		outputFormat = viper.GetString("output-format")
 		commentPlatform = viper.GetString("comment")
 		fullOutput = viper.GetBool("full-output")
+		overrideBranch = viper.GetString("override-branch")
 	},
 }

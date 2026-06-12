@@ -65,6 +65,7 @@ func (s *Server) executeScanLocalChanges(ctx context.Context, args ScanLocalChan
 			outputFormat,
 			"",   // no comment platform for MCP
 			true, // full output to get complete results in MCP response
+			"",   // no branch override for MCP
 		)
 	})
 

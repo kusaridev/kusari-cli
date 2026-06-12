@@ -48,14 +48,14 @@ var (
 	workingDir string
 )
 
-func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string, commentPlatform string, fullOutput bool) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, commentPlatform, fullOutput, nil)
+func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string, commentPlatform string, fullOutput bool, overrideBranch string) error {
+	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, commentPlatform, fullOutput, overrideBranch, nil)
 }
 
 func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
 	// default to outputformat "markdown" for now for risk check as it will link to console
 	// commentPlatform is empty for risk-check as it's not typically run in MR context
-	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", "", false, nil)
+	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", "", false, "", nil)
 }
 
 // scanMock facilitates use of mock values for testing
@@ -64,16 +64,18 @@ type scanMock struct {
 	presignedURLGetter     func(apiEndpoint string, jwtToken string, filePath, workspace string, full bool, size int64) (string, error)
 	defaultWorkspaceGetter func(platformUrl string, jwtToken string) ([]login.Workspace, map[string][]string, error)
 	token                  string
+	isMachineAuth          bool
 }
 
 func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, full bool, outputFormat string,
-	commentPlatform string, fullOutput bool, mock *scanMock) error {
+	commentPlatform string, fullOutput bool, overrideBranch string, mock *scanMock) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
 		fmt.Fprintf(os.Stderr, " rev: %s\n", rev)
 		fmt.Fprintf(os.Stderr, " platformUrl: %s\n", platformUrl)
 		fmt.Fprintf(os.Stderr, " consoleUrl: %s\n", consoleUrl)
 		fmt.Fprintf(os.Stderr, " outputFormat: %s\n", outputFormat)
+		fmt.Fprintf(os.Stderr, " overrideBranch: %s\n", overrideBranch)
 	}
 
 	// Check to see if the directory has a .git directory. If it does not, it is not the root of
@@ -151,6 +153,21 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		accessToken = token.AccessToken
 	}
 
+	// If authenticated with client credentials (API/CI mode), --override-branch is required
+	// because CI environments typically use detached HEAD state, causing git to report "HEAD"
+	// instead of the actual branch name.
+	isMachine := false
+	if mock == nil {
+		if ws, wsErr := auth.LoadWorkspace(platformUrl, ""); wsErr == nil {
+			isMachine = ws.IsMachine
+		}
+	} else {
+		isMachine = mock.isMachineAuth
+	}
+	if isMachine && overrideBranch == "" {
+		return fmt.Errorf("--override-branch is required when using API key authentication (detached HEAD state in CI would report 'HEAD' as the branch name)")
+	}
+
 	if err := validateDirectory(dir); err != nil {
 		return fmt.Errorf("failed to validate directory: %w", err)
 	}
@@ -186,7 +203,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		cleanupWorkingDirectory(tempDir)
 	}()
 
-	meta, err := createMeta(rev, full)
+	meta, err := createMeta(rev, full, overrideBranch)
 	if err != nil {
 		return fmt.Errorf("failed to create meta file: %w", err)
 	}

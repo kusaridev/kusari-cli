@@ -73,7 +73,7 @@ func TestScan_ArchiveFormat(t *testing.T) {
 		}
 
 		// Run the scan with dependencies injection
-		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, full, "markdown", "", false, mock)
+		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, full, "markdown", "", false, "", mock)
 		require.NoError(t, err)
 
 		// Verify upload was called
@@ -82,6 +82,89 @@ func TestScan_ArchiveFormat(t *testing.T) {
 		// Verify the archive format
 		preservedPath := filepath.Join(testDir, preservedArchive)
 		verifyArchiveFormat(t, preservedPath, filepath.Base(testDir), full)
+	}
+}
+
+func TestScan_OverrideBranchValidation(t *testing.T) {
+	tests := []struct {
+		name           string
+		isMachineAuth  bool
+		overrideBranch string
+		wantErr        bool
+		errContains    string
+	}{
+		{
+			name:           "machine auth without override branch errors",
+			isMachineAuth:  true,
+			overrideBranch: "",
+			wantErr:        true,
+			errContains:    "--override-branch is required",
+		},
+		{
+			name:           "machine auth with override branch succeeds",
+			isMachineAuth:  true,
+			overrideBranch: "feature/my-pr-branch",
+			wantErr:        false,
+		},
+		{
+			name:           "human auth without override branch succeeds",
+			isMachineAuth:  false,
+			overrideBranch: "",
+			wantErr:        false,
+		},
+		{
+			name:           "human auth with override branch succeeds",
+			isMachineAuth:  false,
+			overrideBranch: "feature/my-pr-branch",
+			wantErr:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testDir := t.TempDir()
+
+			require.NoError(t, os.Chdir(testDir))
+			require.NoError(t, runCommand("git", "init"))
+			require.NoError(t, runCommand("git", "config", "user.email", "test@example.com"))
+			require.NoError(t, runCommand("git", "config", "user.name", "Test User"))
+
+			testFile := filepath.Join(testDir, "test.txt")
+			require.NoError(t, os.WriteFile(testFile, []byte("test content"), 0644))
+			require.NoError(t, runCommand("git", "add", "."))
+			require.NoError(t, runCommand("git", "commit", "-m", "initial commit"))
+
+			// Make an uncommitted change so git diff HEAD produces output
+			require.NoError(t, os.WriteFile(testFile, []byte("uncommitted change"), 0644))
+
+			mock := &scanMock{
+				isMachineAuth: tt.isMachineAuth,
+				fileUploader: func(presignedURL, filePath string) error {
+					return nil
+				},
+				presignedURLGetter: func(apiEndpoint string, jwtToken string, filePath, workspace string, full bool, size int64) (string, error) {
+					return "https://example.com/workspace/test-workspace-id/user/human/test-user-id/diff/blob/123", nil
+				},
+				defaultWorkspaceGetter: func(platformUrl string, jwtToken string) ([]login.Workspace, map[string][]string, error) {
+					return []login.Workspace{
+							{ID: "1f961986-c9f3-4760-9d55-1298136cbe2a", Description: "Test Workspace"},
+						}, map[string][]string{
+							"1f961986-c9f3-4760-9d55-1298136cbe2a": {"test-tenant"},
+						}, nil
+				},
+				token: "token",
+			}
+
+			err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com",
+				false, false, false, "markdown", "", false, tt.overrideBranch, mock)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
 	}
 }
 
@@ -475,7 +558,7 @@ func TestMonoRepoCheck_OnlyForRiskCheck(t *testing.T) {
 
 	t.Run("diff scan should succeed on monorepo", func(t *testing.T) {
 		// Diff scan (full=false) should succeed even with monorepo
-		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, false, "markdown", "", false, mock)
+		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, false, "markdown", "", false, "", mock)
 		assert.NoError(t, err, "diff scan should succeed on monorepo")
 	})
 
