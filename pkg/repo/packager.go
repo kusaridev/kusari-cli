@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,6 +80,52 @@ func packageDirectory(full bool) (int64, error) {
 	return fi.Size(), nil
 }
 
+// sanitizeRemoteURL strips any embedded credentials from a git remote URL so
+// that CI-injected tokens (gitlab-ci-token, GitHub x-access-token/oauth2/PAT,
+// etc.) never end up in the bundle metadata. Secrets live in the userinfo
+// component (user:pass@host) of a URL, which is handled as follows:
+//   - A password is always a secret, so it is stripped on every scheme.
+//   - A lone username is ambiguous: on http(s) it is frequently the token
+//     itself (e.g. https://<PAT>@github.com), so it is stripped; on other
+//     schemes (ssh, git, ...) it is a login name (e.g. "git") guarded by
+//     key-based auth, not a secret, so it is kept.
+func sanitizeRemoteURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	// scp-style SSH (git@host:path) has no URL scheme and uses key-based auth.
+	if !strings.Contains(raw, "://") {
+		return raw
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		// A value with embedded credentials that won't parse: drop it rather
+		// than risk leaking a token.
+		return ""
+	}
+
+	if u.User == nil {
+		return u.String()
+	}
+
+	switch u.Scheme {
+	case "http", "https":
+		// On http(s) even a lone username is commonly a token itself, so strip
+		// the whole userinfo component.
+		u.User = nil
+	default:
+		// Other schemes use key-based auth; a bare username is a login name,
+		// not a secret. Only the password (if any) needs to be stripped.
+		if _, hasPassword := u.User.Password(); hasPassword {
+			u.User = url.User(u.User.Username())
+		}
+	}
+	return u.String()
+}
+
 func createMeta(rev string, full bool, overrideBranch string) (*api.BundleMeta, error) {
 	repoDir, err := os.Getwd()
 	if err != nil {
@@ -104,6 +151,9 @@ func createMeta(rev string, full bool, overrideBranch string) (*api.BundleMeta, 
 		// Probably just a local git repo
 		remote = []byte{}
 	}
+	// Strip any embedded credentials (e.g. gitlab-ci-token, GitHub
+	// x-access-token / PAT) that CI systems bake into the remote URL.
+	remote = []byte(sanitizeRemoteURL(string(remote)))
 
 	status, err := exec.Command("git", "status", "--porcelain").Output()
 	if err != nil {

@@ -80,6 +80,96 @@ func TestCreateMeta_OverrideBranch(t *testing.T) {
 	}
 }
 
+func TestSanitizeRemoteURL(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "strips gitlab-ci-token credentials",
+			raw:  "https://gitlab-ci-token:secret-token@gitlab.com/group/project.git",
+			want: "https://gitlab.com/group/project.git",
+		},
+		{
+			name: "strips github x-access-token credentials",
+			raw:  "https://x-access-token:ghp_secret@github.com/owner/repo.git",
+			want: "https://github.com/owner/repo.git",
+		},
+		{
+			name: "strips github oauth2 credentials",
+			raw:  "https://oauth2:secret@github.com/owner/repo.git",
+			want: "https://github.com/owner/repo.git",
+		},
+		{
+			name: "strips user:pat credentials",
+			raw:  "https://user:ghp_secret@github.com/owner/repo.git",
+			want: "https://github.com/owner/repo.git",
+		},
+		{
+			name: "strips username-only userinfo",
+			raw:  "https://token@github.com/owner/repo.git",
+			want: "https://github.com/owner/repo.git",
+		},
+		{
+			name: "leaves clean https URL unchanged",
+			raw:  "https://github.com/owner/repo.git",
+			want: "https://github.com/owner/repo.git",
+		},
+		{
+			name: "leaves scp-style ssh remote unchanged",
+			raw:  "git@github.com:owner/repo.git",
+			want: "git@github.com:owner/repo.git",
+		},
+		{
+			name: "leaves ssh:// URL unchanged (login user, not a secret)",
+			raw:  "ssh://git@github.com/owner/repo.git",
+			want: "ssh://git@github.com/owner/repo.git",
+		},
+		{
+			name: "leaves git:// URL unchanged",
+			raw:  "git://github.com/owner/repo.git",
+			want: "git://github.com/owner/repo.git",
+		},
+		{
+			name: "strips password from ssh:// URL but keeps login user",
+			raw:  "ssh://git:secret@github.com/owner/repo.git",
+			want: "ssh://git@github.com/owner/repo.git",
+		},
+		{
+			name: "strips password from git:// URL but keeps login user",
+			raw:  "git://user:secret@github.com/owner/repo.git",
+			want: "git://user@github.com/owner/repo.git",
+		},
+		{
+			name: "trims surrounding whitespace from git output",
+			raw:  "https://gitlab-ci-token:secret@gitlab.com/group/project.git\n",
+			want: "https://gitlab.com/group/project.git",
+		},
+		{
+			name: "returns empty for empty input",
+			raw:  "",
+			want: "",
+		},
+		{
+			name: "returns empty for whitespace-only input",
+			raw:  "   \n",
+			want: "",
+		},
+		{
+			name: "drops unparseable URL rather than leak it",
+			raw:  "https://gitlab-ci-token:secret@gitlab.com:notaport/project.git",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, sanitizeRemoteURL(tt.raw))
+		})
+	}
+}
+
 func TestPackageDirectory(t *testing.T) {
 	tests := []struct {
 		name             string
