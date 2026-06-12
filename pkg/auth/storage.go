@@ -141,6 +141,7 @@ type WorkspaceInfo struct {
 	PlatformUrl  string `json:"platformUrl"`  // Track which platform this workspace belongs to
 	AuthEndpoint string `json:"authEndpoint"` // Track which auth endpoint this workspace belongs to
 	Tenant       string `json:"tenant"`       // The tenant name (e.g., "demo")
+	IsMachine    bool   `json:"isMachine"`    // True when authenticated with client credentials (API/CI mode)
 }
 
 // getWorkspaceFilePath returns the full path to the workspace file

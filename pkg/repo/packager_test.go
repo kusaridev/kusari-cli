@@ -12,7 +12,73 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestCreateMeta_OverrideBranch(t *testing.T) {
+	tests := []struct {
+		name           string
+		overrideBranch string
+		wantBranch     string // empty means "expect git-detected branch (not HEAD)"
+	}{
+		{
+			name:           "uses override branch when provided",
+			overrideBranch: "feature/my-pr-branch",
+			wantBranch:     "feature/my-pr-branch",
+		},
+		{
+			name:           "uses override branch simulating detached HEAD in CI",
+			overrideBranch: "main",
+			wantBranch:     "main",
+		},
+		{
+			name:           "falls back to git when override is empty",
+			overrideBranch: "",
+			wantBranch:     "", // checked separately: must be non-empty and not "HEAD"
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoDir := t.TempDir()
+			tempDir := t.TempDir()
+
+			originalDir, err := os.Getwd()
+			require.NoError(t, err)
+			defer func() {
+				_ = os.Chdir(originalDir)
+			}()
+
+			require.NoError(t, os.Chdir(repoDir))
+
+			runCmd(t, repoDir, "git", "init")
+			runCmd(t, repoDir, "git", "config", "user.email", "test@example.com")
+			runCmd(t, repoDir, "git", "config", "user.name", "Test User")
+			writeFile(t, filepath.Join(repoDir, "test.txt"), "content")
+			runCmd(t, repoDir, "git", "add", ".")
+			runCmd(t, repoDir, "git", "commit", "-m", "initial commit")
+
+			tarballDir = tempDir
+			workingDir = filepath.Join(tempDir, workingDirName)
+			require.NoError(t, os.Mkdir(workingDir, 0700))
+			metaName = filepath.Join(workingDir, metaFile)
+			patchName = filepath.Join(workingDir, patchFile)
+
+			meta, err := createMeta("HEAD", false, tt.overrideBranch)
+			require.NoError(t, err)
+
+			if tt.wantBranch != "" {
+				assert.Equal(t, tt.wantBranch, meta.CurrentBranch)
+			} else {
+				// git-detected branch: must be non-empty and not "HEAD"
+				assert.NotEmpty(t, meta.CurrentBranch)
+				assert.NotEqual(t, "HEAD", meta.CurrentBranch)
+			}
+		})
+	}
+}
 
 func TestPackageDirectory(t *testing.T) {
 	tests := []struct {

@@ -79,18 +79,24 @@ func packageDirectory(full bool) (int64, error) {
 	return fi.Size(), nil
 }
 
-func createMeta(rev string, full bool) (*api.BundleMeta, error) {
+func createMeta(rev string, full bool, overrideBranch string) (*api.BundleMeta, error) {
 	repoDir, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repo directory: %w", err)
 	}
 
-	branch, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run git rev-parse: %w", err)
-	}
-	if len(branch) == 0 {
-		return nil, fmt.Errorf("git rev-parse command produced no output")
+	var branch []byte
+	if overrideBranch != "" {
+		branch = []byte(overrideBranch)
+	} else {
+		var err error
+		branch, err = exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+		if err != nil {
+			return nil, fmt.Errorf("failed to run git rev-parse: %w", err)
+		}
+		if len(branch) == 0 {
+			return nil, fmt.Errorf("git rev-parse command produced no output")
+		}
 	}
 
 	remote, err := exec.Command("git", "remote", "get-url", "origin").Output()

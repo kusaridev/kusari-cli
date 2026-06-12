@@ -61,6 +61,7 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 			PlatformUrl:  platformUrl,
 			AuthEndpoint: currentAuthEndpoint,
 			Tenant:       selectedTenant,
+			IsMachine:    true,
 		}
 		fmt.Printf("Auto-selecting workspace for CI/CD: %s\n", selectedWorkspace.Description)
 		if selectedTenant != "" {
