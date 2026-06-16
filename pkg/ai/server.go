@@ -67,9 +67,10 @@ func NewServer(cfg *Config) (*Server, error) {
 
 // ScanLocalChangesArgs defines the input for scan_local_changes tool.
 type ScanLocalChangesArgs struct {
-	RepoPath     string `json:"repo_path,omitempty" mcp:"Path to the git repository to scan. Defaults to current directory."`
-	BaseRef      string `json:"base_ref,omitempty" mcp:"Base git reference for diff. Defaults to HEAD."`
-	OutputFormat string `json:"output_format,omitempty" mcp:"Output format: markdown or sarif. Defaults to sarif."`
+	RepoPath       string `json:"repo_path,omitempty" mcp:"Path to the git repository to scan. Defaults to current directory."`
+	BaseRef        string `json:"base_ref,omitempty" mcp:"Base git reference for diff. Defaults to HEAD."`
+	OutputFormat   string `json:"output_format,omitempty" mcp:"Output format: markdown or sarif. Defaults to sarif."`
+	OverrideBranch string `json:"override_branch,omitempty" mcp:"Override the detected branch name. Required when using API key authentication in CI (detached HEAD state)."`
 }
 
 // GetSoftwareIDsByRepoArgs defines the input for get_software_ids_by_repo tool.
@@ -166,6 +167,10 @@ func (s *Server) registerTools() {
 						"enum":        []string{"markdown", "sarif"},
 						"description": "Output format - 'markdown' for human-readable text or 'sarif' for JSON format. Defaults to 'sarif'.",
 						"default":     "sarif",
+					},
+					"override_branch": map[string]interface{}{
+						"type":        "string",
+						"description": "Override the detected branch name. Required when using API key authentication in CI environments (detached HEAD state reports 'HEAD' instead of the actual branch).",
 					},
 				},
 				"required": []string{},
