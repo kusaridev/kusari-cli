@@ -6,7 +6,7 @@
 package mikebom
 
 const (
-	Version = "0.1.0-alpha.42"
+	Version = "0.1.0-alpha.48"
 	Repo    = "kusari-oss/mikebom"
 )
 
@@ -17,15 +17,15 @@ const (
 // currently publish that target.
 var assets = map[string]asset{
 	"darwin/arm64": {
-		"mikebom-v0.1.0-alpha.42-aarch64-apple-darwin.tar.gz",
-		"cf5279c7a7575c545a9e001be48a6a9bf78634e225a1ef1376eb020abde73bc2",
+		"mikebom-v0.1.0-alpha.48-aarch64-apple-darwin.tar.gz",
+		"071763c83c58dcfe19911c95046fc1420821ecbc7c71b8834c47fdb9706add68",
 	},
 	"linux/amd64": {
-		"mikebom-v0.1.0-alpha.42-x86_64-unknown-linux-gnu.tar.gz",
-		"9c2116949b4cc906ce4a1e8ddbd96440a3b35a2487384406bd8ba7790092ef55",
+		"mikebom-v0.1.0-alpha.48-x86_64-unknown-linux-gnu.tar.gz",
+		"14b3fe446befc78069e20182e7647bb28c9f704ff8e77c7767faeabd98094c22",
 	},
 	"linux/arm64": {
-		"mikebom-v0.1.0-alpha.42-aarch64-unknown-linux-gnu.tar.gz",
-		"de96b958e2f34d4b2946197a928276a7189225b21ae1870dcb8535d16688bdf7",
+		"mikebom-v0.1.0-alpha.48-aarch64-unknown-linux-gnu.tar.gz",
+		"cbe08139e589f99b666b9e3b387a955c765b3c1792b6daebdc3794a75b15fa0a",
 	},
 }
