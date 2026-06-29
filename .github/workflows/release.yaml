@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -42,7 +42,7 @@ jobs:
           cache: false
 
       - name: Setup ko
-        uses: ko-build/setup-ko@d006021bd0c28d1ce33a07e7943d48b079944c8d # v0.9
+        uses: ko-build/setup-ko@61b4d1d396f5b2e7d6bb6fefdce3dc38d1a13445 # v0.10
 
       - name: Build and publish image with ko (non-release)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -66,7 +66,7 @@ jobs:
       - name: Run GoReleaser Snapshot
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         id: run-goreleaser-snapshot
-        uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8 # v7.2.1
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
           version: '~> v2'
@@ -78,7 +78,7 @@ jobs:
       - name: Run GoReleaser Release
         if: startsWith(github.ref, 'refs/tags/')
         id: run-goreleaser-release
-        uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8 # v7.2.1
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
           version: '~> v2'
@@ -109,7 +109,7 @@ jobs:
           cyclonedx-gomod app -licenses -json -output cyclonedx_build.json -main ./kusari
 
       # Ingest image SBOM
-      - uses: kusaridev/kusari-ingest@971c85708b1eb4c3731c6cedc01796357e7a17ef #v3.0.0
+      - uses: kusaridev/kusari-ingest@cd93cb35422bb52cc15e92ae29cf14e84f6094ad #v4.0.0
         name: Kusari ingestion for image SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
@@ -122,7 +122,7 @@ jobs:
           document-type: 'image'
 
       # Ingest build SBOM
-      - uses: kusaridev/kusari-ingest@971c85708b1eb4c3731c6cedc01796357e7a17ef #v3.0.0
+      - uses: kusaridev/kusari-ingest@cd93cb35422bb52cc15e92ae29cf14e84f6094ad #v4.0.0
         name: Kusari ingestion for build SBOM
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
@@ -170,7 +170,7 @@ jobs:
   #       with:
   #         persist-credentials: false
   #     - name: Login to GitHub Container Registry
-  #       uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+  #       uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
   #       with:
   #         registry: ghcr.io
   #         username: ${{ github.actor }}
