@@ -22,10 +22,10 @@ func generate() *cobra.Command {
 		Long: `Generate an SBOM by invoking "mikebom sbom scan". MikeBOM is
 downloaded and verified on first use to ~/.kusari/bin/mikebom-<version>.
 
-Defaults "--offline" and a format-appropriate "--output"
+Defaults "--warm-go-cache=per-workspace", "--no-deps-dev",
+"--no-clearly-defined", and a format-appropriate "--output"
 (project.cdx.json for CycloneDX, project.spdx.json for SPDX) are
-supplied automatically. Pass --output or --offline=false after "--"
-to override.
+supplied automatically. Pass any of these after "--" to override.
 
 Anything after "--" is passed verbatim to mikebom as flags to "sbom scan".
 
@@ -65,8 +65,14 @@ Examples:
 			defaultOutput := defaultSbomFilename(userFormat)
 
 			scanArgs := []string{"sbom", "scan"}
-			if !hasFlag(args, "--offline") {
-				scanArgs = append(scanArgs, "--offline")
+			if !hasFlag(args, "--warm-go-cache") {
+				scanArgs = append(scanArgs, "--warm-go-cache=per-workspace")
+			}
+			if !hasFlag(args, "--no-deps-dev") {
+				scanArgs = append(scanArgs, "--no-deps-dev")
+			}
+			if !hasFlag(args, "--no-clearly-defined") {
+				scanArgs = append(scanArgs, "--no-clearly-defined")
 			}
 			if !hasFlag(args, "--output") {
 				scanArgs = append(scanArgs, "--output", defaultOutput)
