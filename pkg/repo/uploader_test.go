@@ -729,6 +729,332 @@ type mockResponse struct {
 	body   string
 }
 
+func TestPollForSoftwareIDs(t *testing.T) {
+	tests := []struct {
+		name               string
+		serverStatus       int
+		serverResp         string
+		expectedSoftwareID int64
+		expectedSbomID     int64
+		expectError        bool
+		errorContains      string
+	}{
+		{
+			name:               "IDs available",
+			serverStatus:       http.StatusOK,
+			serverResp:         `{"software_id": 42, "sbom_id": 7}`,
+			expectedSoftwareID: 42,
+			expectedSbomID:     7,
+		},
+		{
+			name:          "server error",
+			serverStatus:  http.StatusInternalServerError,
+			expectError:   true,
+			errorContains: "unexpected response status code",
+		},
+		{
+			name:          "invalid JSON",
+			serverStatus:  http.StatusOK,
+			serverResp:    `not json`,
+			expectError:   true,
+			errorContains: "error unmarshaling",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.Contains(r.URL.Path, "software/id") {
+					t.Errorf("Unexpected path: %s", r.URL.Path)
+				}
+				w.WriteHeader(tt.serverStatus)
+				_, _ = w.Write([]byte(tt.serverResp))
+			}))
+			defer server.Close()
+
+			ids, err := pollForSoftwareIDs(context.Background(), server.Client(), "test-token", server.URL,
+				sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"})
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error containing '%s', got nil", tt.errorContains)
+				} else if !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("Expected error containing '%s', got '%s'", tt.errorContains, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if ids.SoftwareID != tt.expectedSoftwareID {
+				t.Errorf("Expected software ID %d, got %d", tt.expectedSoftwareID, ids.SoftwareID)
+			}
+			if ids.SbomID != tt.expectedSbomID {
+				t.Errorf("Expected SBOM ID %d, got %d", tt.expectedSbomID, ids.SbomID)
+			}
+		})
+	}
+}
+
+func TestPollForSoftwareIDsRetriesOn404(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 2 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"software_id": 42, "sbom_id": 7}`))
+	}))
+	defer server.Close()
+
+	ids, err := pollForSoftwareIDs(context.Background(), server.Client(), "test-token", server.URL,
+		sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if attempts != 2 {
+		t.Errorf("Expected 2 attempts, got %d", attempts)
+	}
+	if ids.SoftwareID != 42 {
+		t.Errorf("Expected software ID 42, got %d", ids.SoftwareID)
+	}
+}
+
+func TestGetSoftwareComponentInfo(t *testing.T) {
+	tests := []struct {
+		name                  string
+		serverStatus          int
+		serverResp            string
+		expectedComponentID   *int64
+		expectedComponentName string
+		expectError           bool
+		errorContains         string
+	}{
+		{
+			name:                  "software mapped to component",
+			serverStatus:          http.StatusOK,
+			serverResp:            `{"id": 42, "name": "my-app", "component_id": 9, "component_name": "my-component", "component_display_name": "My Component"}`,
+			expectedComponentID:   int64Ptr(9),
+			expectedComponentName: "my-component",
+		},
+		{
+			name:         "software not mapped to component",
+			serverStatus: http.StatusOK,
+			serverResp:   `{"id": 42, "name": "my-app", "component_id": null, "component_name": null, "component_display_name": null}`,
+		},
+		{
+			name:          "server error",
+			serverStatus:  http.StatusInternalServerError,
+			expectError:   true,
+			errorContains: "unexpected response status code",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.Contains(r.URL.Path, "pico/v1/software/42") {
+					t.Errorf("Unexpected path: %s", r.URL.Path)
+				}
+				w.WriteHeader(tt.serverStatus)
+				_, _ = w.Write([]byte(tt.serverResp))
+			}))
+			defer server.Close()
+
+			info, err := getSoftwareComponentInfo(context.Background(), server.Client(), "test-token", server.URL, 42)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error containing '%s', got nil", tt.errorContains)
+				} else if !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("Expected error containing '%s', got '%s'", tt.errorContains, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if tt.expectedComponentID == nil {
+				if info.ComponentID != nil {
+					t.Errorf("Expected nil component ID, got %d", *info.ComponentID)
+				}
+				return
+			}
+			if info.ComponentID == nil {
+				t.Fatalf("Expected component ID %d, got nil", *tt.expectedComponentID)
+			}
+			if *info.ComponentID != *tt.expectedComponentID {
+				t.Errorf("Expected component ID %d, got %d", *tt.expectedComponentID, *info.ComponentID)
+			}
+			if info.ComponentName == nil || *info.ComponentName != tt.expectedComponentName {
+				t.Errorf("Expected component name %q, got %v", tt.expectedComponentName, info.ComponentName)
+			}
+		})
+	}
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
+}
+
+func TestLookupSoftwareAndComponentIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "software/id"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"software_id": 42, "sbom_id": 7}`))
+		case strings.Contains(r.URL.Path, "pico/v1/software/42"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": 42, "name": "my-app", "component_id": 9, "component_name": "my-component"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	ssaus := []sbomSubjectAndURI{
+		{subject: "my-app", uri: "urn:uuid:12345"},
+		{subject: "", uri: ""}, // skipped: no subject/URI parsed
+	}
+
+	results := lookupSoftwareAndComponentIDs(context.Background(), server.Client(), "test-token", server.URL, ssaus)
+
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result (empty ssau skipped), got %d", len(results))
+	}
+	r := results[0]
+	if r.Error != "" {
+		t.Fatalf("Unexpected error in result: %s", r.Error)
+	}
+	if r.SbomSubject != "my-app" {
+		t.Errorf("Expected SBOM subject 'my-app', got %q", r.SbomSubject)
+	}
+	if r.SoftwareName != "my-app" {
+		t.Errorf("Expected software name 'my-app', got %q", r.SoftwareName)
+	}
+	if r.SoftwareID == nil || *r.SoftwareID != 42 {
+		t.Errorf("Expected software ID 42, got %v", r.SoftwareID)
+	}
+	if r.SbomID == nil || *r.SbomID != 7 {
+		t.Errorf("Expected SBOM ID 7, got %v", r.SbomID)
+	}
+	if r.ComponentID == nil || *r.ComponentID != 9 {
+		t.Errorf("Expected component ID 9, got %v", r.ComponentID)
+	}
+	if r.ComponentName == nil || *r.ComponentName != "my-component" {
+		t.Errorf("Expected component name 'my-component', got %v", r.ComponentName)
+	}
+}
+
+func TestWriteResultsFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		results  []sbomResult
+		expected string
+	}{
+		{
+			name: "mapped software",
+			results: []sbomResult{
+				{
+					SoftwareName:  "my-app",
+					SbomSubject:   "my-app",
+					SoftwareID:    int64Ptr(42),
+					SbomID:        int64Ptr(7),
+					ComponentID:   int64Ptr(9),
+					ComponentName: strPtr("my-component"),
+				},
+			},
+			expected: `{
+  "sboms": [
+    {
+      "sbom_id": 7,
+      "sbom_subject": "my-app",
+      "software_id": 42,
+      "software_name": "my-app",
+      "component_id": 9,
+      "component_name": "my-component"
+    }
+  ]
+}
+`,
+		},
+		{
+			name: "unmapped software has null component fields",
+			results: []sbomResult{
+				{
+					SoftwareName: "my-app",
+					SbomSubject:  "my-app",
+					SoftwareID:   int64Ptr(42),
+					SbomID:       int64Ptr(7),
+				},
+			},
+			expected: `{
+  "sboms": [
+    {
+      "sbom_id": 7,
+      "sbom_subject": "my-app",
+      "software_id": 42,
+      "software_name": "my-app",
+      "component_id": null,
+      "component_name": null
+    }
+  ]
+}
+`,
+		},
+		{
+			name:    "nil results normalized to empty array",
+			results: nil,
+			expected: `{
+  "sboms": []
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "results.json")
+			if err := writeResultsFile(path, tt.results); err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("Failed to read results file: %v", err)
+			}
+			if string(data) != tt.expected {
+				t.Errorf("Results file mismatch.\nExpected:\n%s\nGot:\n%s", tt.expected, string(data))
+			}
+		})
+	}
+}
+
+func strPtr(s string) *string {
+	return &s
+}
+
+func TestUploadResultsFileRequiresWait(t *testing.T) {
+	err := Upload(
+		"/test/file.json",
+		"https://test.com",
+		"", "", "",
+		false, // isOpenVex
+		"", "", "", "", "",
+		false, // checkBlockedPackages
+		false, // wait
+		"", "", "", "", "",
+		"results.json",
+	)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "requires --wait") {
+		t.Errorf("Expected error containing 'requires --wait', got '%s'", err.Error())
+	}
+}
+
 // I don't think this actually tests anything. We should get rid of it, or extract
 // upload metadata building into a func and test it here.
 func TestUploadMetadata(t *testing.T) {
@@ -958,6 +1284,7 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				"", // repo
 				"", // subrepoPath
 				"", // commit sha
+				"", // resultsFile
 			)
 
 			if !tt.expectError {

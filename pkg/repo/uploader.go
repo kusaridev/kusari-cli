@@ -96,6 +96,37 @@ type softwareIDAndSbomID struct {
 	SbomID     int64 `json:"sbom_id"`
 }
 
+// softwareComponentInfo holds the component mapping fields from the
+// software detail endpoint. All fields are null when the software has
+// not been assigned to a component.
+type softwareComponentInfo struct {
+	ComponentID   *int64  `json:"component_id"`
+	ComponentName *string `json:"component_name"`
+}
+
+// sbomResult is one entry in the machine-readable results file. ID fields are
+// null when the lookup failed (see Error) and component fields are null when
+// the software is not mapped to a component. SoftwareName always equals
+// SbomSubject — the SBOM subject is surfaced as "software name" in the
+// frontend, so both names are provided for customer clarity.
+// DO NOT RENAME THESE - CUSTOMERS RELY ON NAMES FOR POST-INGESTION ACTIONS IN CI/CD
+type sbomResult struct {
+	SbomID        *int64  `json:"sbom_id"`
+	SbomSubject   string  `json:"sbom_subject"`
+	SoftwareID    *int64  `json:"software_id"`
+	SoftwareName  string  `json:"software_name"`
+	ComponentID   *int64  `json:"component_id"`
+	ComponentName *string `json:"component_name"`
+	Error         string  `json:"error,omitempty"`
+}
+
+// uploadResults is the envelope written to the --results-file. Wrapped in an
+// object (not a bare array) so more result kinds can be added later without
+// breaking consumers.
+type uploadResults struct {
+	Sboms []sbomResult `json:"sboms"`
+}
+
 type blockedPackages struct {
 	Blocked         bool     `json:"blocked"`
 	BlockedPackages []string `json:"blocked_packages"`
@@ -154,10 +185,15 @@ func Upload(
 	repo string,
 	subrepoPath string,
 	commitSha string,
+	resultsFile string,
 ) error {
 	// Validate required configuration
 	if filePath == "" {
 		return fmt.Errorf("file-path is required")
+	}
+
+	if resultsFile != "" && !wait {
+		return fmt.Errorf("--results-file requires --wait (software IDs are only available after ingestion completes)")
 	}
 
 	if tenantEndpoint == "" {
@@ -316,6 +352,10 @@ func Upload(
 		}
 	}
 
+	// Machine-readable results for the --results-file output, populated after
+	// ingestion completes.
+	var sbomResults []sbomResult
+
 	// Query ingestion status for each uploaded document
 	if wait && workspace != "" && tenantName != "" {
 		type ingestionResult struct {
@@ -415,7 +455,33 @@ func Upload(
 				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", statusSymbol, docName, r.docRef, message)
 			}
 			_ = w.Flush()
+
+			// Report the software ID (and component ID, if the software is already
+			// mapped to a component) for each successfully ingested SBOM.
+			if !isOpenVex {
+				var successSSaus []sbomSubjectAndURI
+				for i, r := range results {
+					if r.status == "success" && r.err == nil {
+						successSSaus = append(successSSaus, validSSaus[i])
+					}
+				}
+				if len(successSSaus) > 0 {
+					idResults := lookupSoftwareAndComponentIDs(context.Background(), client, accessToken, tenantEndpoint, successSSaus)
+					printSoftwareAndComponentIDs(idResults)
+					sbomResults = idResults
+				}
+			}
 		}
+	}
+
+	// Write the machine-readable results file. Always written when requested —
+	// even when empty (e.g. no documents ingested successfully) — so pipeline
+	// scripts can rely on the file existing after a successful exit.
+	if resultsFile != "" {
+		if err := writeResultsFile(resultsFile, sbomResults); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "Results written to %s\n", resultsFile)
 	}
 
 	if checkBlockedPackages {
@@ -584,34 +650,10 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 		}
 
 		g.Go(func() error {
-			var ids softwareIDAndSbomID
-
 			// Poll for software/SBOM IDs until available
-			for {
-				res, err := makePicoRequest(ctx, client, accessToken, tenantEndpoint, fmt.Sprintf("pico/v1/software/id?software_name=%s&sbom_uri=%s",
-					url.QueryEscape(ssau.subject), url.QueryEscape(ssau.uri)))
-				if err != nil {
-					return fmt.Errorf("error making request for IDs: %w", err)
-				}
-				defer res.Body.Close() //nolint:errcheck
-
-				if res.StatusCode == 200 {
-					body, err := io.ReadAll(res.Body)
-					if err != nil {
-						return fmt.Errorf("error reading response body for IDs: %w", err)
-					}
-
-					if err := json.Unmarshal(body, &ids); err != nil {
-						return fmt.Errorf("error unmarshaling response body for IDs: %w", err)
-					}
-
-					break
-				} else if res.StatusCode == 404 {
-					fmt.Printf("  Waiting for SBOM to be ingested (subject: %s)...\n", ssau.subject)
-					time.Sleep(time.Second)
-				} else {
-					return fmt.Errorf("unexpected response status code for IDs: %d", res.StatusCode)
-				}
+			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau)
+			if err != nil {
+				return err
 			}
 
 			// Check for blocked packages
@@ -660,6 +702,175 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 	}
 
 	return slices.Contains(blocked, true), nil
+}
+
+// pollForSoftwareIDs polls the Pico software ID endpoint until the software and
+// SBOM IDs for the given SBOM subject/URI are available (the SBOM has been ingested),
+// or the context is cancelled. A hard 15-minute cap applies even when the caller's
+// context has no deadline.
+func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, ssau sbomSubjectAndURI) (softwareIDAndSbomID, error) {
+	var ids softwareIDAndSbomID
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
+	for {
+		res, err := makePicoRequest(ctx, client, accessToken, tenantEndpoint, fmt.Sprintf("pico/v1/software/id?software_name=%s&sbom_uri=%s",
+			url.QueryEscape(ssau.subject), url.QueryEscape(ssau.uri)))
+		if err != nil {
+			return ids, fmt.Errorf("error making request for IDs: %w", err)
+		}
+
+		switch res.StatusCode {
+		case 200:
+			body, err := io.ReadAll(res.Body)
+			res.Body.Close() //nolint:errcheck
+			if err != nil {
+				return ids, fmt.Errorf("error reading response body for IDs: %w", err)
+			}
+
+			if err := json.Unmarshal(body, &ids); err != nil {
+				return ids, fmt.Errorf("error unmarshaling response body for IDs: %w", err)
+			}
+
+			return ids, nil
+		case 404:
+			res.Body.Close() //nolint:errcheck
+			fmt.Printf("  Waiting for SBOM to be ingested (subject: %s)...\n", ssau.subject)
+			select {
+			case <-ctx.Done():
+				return ids, ctx.Err()
+			case <-time.After(time.Second):
+			}
+		default:
+			res.Body.Close() //nolint:errcheck
+			return ids, fmt.Errorf("unexpected response status code for IDs: %d", res.StatusCode)
+		}
+	}
+}
+
+// getSoftwareComponentInfo fetches the software detail endpoint and returns the
+// component mapping fields (null when the software is not assigned to a component).
+func getSoftwareComponentInfo(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, softwareID int64) (softwareComponentInfo, error) {
+	var info softwareComponentInfo
+
+	res, err := makePicoRequest(ctx, client, accessToken, tenantEndpoint, fmt.Sprintf("pico/v1/software/%d", softwareID))
+	if err != nil {
+		return info, fmt.Errorf("error making request for software details: %w", err)
+	}
+	defer res.Body.Close() //nolint:errcheck
+
+	if res.StatusCode != 200 {
+		return info, fmt.Errorf("unexpected response status code for software details: %d", res.StatusCode)
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return info, fmt.Errorf("error reading response body for software details: %w", err)
+	}
+
+	if err := json.Unmarshal(body, &info); err != nil {
+		return info, fmt.Errorf("error unmarshaling response body for software details: %w", err)
+	}
+
+	return info, nil
+}
+
+// lookupSoftwareAndComponentIDs looks up the Kusari Platform software ID for each
+// ingested SBOM and, when the software is already mapped to a component, the
+// component ID. Lookup errors are recorded per-result and do not fail the upload.
+func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, ssaus []sbomSubjectAndURI) []sbomResult {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(5)
+
+	results := make([]sbomResult, len(ssaus))
+
+	for i, ssau := range ssaus {
+		if ssau.subject == "" && ssau.uri == "" {
+			continue
+		}
+
+		g.Go(func() error {
+			result := sbomResult{SoftwareName: ssau.subject, SbomSubject: ssau.subject}
+
+			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau)
+			if err != nil {
+				result.Error = err.Error()
+				results[i] = result
+				return nil // Don't fail the whole group on individual errors
+			}
+			result.SoftwareID = &ids.SoftwareID
+			result.SbomID = &ids.SbomID
+
+			component, err := getSoftwareComponentInfo(ctx, client, accessToken, tenantEndpoint, ids.SoftwareID)
+			if err != nil {
+				result.Error = err.Error()
+			} else {
+				result.ComponentID = component.ComponentID
+				result.ComponentName = component.ComponentName
+			}
+
+			results[i] = result
+			return nil
+		})
+	}
+
+	_ = g.Wait() // Goroutines never return errors; individual errors are in results
+
+	// Drop entries skipped for having no subject/URI parsed from the document
+	filtered := make([]sbomResult, 0, len(results))
+	for _, r := range results {
+		if r.SbomSubject == "" && r.Error == "" {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered
+}
+
+// printSoftwareAndComponentIDs prints the looked-up IDs as a table on stdout.
+func printSoftwareAndComponentIDs(results []sbomResult) {
+	fmt.Printf("\nSoftware Information:\n")
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "SBOM SUBJECT/SOFTWARE NAME\tSOFTWARE ID\tCOMPONENT ID\tCOMPONENT NAME")
+	_, _ = fmt.Fprintln(w, "--------------------------\t-----------\t------------\t--------------")
+	for _, r := range results {
+		if r.Error != "" {
+			_, _ = fmt.Fprintf(w, "%s\t-\t-\tlookup failed: %s\n", r.SbomSubject, r.Error)
+			continue
+		}
+		componentID := "-"
+		componentName := "-"
+		if r.ComponentID != nil {
+			componentID = fmt.Sprintf("%d", *r.ComponentID)
+			if r.ComponentName != nil && *r.ComponentName != "" {
+				componentName = *r.ComponentName
+			}
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", r.SbomSubject, *r.SoftwareID, componentID, componentName)
+	}
+	_ = w.Flush()
+}
+
+// writeResultsFile writes the machine-readable results envelope as JSON to path.
+// Sboms is normalized to an empty slice so consumers always get {"sboms": []}
+// rather than {"sboms": null}.
+func writeResultsFile(path string, results []sbomResult) error {
+	if results == nil {
+		results = []sbomResult{}
+	}
+	data, err := json.MarshalIndent(uploadResults{Sboms: results}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal results: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write results file: %w", err)
+	}
+	return nil
 }
 
 // makePicoRequest makes an HTTP GET request to the Pico API with authentication

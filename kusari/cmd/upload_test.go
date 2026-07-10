@@ -34,6 +34,7 @@ func TestLoadUploadFromViper(t *testing.T) {
 		"repo":                          "rp",
 		"subrepo-path":                  "srp",
 		"commit-sha":                    "csh",
+		"results-file":                  "rf",
 	}
 	boolExpected := map[string]bool{
 		"openvex":                true,
