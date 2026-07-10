@@ -106,6 +106,7 @@ Examples:
 				uploadSubrepoPath,
 				uploadCommitSha,
 				uploadResultsFile,
+				uploadMapComponents,
 			)
 		},
 	}

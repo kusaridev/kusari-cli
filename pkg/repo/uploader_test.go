@@ -1046,12 +1046,55 @@ func TestUploadResultsFileRequiresWait(t *testing.T) {
 		false, // wait
 		"", "", "", "", "",
 		"results.json",
+		false, // mapComponents
 	)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "requires --wait") {
 		t.Errorf("Expected error containing 'requires --wait', got '%s'", err.Error())
+	}
+}
+
+func TestUploadMapComponentsRequiresWait(t *testing.T) {
+	err := Upload(
+		"/test/file.json",
+		"https://test.com",
+		"", "", "",
+		false, // isOpenVex
+		"", "", "", "", "",
+		false, // checkBlockedPackages
+		false, // wait
+		"", "", "", "", "",
+		"",   // resultsFile
+		true, // mapComponents
+	)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "--map-components requires --wait") {
+		t.Errorf("Expected error containing '--map-components requires --wait', got '%s'", err.Error())
+	}
+}
+
+func TestUploadMapComponentsRejectsOpenVex(t *testing.T) {
+	err := Upload(
+		"/test/file.json",
+		"https://test.com",
+		"", "", "",
+		true, // isOpenVex
+		"", "", "", "", "",
+		false, // checkBlockedPackages
+		true,  // wait
+		"", "", "", "", "",
+		"",   // resultsFile
+		true, // mapComponents
+	)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not OpenVEX") {
+		t.Errorf("Expected error containing 'not OpenVEX', got '%s'", err.Error())
 	}
 }
 
@@ -1283,8 +1326,9 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				"", // org
 				"", // repo
 				"", // subrepoPath
-				"", // commit sha
-				"", // resultsFile
+				"",    // commit sha
+				"",    // resultsFile
+				false, // mapComponents
 			)
 
 			if !tt.expectError {

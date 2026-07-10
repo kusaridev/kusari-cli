@@ -31,6 +31,7 @@ var (
 	uploadSubrepoPath                string
 	uploadCommitSha                  string
 	uploadResultsFile                string
+	uploadMapComponents              bool
 )
 
 // addUploadFlags registers the upload-related flags on a cobra command.
@@ -60,6 +61,7 @@ func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
 	cmd.Flags().StringVar(&uploadSubrepoPath, "subrepo-path", "", "Path to subrepo within the repository (e.g., app/frontend)")
 	cmd.Flags().StringVar(&uploadCommitSha, "commit-sha", "", "Commit SHA (from git) (optional, for SBOMs only)")
 	cmd.Flags().StringVar(&uploadResultsFile, "results-file", "", "Write machine-readable JSON results (software and component IDs for each ingested SBOM) to this file (requires --wait)")
+	cmd.Flags().BoolVar(&uploadMapComponents, "map-components", false, "After ingestion, ensure each ingested software is mapped to a component: create (or reuse) a component named after the software and assign the software to it (requires --wait)")
 }
 
 // uploadStringVars / uploadBoolVars are the single source of truth for the
@@ -88,6 +90,7 @@ var uploadBoolVars = map[string]*bool{
 	"openvex":                &uploadOpenVex,
 	"check-blocked-packages": &uploadCheckBlocked,
 	"wait":                   &uploadWait,
+	"map-components":         &uploadMapComponents,
 }
 
 // bindUploadFlagsToViper points viper at the upload-related flags on the
@@ -166,6 +169,7 @@ func upload() *cobra.Command {
 			uploadSubrepoPath,
 			uploadCommitSha,
 			uploadResultsFile,
+			uploadMapComponents,
 		)
 	}
 
@@ -199,6 +203,10 @@ Examples:
   # CI/CD: Upload with repository traceability metadata
   kusari platform upload --file-path sbom.json --tenant demo \
     --forge github.com --org myorg --repo myrepo --subrepo-path app/frontend
+
+  # CI/CD: Upload, capture results, and auto-map software to components
+  kusari platform upload --file-path sbom.json --tenant demo \
+    --results-file results.json --map-components
 
   # Dev/Testing: Upload using full tenant endpoint (overrides --tenant)
   kusari platform upload --file-path sbom.json --tenant-endpoint https://demo.api.dev.kusari.cloud`,

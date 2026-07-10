@@ -118,6 +118,10 @@ type sbomResult struct {
 	ComponentID   *int64  `json:"component_id"`
 	ComponentName *string `json:"component_name"`
 	Error         string  `json:"error,omitempty"`
+
+	// Unexported: not part of the results-file contract. Carries the ssau
+	// docRef so --map-components can derive its fallback name suffix.
+	docRef string
 }
 
 // uploadResults is the envelope written to the --results-file. Wrapped in an
@@ -186,6 +190,7 @@ func Upload(
 	subrepoPath string,
 	commitSha string,
 	resultsFile string,
+	mapComponents bool,
 ) error {
 	// Validate required configuration
 	if filePath == "" {
@@ -194,6 +199,14 @@ func Upload(
 
 	if resultsFile != "" && !wait {
 		return fmt.Errorf("--results-file requires --wait (software IDs are only available after ingestion completes)")
+	}
+
+	if mapComponents && !wait {
+		return fmt.Errorf("--map-components requires --wait (software IDs are only available after ingestion completes)")
+	}
+
+	if mapComponents && isOpenVex {
+		return fmt.Errorf("--map-components applies to SBOM uploads, not OpenVEX documents")
 	}
 
 	if tenantEndpoint == "" {
@@ -474,6 +487,16 @@ func Upload(
 		}
 	}
 
+	// Ensure every ingested software is mapped to a component. Runs before the
+	// results file is written so the file reflects the post-mapping state; on
+	// a mapping failure the file is still written (with whatever mappings
+	// completed) before the error is returned.
+	var mapErr error
+	if mapComponents && len(sbomResults) > 0 {
+		fmt.Fprintf(os.Stderr, "\nMapping ingested software to components...\n")
+		mapErr = mapSoftwareToComponents(context.Background(), client, accessToken, tenantEndpoint, sbomResults)
+	}
+
 	// Write the machine-readable results file. Always written when requested —
 	// even when empty (e.g. no documents ingested successfully) — so pipeline
 	// scripts can rely on the file existing after a successful exit.
@@ -482,6 +505,10 @@ func Upload(
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "Results written to %s\n", resultsFile)
+	}
+
+	if mapErr != nil {
+		return fmt.Errorf("component mapping failed: %w", mapErr)
 	}
 
 	if checkBlockedPackages {
@@ -794,7 +821,7 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 		}
 
 		g.Go(func() error {
-			result := sbomResult{SoftwareName: ssau.subject, SbomSubject: ssau.subject}
+			result := sbomResult{SoftwareName: ssau.subject, SbomSubject: ssau.subject, docRef: ssau.docRef}
 
 			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau)
 			if err != nil {

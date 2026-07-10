@@ -40,6 +40,7 @@ func TestLoadUploadFromViper(t *testing.T) {
 		"openvex":                true,
 		"check-blocked-packages": true,
 		"wait":                   true,
+		"map-components":         true,
 	}
 
 	for k, v := range stringExpected {
