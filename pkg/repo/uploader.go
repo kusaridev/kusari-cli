@@ -86,9 +86,10 @@ type DocumentWrapper struct {
 }
 
 type sbomSubjectAndURI struct {
-	subject string
-	uri     string
-	docRef  string
+	subject  string
+	uri      string
+	docRef   string
+	filePath string
 }
 
 type softwareIDAndSbomID struct {
@@ -110,9 +111,11 @@ type softwareComponentInfo struct {
 // SbomSubject — the SBOM subject is surfaced as "software name" in the
 // frontend, so both names are provided for customer clarity.
 // DO NOT RENAME THESE - CUSTOMERS RELY ON NAMES FOR POST-INGESTION ACTIONS IN CI/CD
+// (adding new fields is fine - the contract is additive)
 type sbomResult struct {
 	SbomID        *int64  `json:"sbom_id"`
 	SbomSubject   string  `json:"sbom_subject"`
+	FilePath      string  `json:"file_path"`
 	SoftwareID    *int64  `json:"software_id"`
 	SoftwareName  string  `json:"software_name"`
 	ComponentID   *int64  `json:"component_id"`
@@ -479,9 +482,7 @@ func Upload(
 					}
 				}
 				if len(successSSaus) > 0 {
-					idResults := lookupSoftwareAndComponentIDs(context.Background(), client, accessToken, tenantEndpoint, successSSaus)
-					printSoftwareAndComponentIDs(idResults)
-					sbomResults = idResults
+					sbomResults = lookupSoftwareAndComponentIDs(context.Background(), client, accessToken, tenantEndpoint, successSSaus)
 				}
 			}
 		}
@@ -495,6 +496,12 @@ func Upload(
 	if mapComponents && len(sbomResults) > 0 {
 		fmt.Fprintf(os.Stderr, "\nMapping ingested software to components...\n")
 		mapErr = mapSoftwareToComponents(context.Background(), client, accessToken, tenantEndpoint, sbomResults)
+	}
+
+	// Print the software table only after mapping, so the COMPONENT columns
+	// show the final assignments rather than the pre-mapping state.
+	if len(sbomResults) > 0 {
+		printSoftwareAndComponentIDs(sbomResults)
 	}
 
 	// Write the machine-readable results file. Always written when requested —
@@ -580,7 +587,12 @@ func uploadSingleFile(client *http.Client, accessToken, tenantEndpoint, filePath
 		return sbomSubjectAndURI{}, err
 	}
 
-	return uploadBlob(client, presignedUrl, filePath, blob, isOpenVex, uploadMeta)
+	ssau, err := uploadBlob(client, presignedUrl, filePath, blob, isOpenVex, uploadMeta)
+	if err != nil {
+		return ssau, err
+	}
+	ssau.filePath = filePath
+	return ssau, nil
 }
 
 // getPresignedUrlForUpload utilizes authorized client to obtain the presigned URL to upload to S3
@@ -741,6 +753,16 @@ func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, t
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
+	// Print the waiting message once, then a "#" per retry on a single line
+	// (rather than a line per 1s poll — a slow ingestion produces hundreds).
+	// The deferred newline terminates the "#" run on every exit path.
+	waits := 0
+	defer func() {
+		if waits > 0 {
+			fmt.Println()
+		}
+	}()
+
 	for {
 		res, err := makePicoRequest(ctx, client, accessToken, tenantEndpoint, fmt.Sprintf("pico/v1/software/id?software_name=%s&sbom_uri=%s",
 			url.QueryEscape(ssau.subject), url.QueryEscape(ssau.uri)))
@@ -763,7 +785,12 @@ func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, t
 			return ids, nil
 		case 404:
 			res.Body.Close() //nolint:errcheck
-			fmt.Printf("  Waiting for SBOM to be ingested (subject: %s)...\n", ssau.subject)
+			if waits == 0 {
+				fmt.Printf("  Waiting for SBOM to be ingested (subject: %s)...\n  ", ssau.subject)
+			} else {
+				fmt.Print("#")
+			}
+			waits++
 			select {
 			case <-ctx.Done():
 				return ids, ctx.Err()
@@ -821,7 +848,7 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 		}
 
 		g.Go(func() error {
-			result := sbomResult{SoftwareName: ssau.subject, SbomSubject: ssau.subject, docRef: ssau.docRef}
+			result := sbomResult{SoftwareName: ssau.subject, SbomSubject: ssau.subject, FilePath: ssau.filePath, docRef: ssau.docRef}
 
 			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau)
 			if err != nil {
@@ -860,13 +887,17 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 
 // printSoftwareAndComponentIDs prints the looked-up IDs as a table on stdout.
 func printSoftwareAndComponentIDs(results []sbomResult) {
-	fmt.Printf("\nSoftware Information:\n")
+	fmt.Printf("\nIngested Software Summary:\n")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "SBOM SUBJECT/SOFTWARE NAME\tSOFTWARE ID\tCOMPONENT ID\tCOMPONENT NAME")
-	_, _ = fmt.Fprintln(w, "--------------------------\t-----------\t------------\t--------------")
+	_, _ = fmt.Fprintln(w, "SBOM SUBJECT/SOFTWARE NAME\tFILE\tSOFTWARE ID\tCOMPONENT ID\tCOMPONENT NAME")
+	_, _ = fmt.Fprintln(w, "--------------------------\t----\t-----------\t------------\t--------------")
 	for _, r := range results {
+		file := r.FilePath
+		if file == "" {
+			file = "-"
+		}
 		if r.Error != "" {
-			_, _ = fmt.Fprintf(w, "%s\t-\t-\tlookup failed: %s\n", r.SbomSubject, r.Error)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t-\t-\tlookup failed: %s\n", r.SbomSubject, file, r.Error)
 			continue
 		}
 		componentID := "-"
@@ -877,7 +908,7 @@ func printSoftwareAndComponentIDs(results []sbomResult) {
 				componentName = *r.ComponentName
 			}
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", r.SbomSubject, *r.SoftwareID, componentID, componentName)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", r.SbomSubject, file, *r.SoftwareID, componentID, componentName)
 	}
 	_ = w.Flush()
 }

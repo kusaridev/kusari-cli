@@ -960,6 +960,7 @@ func TestWriteResultsFile(t *testing.T) {
 				{
 					SoftwareName:  "my-app",
 					SbomSubject:   "my-app",
+					FilePath:      "sboms/my-app.cdx.json",
 					SoftwareID:    int64Ptr(42),
 					SbomID:        int64Ptr(7),
 					ComponentID:   int64Ptr(9),
@@ -971,6 +972,7 @@ func TestWriteResultsFile(t *testing.T) {
     {
       "sbom_id": 7,
       "sbom_subject": "my-app",
+      "file_path": "sboms/my-app.cdx.json",
       "software_id": 42,
       "software_name": "my-app",
       "component_id": 9,
@@ -995,6 +997,7 @@ func TestWriteResultsFile(t *testing.T) {
     {
       "sbom_id": 7,
       "sbom_subject": "my-app",
+      "file_path": "",
       "software_id": 42,
       "software_name": "my-app",
       "component_id": null,
