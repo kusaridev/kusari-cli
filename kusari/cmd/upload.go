@@ -30,6 +30,7 @@ var (
 	uploadRepo                       string
 	uploadSubrepoPath                string
 	uploadCommitSha                  string
+	uploadResultsFile                string
 )
 
 // addUploadFlags registers the upload-related flags on a cobra command.
@@ -58,6 +59,7 @@ func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
 	cmd.Flags().StringVar(&uploadRepo, "repo", "", "Repository name in the forge")
 	cmd.Flags().StringVar(&uploadSubrepoPath, "subrepo-path", "", "Path to subrepo within the repository (e.g., app/frontend)")
 	cmd.Flags().StringVar(&uploadCommitSha, "commit-sha", "", "Commit SHA (from git) (optional, for SBOMs only)")
+	cmd.Flags().StringVar(&uploadResultsFile, "results-file", "", "Write machine-readable JSON results (software and component IDs for each ingested SBOM) to this file (requires --wait)")
 }
 
 // uploadStringVars / uploadBoolVars are the single source of truth for the
@@ -79,6 +81,7 @@ var uploadStringVars = map[string]*string{
 	"repo":                          &uploadRepo,
 	"subrepo-path":                  &uploadSubrepoPath,
 	"commit-sha":                    &uploadCommitSha,
+	"results-file":                  &uploadResultsFile,
 }
 
 var uploadBoolVars = map[string]*bool{
@@ -162,6 +165,7 @@ func upload() *cobra.Command {
 			uploadRepo,
 			uploadSubrepoPath,
 			uploadCommitSha,
+			uploadResultsFile,
 		)
 	}
 

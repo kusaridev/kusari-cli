@@ -105,6 +105,7 @@ Examples:
 				uploadRepo,
 				uploadSubrepoPath,
 				uploadCommitSha,
+				uploadResultsFile,
 			)
 		},
 	}
