@@ -662,9 +662,13 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 
 // pollForSoftwareIDs polls the Pico software ID endpoint until the software and
 // SBOM IDs for the given SBOM subject/URI are available (the SBOM has been ingested),
-// or the context is cancelled.
+// or the context is cancelled. A hard 15-minute cap applies even when the caller's
+// context has no deadline.
 func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, ssau sbomSubjectAndURI) (softwareIDAndSbomID, error) {
 	var ids softwareIDAndSbomID
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
 
 	for {
 		res, err := makePicoRequest(ctx, client, accessToken, tenantEndpoint, fmt.Sprintf("pico/v1/software/id?software_name=%s&sbom_uri=%s",
