@@ -782,10 +782,10 @@ func reportSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 
 	_ = g.Wait() // Goroutines never return errors; individual errors are in reports
 
-	fmt.Printf("\nSoftware IDs:\n")
+	fmt.Printf("\nSoftware Information:\n")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "SBOM SUBJECT\tSOFTWARE ID\tCOMPONENT ID\tCOMPONENT")
-	_, _ = fmt.Fprintln(w, "------------\t-----------\t------------\t---------")
+	_, _ = fmt.Fprintln(w, "SBOM SUBJECT/SOFTWARE NAME\tSOFTWARE ID\tCOMPONENT ID\tCOMPONENT NAME")
+	_, _ = fmt.Fprintln(w, "--------------------------\t-----------\t------------\t--------------")
 	for _, r := range reports {
 		if r.subject == "" && r.err == nil {
 			continue // skipped (no subject/URI parsed from the document)
