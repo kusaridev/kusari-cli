@@ -41,15 +41,13 @@ func Authenticate(ctx context.Context, clientId, clientSecret, redirectUrl, auth
 
 	var token *oauth2.Token
 	if clientSecret != "" {
-		var tokenErr error
 		config := &clientcredentials.Config{
 			ClientID:     clientId,
 			ClientSecret: clientSecret,
 			TokenURL:     oauth2Config.Endpoint.TokenURL,
 		}
-		token, tokenErr = config.Token(ctx)
-		if tokenErr != nil {
-			log.Fatalf("Failed to exchange token: %v", err)
+		token, err = config.Token(ctx)
+		if err != nil {
 			return nil, NewAuthErrorWithCause(ErrAuthFlow, "failed to exchange token", err)
 		}
 	} else {
@@ -100,12 +98,10 @@ func Authenticate(ctx context.Context, clientId, clientSecret, redirectUrl, auth
 		code := cs.Code
 
 		authUrlOption := oauth2.SetAuthURLParam("code_verifier", codeVerifier)
-		var tokenErr error
 
-		token, tokenErr = oauth2Config.Exchange(ctx, code, authUrlOption)
-		if tokenErr != nil {
-			log.Fatalf("Failed to exchange token: %v", tokenErr)
-			return nil, tokenErr
+		token, err = oauth2Config.Exchange(ctx, code, authUrlOption)
+		if err != nil {
+			return nil, NewAuthErrorWithCause(ErrAuthFlow, "failed to exchange token", err)
 		}
 	}
 
