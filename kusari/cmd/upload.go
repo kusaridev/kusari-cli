@@ -41,7 +41,7 @@ func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
 	if includeFilePath {
 		cmd.Flags().StringVarP(&uploadFilePath, "file-path", "f", "", "Path to file or directory to upload (required)")
 	}
-	cmd.Flags().StringVarP(&uploadAlias, "alias", "a", "", "Alias that supersedes the subject in Kusari platform (optional)")
+	cmd.Flags().StringVarP(&uploadAlias, "alias", "a", "", "Stored in the SBOM's upload metadata; not currently used by the Kusari platform (optional)")
 	cmd.Flags().StringVarP(&uploadDocumentType, "document-type", "d", "", "Type of the document (image or build) sbom (optional)")
 	cmd.Flags().BoolVar(&uploadOpenVex, "openvex", false, "Indicate that this is an OpenVEX document (optional, only works with files)")
 	cmd.Flags().StringVar(&uploadTag, "tag", "", "Tag value to set in the document wrapper upload meta (optional, e.g. govulncheck)")

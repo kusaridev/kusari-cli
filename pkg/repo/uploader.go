@@ -474,7 +474,10 @@ func Upload(
 
 			// Report the software ID (and component ID, if the software is already
 			// mapped to a component) for each successfully ingested SBOM.
-			if !isOpenVex {
+			// Only look up IDs when a flag needs them (--results-file or
+			// --map-components): the lookup adds post-ingestion API calls,
+			// so plain uploads skip it entirely.
+			if !isOpenVex && (resultsFile != "" || mapComponents) {
 				var successSSaus []sbomSubjectAndURI
 				for i, r := range results {
 					if r.status == "success" && r.err == nil {
@@ -658,18 +661,31 @@ func uploadBlob(client *http.Client, presignedUrl, filePath string, readFile []b
 	var cdx cdxSBOM
 	if err := json.Unmarshal(readFile, &cdx); err == nil { // inverted error check
 		if cdx.BOMFormat == "CycloneDX" && cdx.Metadata.Component.Name != "" && cdx.SerialNumber != "" {
-			return sbomSubjectAndURI{subject: cdx.Metadata.Component.Name, uri: cdx.SerialNumber, docRef: docRef}, nil
+			return applySubjectNameOverride(sbomSubjectAndURI{subject: cdx.Metadata.Component.Name, uri: cdx.SerialNumber, docRef: docRef}, uploadMeta), nil
 		}
 	}
 
 	var spdx spdxSBOM
 	if err := json.Unmarshal(readFile, &spdx); err == nil { // inverted error check
 		if spdx.SPDXID == "SPDXRef-DOCUMENT" && spdx.Name != "" && spdx.DocumentNamespace != "" {
-			return sbomSubjectAndURI{subject: spdx.Name, uri: spdx.DocumentNamespace + "#DOCUMENT", docRef: docRef}, nil
+			return applySubjectNameOverride(sbomSubjectAndURI{subject: spdx.Name, uri: spdx.DocumentNamespace + "#DOCUMENT", docRef: docRef}, uploadMeta), nil
 		}
 	}
 
 	return sbomSubjectAndURI{docRef: docRef}, nil
+}
+
+// applySubjectNameOverride replaces the file-parsed subject with the
+// sbom_subject_name_override upload metadata value when present. The platform
+// stores the software under the override name, so post-ingestion lookups
+// (software/component IDs, blocked-package checks) must query by it — the
+// file-parsed name would 404 forever. Only applied when a URI was parsed:
+// without one the ID lookup can't match anyway and the entry is skipped.
+func applySubjectNameOverride(ssau sbomSubjectAndURI, uploadMeta map[string]string) sbomSubjectAndURI {
+	if override, ok := uploadMeta["sbom_subject_name_override"]; ok && override != "" && ssau.uri != "" {
+		ssau.subject = override
+	}
+	return ssau
 }
 
 // checkSBOMsForBlockedPackages checks if uploaded SBOMs contain any blocked packages

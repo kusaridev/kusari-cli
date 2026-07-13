@@ -112,6 +112,24 @@ func TestUploadBlob(t *testing.T) {
 			expectedURI:     "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
 		},
 		{
+			name: "subject name override replaces file-parsed subject",
+			fileContent: `{
+				"bomFormat": "CycloneDX",
+				"serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+				"metadata": {
+					"component": {
+						"name": "my-app"
+					}
+				}
+			}`,
+			isOpenVex:       false,
+			uploadMeta:      map[string]string{"sbom_subject_name_override": "renamed-app"},
+			serverStatus:    http.StatusOK,
+			expectError:     false,
+			expectedSubject: "renamed-app",
+			expectedURI:     "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+		},
+		{
 			name: "successful SPDX upload",
 			fileContent: `{
 				"SPDXID": "SPDXRef-DOCUMENT",
