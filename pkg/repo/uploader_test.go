@@ -6,6 +6,7 @@ package repo
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -773,7 +774,7 @@ func TestPollForSoftwareIDs(t *testing.T) {
 			defer server.Close()
 
 			ids, err := pollForSoftwareIDs(context.Background(), server.Client(), "test-token", server.URL,
-				sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"})
+				sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"}, newWaitPrinter(io.Discard))
 
 			if tt.expectError {
 				if err == nil {
@@ -809,13 +810,20 @@ func TestPollForSoftwareIDsRetriesOn404(t *testing.T) {
 	}))
 	defer server.Close()
 
+	progressOut := &strings.Builder{}
+	progress := newWaitPrinter(progressOut)
 	ids, err := pollForSoftwareIDs(context.Background(), server.Client(), "test-token", server.URL,
-		sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"})
+		sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"}, progress)
+	progress.close()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 	if attempts != 2 {
 		t.Errorf("Expected 2 attempts, got %d", attempts)
+	}
+	expectedProgress := "  Waiting for software info for ingested SBOMs...\n  #\n"
+	if progressOut.String() != expectedProgress {
+		t.Errorf("Expected progress output %q, got %q", expectedProgress, progressOut.String())
 	}
 	if ids.SoftwareID != 42 {
 		t.Errorf("Expected software ID 42, got %d", ids.SoftwareID)

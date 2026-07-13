@@ -682,6 +682,7 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 
 	blocked := make([]bool, len(ssaus))
 	blockedPurls := make([][]string, len(ssaus))
+	progress := newWaitPrinter(os.Stdout)
 
 	for i, ssau := range ssaus {
 		if ssau.subject == "" && ssau.uri == "" {
@@ -690,7 +691,7 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 
 		g.Go(func() error {
 			// Poll for software/SBOM IDs until available
-			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau)
+			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau, progress)
 			if err != nil {
 				return err
 			}
@@ -726,7 +727,9 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	err := g.Wait()
+	progress.close()
+	if err != nil {
 		return false, err
 	}
 
@@ -747,21 +750,11 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 // SBOM IDs for the given SBOM subject/URI are available (the SBOM has been ingested),
 // or the context is cancelled. A hard 15-minute cap applies even when the caller's
 // context has no deadline.
-func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, ssau sbomSubjectAndURI) (softwareIDAndSbomID, error) {
+func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, ssau sbomSubjectAndURI, progress *waitPrinter) (softwareIDAndSbomID, error) {
 	var ids softwareIDAndSbomID
 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
-
-	// Print the waiting message once, then a "#" per retry on a single line
-	// (rather than a line per 1s poll — a slow ingestion produces hundreds).
-	// The deferred newline terminates the "#" run on every exit path.
-	waits := 0
-	defer func() {
-		if waits > 0 {
-			fmt.Println()
-		}
-	}()
 
 	for {
 		res, err := makePicoRequest(ctx, client, accessToken, tenantEndpoint, fmt.Sprintf("pico/v1/software/id?software_name=%s&sbom_uri=%s",
@@ -785,12 +778,7 @@ func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, t
 			return ids, nil
 		case 404:
 			res.Body.Close() //nolint:errcheck
-			if waits == 0 {
-				fmt.Printf("  Waiting for SBOM to be ingested (subject: %s)...\n  ", ssau.subject)
-			} else {
-				fmt.Print("#")
-			}
-			waits++
+			progress.tick()
 			select {
 			case <-ctx.Done():
 				return ids, ctx.Err()
@@ -841,6 +829,7 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 	g.SetLimit(5)
 
 	results := make([]sbomResult, len(ssaus))
+	progress := newWaitPrinter(os.Stdout)
 
 	for i, ssau := range ssaus {
 		if ssau.subject == "" && ssau.uri == "" {
@@ -850,7 +839,7 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 		g.Go(func() error {
 			result := sbomResult{SoftwareName: ssau.subject, SbomSubject: ssau.subject, FilePath: ssau.filePath, docRef: ssau.docRef}
 
-			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau)
+			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau, progress)
 			if err != nil {
 				result.Error = err.Error()
 				results[i] = result
@@ -873,6 +862,7 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 	}
 
 	_ = g.Wait() // Goroutines never return errors; individual errors are in results
+	progress.close()
 
 	// Drop entries skipped for having no subject/URI parsed from the document
 	filtered := make([]sbomResult, 0, len(results))
