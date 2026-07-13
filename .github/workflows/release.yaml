@@ -60,8 +60,6 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # main
-      - name: Install syft
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
 
       - name: Run GoReleaser Snapshot
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -87,52 +85,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCKER_CONTEXT: default
 
-      # Generate image SBOM
-      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
-        name: Generate image SBOM
+      # Generate and upload the image SBOM with kusari-ingest generate mode
+      # (MikeBOM, via kusari-cli). Replaces the previous anchore/sbom-action +
+      # kusari-ingest file-path pair, and drops the separate cyclonedx-gomod
+      # build SBOM. root-name + no-root-purl keep pkg_type empty (matching the
+      # prior Syft image rows) so this updates the existing software instead of
+      # forking a new `generic` one; root-version uses the release tag, matching
+      # the version Syft derived from the image tag.
+      - uses: kusaridev/kusari-ingest@3fcb65caf3829855269dc48959fcd781cfd73326 #v4.2.0
+        name: Kusari image SBOM (generate + upload)
         if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
         with:
+          generate: true
           image: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-          output-file: 'cyclonedx.sbom.json'
-          format: cyclonedx-json
-
-      # Download cyclonedx-gomod
-      - name: Download cyclonedx-gomod
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: CycloneDX/gh-gomod-generate-sbom@efc74245d6802c8cefd925620515442756c70d8f # v2.0.0
-        with:
-          version: v1
-
-      - name: Generate CycloneDX Build SBOM
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          cyclonedx-gomod app -licenses -json -output cyclonedx_build.json -main ./kusari
-
-      # Ingest image SBOM
-      - uses: kusaridev/kusari-ingest@f534abc1de2c04bbef2523390040c22801470c7e #v4.1.0
-        name: Kusari ingestion for image SBOM
-        if: startsWith(github.ref, 'refs/tags/')
-        continue-on-error: true
-        with:
-          file-path: 'cyclonedx.sbom.json'
+          output-path: cyclonedx.sbom.json
           tenant-endpoint: https://kusari.api.us.kusari.cloud
           client-id: ${{ secrets.KUSARI_CLIENT_ID }}
           client-secret: ${{ secrets.KUSARI_CLIENT_SECRET }}
           alias: kusari-cli
-          document-type: 'image'
-
-      # Ingest build SBOM
-      - uses: kusaridev/kusari-ingest@f534abc1de2c04bbef2523390040c22801470c7e #v4.1.0
-        name: Kusari ingestion for build SBOM
-        if: startsWith(github.ref, 'refs/tags/')
-        continue-on-error: true
-        with:
-          file-path: 'cyclonedx_build.json'
-          tenant-endpoint: https://kusari.api.us.kusari.cloud
-          client-id: ${{ secrets.KUSARI_CLIENT_ID }}
-          client-secret: ${{ secrets.KUSARI_CLIENT_SECRET }}
-          alias: kusari-cli
-          document-type: 'build'
+          root-name: ghcr.io/${{ github.repository }}
+          no-root-purl: true
+          root-version: ${{ github.ref_name }}
 
       - name: Generate hashes and extract image digest
         id: hash
