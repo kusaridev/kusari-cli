@@ -42,6 +42,9 @@ func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
 		cmd.Flags().StringVarP(&uploadFilePath, "file-path", "f", "", "Path to file or directory to upload (required)")
 	}
 	cmd.Flags().StringVarP(&uploadAlias, "alias", "a", "", "Stored in the SBOM's upload metadata; not currently used by the Kusari platform (optional)")
+	if err := cmd.Flags().MarkDeprecated("alias", "it is not used by the Kusari platform and will be removed in a future release"); err != nil {
+		panic(err)
+	}
 	cmd.Flags().StringVarP(&uploadDocumentType, "document-type", "d", "", "Type of the document (image or build) sbom (optional)")
 	cmd.Flags().BoolVar(&uploadOpenVex, "openvex", false, "Indicate that this is an OpenVEX document (optional, only works with files)")
 	cmd.Flags().StringVar(&uploadTag, "tag", "", "Tag value to set in the document wrapper upload meta (optional, e.g. govulncheck)")
@@ -130,13 +133,17 @@ func uploadPreRun(cmd *cobra.Command, _ []string) {
 	loadUploadFromViper()
 }
 
-// warnIfDeprecatedComponentName prints the deprecation message when
-// component-name was sourced from config/env. CLI uses are already
-// warned about by cobra's MarkDeprecated; this covers the gap.
+// warnIfDeprecatedComponentName prints deprecation messages when
+// component-name or alias were sourced from config/env. CLI uses are
+// already warned about by cobra's MarkDeprecated; this covers the gap.
 func warnIfDeprecatedComponentName(cmd *cobra.Command) {
 	if uploadComponentName != "" && !cmd.Flags().Changed("component-name") {
 		fmt.Fprintln(os.Stderr, "The component-name config value is no longer supported. "+
 			"See https://docs.us.kusari.cloud/software/components for info on how to assign and use Components.")
+	}
+	if uploadAlias != "" && !cmd.Flags().Changed("alias") {
+		fmt.Fprintln(os.Stderr, "The alias config value is deprecated: it is not used by the Kusari platform "+
+			"and will be removed in a future release.")
 	}
 }
 
