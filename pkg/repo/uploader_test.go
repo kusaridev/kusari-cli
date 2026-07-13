@@ -1333,10 +1333,10 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				"",
 				false,
 				false,
-				"", // forge
-				"", // org
-				"", // repo
-				"", // subrepoPath
+				"",    // forge
+				"",    // org
+				"",    // repo
+				"",    // subrepoPath
 				"",    // commit sha
 				"",    // resultsFile
 				false, // mapComponents
