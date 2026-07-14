@@ -6,6 +6,7 @@ package repo
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -108,6 +109,24 @@ func TestUploadBlob(t *testing.T) {
 			serverStatus:    http.StatusOK,
 			expectError:     false,
 			expectedSubject: "my-app",
+			expectedURI:     "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+		},
+		{
+			name: "subject name override replaces file-parsed subject",
+			fileContent: `{
+				"bomFormat": "CycloneDX",
+				"serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+				"metadata": {
+					"component": {
+						"name": "my-app"
+					}
+				}
+			}`,
+			isOpenVex:       false,
+			uploadMeta:      map[string]string{"sbom_subject_name_override": "renamed-app"},
+			serverStatus:    http.StatusOK,
+			expectError:     false,
+			expectedSubject: "renamed-app",
 			expectedURI:     "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
 		},
 		{
@@ -773,7 +792,7 @@ func TestPollForSoftwareIDs(t *testing.T) {
 			defer server.Close()
 
 			ids, err := pollForSoftwareIDs(context.Background(), server.Client(), "test-token", server.URL,
-				sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"})
+				sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"}, newWaitPrinter(io.Discard))
 
 			if tt.expectError {
 				if err == nil {
@@ -809,13 +828,20 @@ func TestPollForSoftwareIDsRetriesOn404(t *testing.T) {
 	}))
 	defer server.Close()
 
+	progressOut := &strings.Builder{}
+	progress := newWaitPrinter(progressOut)
 	ids, err := pollForSoftwareIDs(context.Background(), server.Client(), "test-token", server.URL,
-		sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"})
+		sbomSubjectAndURI{subject: "my-app", uri: "urn:uuid:12345"}, progress)
+	progress.close()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 	if attempts != 2 {
 		t.Errorf("Expected 2 attempts, got %d", attempts)
+	}
+	expectedProgress := "  Waiting for software info for ingested SBOMs...\n  #\n"
+	if progressOut.String() != expectedProgress {
+		t.Errorf("Expected progress output %q, got %q", expectedProgress, progressOut.String())
 	}
 	if ids.SoftwareID != 42 {
 		t.Errorf("Expected software ID 42, got %d", ids.SoftwareID)
@@ -960,6 +986,7 @@ func TestWriteResultsFile(t *testing.T) {
 				{
 					SoftwareName:  "my-app",
 					SbomSubject:   "my-app",
+					FilePath:      "sboms/my-app.cdx.json",
 					SoftwareID:    int64Ptr(42),
 					SbomID:        int64Ptr(7),
 					ComponentID:   int64Ptr(9),
@@ -971,6 +998,7 @@ func TestWriteResultsFile(t *testing.T) {
     {
       "sbom_id": 7,
       "sbom_subject": "my-app",
+      "file_path": "sboms/my-app.cdx.json",
       "software_id": 42,
       "software_name": "my-app",
       "component_id": 9,
@@ -995,6 +1023,7 @@ func TestWriteResultsFile(t *testing.T) {
     {
       "sbom_id": 7,
       "sbom_subject": "my-app",
+      "file_path": "",
       "software_id": 42,
       "software_name": "my-app",
       "component_id": null,
@@ -1046,12 +1075,55 @@ func TestUploadResultsFileRequiresWait(t *testing.T) {
 		false, // wait
 		"", "", "", "", "",
 		"results.json",
+		false, // mapComponents
 	)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "requires --wait") {
 		t.Errorf("Expected error containing 'requires --wait', got '%s'", err.Error())
+	}
+}
+
+func TestUploadMapComponentsRequiresWait(t *testing.T) {
+	err := Upload(
+		"/test/file.json",
+		"https://test.com",
+		"", "", "",
+		false, // isOpenVex
+		"", "", "", "", "",
+		false, // checkBlockedPackages
+		false, // wait
+		"", "", "", "", "",
+		"",   // resultsFile
+		true, // mapComponents
+	)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "--map-components requires --wait") {
+		t.Errorf("Expected error containing '--map-components requires --wait', got '%s'", err.Error())
+	}
+}
+
+func TestUploadMapComponentsRejectsOpenVex(t *testing.T) {
+	err := Upload(
+		"/test/file.json",
+		"https://test.com",
+		"", "", "",
+		true, // isOpenVex
+		"", "", "", "", "",
+		false, // checkBlockedPackages
+		true,  // wait
+		"", "", "", "", "",
+		"",   // resultsFile
+		true, // mapComponents
+	)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not OpenVEX") {
+		t.Errorf("Expected error containing 'not OpenVEX', got '%s'", err.Error())
 	}
 }
 
@@ -1279,12 +1351,13 @@ func TestUpload_ValidationErrors(t *testing.T) {
 				"",
 				false,
 				false,
-				"", // forge
-				"", // org
-				"", // repo
-				"", // subrepoPath
-				"", // commit sha
-				"", // resultsFile
+				"",    // forge
+				"",    // org
+				"",    // repo
+				"",    // subrepoPath
+				"",    // commit sha
+				"",    // resultsFile
+				false, // mapComponents
 			)
 
 			if !tt.expectError {

@@ -31,6 +31,7 @@ var (
 	uploadSubrepoPath                string
 	uploadCommitSha                  string
 	uploadResultsFile                string
+	uploadMapComponents              bool
 )
 
 // addUploadFlags registers the upload-related flags on a cobra command.
@@ -40,7 +41,10 @@ func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
 	if includeFilePath {
 		cmd.Flags().StringVarP(&uploadFilePath, "file-path", "f", "", "Path to file or directory to upload (required)")
 	}
-	cmd.Flags().StringVarP(&uploadAlias, "alias", "a", "", "Alias that supersedes the subject in Kusari platform (optional)")
+	cmd.Flags().StringVarP(&uploadAlias, "alias", "a", "", "Stored in the SBOM's upload metadata; not currently used by the Kusari platform (optional)")
+	if err := cmd.Flags().MarkDeprecated("alias", "it is not used by the Kusari platform and will be removed in a future release"); err != nil {
+		panic(err)
+	}
 	cmd.Flags().StringVarP(&uploadDocumentType, "document-type", "d", "", "Type of the document (image or build) sbom (optional)")
 	cmd.Flags().BoolVar(&uploadOpenVex, "openvex", false, "Indicate that this is an OpenVEX document (optional, only works with files)")
 	cmd.Flags().StringVar(&uploadTag, "tag", "", "Tag value to set in the document wrapper upload meta (optional, e.g. govulncheck)")
@@ -60,6 +64,7 @@ func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
 	cmd.Flags().StringVar(&uploadSubrepoPath, "subrepo-path", "", "Path to subrepo within the repository (e.g., app/frontend)")
 	cmd.Flags().StringVar(&uploadCommitSha, "commit-sha", "", "Commit SHA (from git) (optional, for SBOMs only)")
 	cmd.Flags().StringVar(&uploadResultsFile, "results-file", "", "Write machine-readable JSON results (software and component IDs for each ingested SBOM) to this file (requires --wait)")
+	cmd.Flags().BoolVar(&uploadMapComponents, "map-components", false, "After ingestion, ensure each ingested software is mapped to a component: create (or reuse) a component named after the software and assign the software to it (requires --wait)")
 }
 
 // uploadStringVars / uploadBoolVars are the single source of truth for the
@@ -88,6 +93,7 @@ var uploadBoolVars = map[string]*bool{
 	"openvex":                &uploadOpenVex,
 	"check-blocked-packages": &uploadCheckBlocked,
 	"wait":                   &uploadWait,
+	"map-components":         &uploadMapComponents,
 }
 
 // bindUploadFlagsToViper points viper at the upload-related flags on the
@@ -127,13 +133,17 @@ func uploadPreRun(cmd *cobra.Command, _ []string) {
 	loadUploadFromViper()
 }
 
-// warnIfDeprecatedComponentName prints the deprecation message when
-// component-name was sourced from config/env. CLI uses are already
-// warned about by cobra's MarkDeprecated; this covers the gap.
+// warnIfDeprecatedComponentName prints deprecation messages when
+// component-name or alias were sourced from config/env. CLI uses are
+// already warned about by cobra's MarkDeprecated; this covers the gap.
 func warnIfDeprecatedComponentName(cmd *cobra.Command) {
 	if uploadComponentName != "" && !cmd.Flags().Changed("component-name") {
 		fmt.Fprintln(os.Stderr, "The component-name config value is no longer supported. "+
 			"See https://docs.us.kusari.cloud/software/components for info on how to assign and use Components.")
+	}
+	if uploadAlias != "" && !cmd.Flags().Changed("alias") {
+		fmt.Fprintln(os.Stderr, "The alias config value is deprecated: it is not used by the Kusari platform "+
+			"and will be removed in a future release.")
 	}
 }
 
@@ -166,6 +176,7 @@ func upload() *cobra.Command {
 			uploadSubrepoPath,
 			uploadCommitSha,
 			uploadResultsFile,
+			uploadMapComponents,
 		)
 	}
 
@@ -199,6 +210,10 @@ Examples:
   # CI/CD: Upload with repository traceability metadata
   kusari platform upload --file-path sbom.json --tenant demo \
     --forge github.com --org myorg --repo myrepo --subrepo-path app/frontend
+
+  # CI/CD: Upload, capture results, and auto-map software to components
+  kusari platform upload --file-path sbom.json --tenant demo \
+    --results-file results.json --map-components
 
   # Dev/Testing: Upload using full tenant endpoint (overrides --tenant)
   kusari platform upload --file-path sbom.json --tenant-endpoint https://demo.api.dev.kusari.cloud`,

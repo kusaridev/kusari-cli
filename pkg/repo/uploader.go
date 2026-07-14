@@ -86,9 +86,10 @@ type DocumentWrapper struct {
 }
 
 type sbomSubjectAndURI struct {
-	subject string
-	uri     string
-	docRef  string
+	subject  string
+	uri      string
+	docRef   string
+	filePath string
 }
 
 type softwareIDAndSbomID struct {
@@ -110,14 +111,20 @@ type softwareComponentInfo struct {
 // SbomSubject — the SBOM subject is surfaced as "software name" in the
 // frontend, so both names are provided for customer clarity.
 // DO NOT RENAME THESE - CUSTOMERS RELY ON NAMES FOR POST-INGESTION ACTIONS IN CI/CD
+// (adding new fields is fine - the contract is additive)
 type sbomResult struct {
 	SbomID        *int64  `json:"sbom_id"`
 	SbomSubject   string  `json:"sbom_subject"`
+	FilePath      string  `json:"file_path"`
 	SoftwareID    *int64  `json:"software_id"`
 	SoftwareName  string  `json:"software_name"`
 	ComponentID   *int64  `json:"component_id"`
 	ComponentName *string `json:"component_name"`
 	Error         string  `json:"error,omitempty"`
+
+	// Unexported: not part of the results-file contract. Carries the ssau
+	// docRef so --map-components can derive its fallback name suffix.
+	docRef string
 }
 
 // uploadResults is the envelope written to the --results-file. Wrapped in an
@@ -186,6 +193,7 @@ func Upload(
 	subrepoPath string,
 	commitSha string,
 	resultsFile string,
+	mapComponents bool,
 ) error {
 	// Validate required configuration
 	if filePath == "" {
@@ -194,6 +202,14 @@ func Upload(
 
 	if resultsFile != "" && !wait {
 		return fmt.Errorf("--results-file requires --wait (software IDs are only available after ingestion completes)")
+	}
+
+	if mapComponents && !wait {
+		return fmt.Errorf("--map-components requires --wait (software IDs are only available after ingestion completes)")
+	}
+
+	if mapComponents && isOpenVex {
+		return fmt.Errorf("--map-components applies to SBOM uploads, not OpenVEX documents")
 	}
 
 	if tenantEndpoint == "" {
@@ -458,7 +474,10 @@ func Upload(
 
 			// Report the software ID (and component ID, if the software is already
 			// mapped to a component) for each successfully ingested SBOM.
-			if !isOpenVex {
+			// Only look up IDs when a flag needs them (--results-file or
+			// --map-components): the lookup adds post-ingestion API calls,
+			// so plain uploads skip it entirely.
+			if !isOpenVex && (resultsFile != "" || mapComponents) {
 				var successSSaus []sbomSubjectAndURI
 				for i, r := range results {
 					if r.status == "success" && r.err == nil {
@@ -466,12 +485,26 @@ func Upload(
 					}
 				}
 				if len(successSSaus) > 0 {
-					idResults := lookupSoftwareAndComponentIDs(context.Background(), client, accessToken, tenantEndpoint, successSSaus)
-					printSoftwareAndComponentIDs(idResults)
-					sbomResults = idResults
+					sbomResults = lookupSoftwareAndComponentIDs(context.Background(), client, accessToken, tenantEndpoint, successSSaus)
 				}
 			}
 		}
+	}
+
+	// Ensure every ingested software is mapped to a component. Runs before the
+	// results file is written so the file reflects the post-mapping state; on
+	// a mapping failure the file is still written (with whatever mappings
+	// completed) before the error is returned.
+	var mapErr error
+	if mapComponents && len(sbomResults) > 0 {
+		fmt.Fprintf(os.Stderr, "\nMapping ingested software to components...\n")
+		mapErr = mapSoftwareToComponents(context.Background(), client, accessToken, tenantEndpoint, sbomResults)
+	}
+
+	// Print the software table only after mapping, so the COMPONENT columns
+	// show the final assignments rather than the pre-mapping state.
+	if len(sbomResults) > 0 {
+		printSoftwareAndComponentIDs(sbomResults)
 	}
 
 	// Write the machine-readable results file. Always written when requested —
@@ -482,6 +515,10 @@ func Upload(
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "Results written to %s\n", resultsFile)
+	}
+
+	if mapErr != nil {
+		return fmt.Errorf("component mapping failed: %w", mapErr)
 	}
 
 	if checkBlockedPackages {
@@ -553,7 +590,12 @@ func uploadSingleFile(client *http.Client, accessToken, tenantEndpoint, filePath
 		return sbomSubjectAndURI{}, err
 	}
 
-	return uploadBlob(client, presignedUrl, filePath, blob, isOpenVex, uploadMeta)
+	ssau, err := uploadBlob(client, presignedUrl, filePath, blob, isOpenVex, uploadMeta)
+	if err != nil {
+		return ssau, err
+	}
+	ssau.filePath = filePath
+	return ssau, nil
 }
 
 // getPresignedUrlForUpload utilizes authorized client to obtain the presigned URL to upload to S3
@@ -619,18 +661,31 @@ func uploadBlob(client *http.Client, presignedUrl, filePath string, readFile []b
 	var cdx cdxSBOM
 	if err := json.Unmarshal(readFile, &cdx); err == nil { // inverted error check
 		if cdx.BOMFormat == "CycloneDX" && cdx.Metadata.Component.Name != "" && cdx.SerialNumber != "" {
-			return sbomSubjectAndURI{subject: cdx.Metadata.Component.Name, uri: cdx.SerialNumber, docRef: docRef}, nil
+			return applySubjectNameOverride(sbomSubjectAndURI{subject: cdx.Metadata.Component.Name, uri: cdx.SerialNumber, docRef: docRef}, uploadMeta), nil
 		}
 	}
 
 	var spdx spdxSBOM
 	if err := json.Unmarshal(readFile, &spdx); err == nil { // inverted error check
 		if spdx.SPDXID == "SPDXRef-DOCUMENT" && spdx.Name != "" && spdx.DocumentNamespace != "" {
-			return sbomSubjectAndURI{subject: spdx.Name, uri: spdx.DocumentNamespace + "#DOCUMENT", docRef: docRef}, nil
+			return applySubjectNameOverride(sbomSubjectAndURI{subject: spdx.Name, uri: spdx.DocumentNamespace + "#DOCUMENT", docRef: docRef}, uploadMeta), nil
 		}
 	}
 
 	return sbomSubjectAndURI{docRef: docRef}, nil
+}
+
+// applySubjectNameOverride replaces the file-parsed subject with the
+// sbom_subject_name_override upload metadata value when present. The platform
+// stores the software under the override name, so post-ingestion lookups
+// (software/component IDs, blocked-package checks) must query by it — the
+// file-parsed name would 404 forever. Only applied when a URI was parsed:
+// without one the ID lookup can't match anyway and the entry is skipped.
+func applySubjectNameOverride(ssau sbomSubjectAndURI, uploadMeta map[string]string) sbomSubjectAndURI {
+	if override, ok := uploadMeta["sbom_subject_name_override"]; ok && override != "" && ssau.uri != "" {
+		ssau.subject = override
+	}
+	return ssau
 }
 
 // checkSBOMsForBlockedPackages checks if uploaded SBOMs contain any blocked packages
@@ -643,6 +698,7 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 
 	blocked := make([]bool, len(ssaus))
 	blockedPurls := make([][]string, len(ssaus))
+	progress := newWaitPrinter(os.Stdout)
 
 	for i, ssau := range ssaus {
 		if ssau.subject == "" && ssau.uri == "" {
@@ -651,7 +707,7 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 
 		g.Go(func() error {
 			// Poll for software/SBOM IDs until available
-			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau)
+			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau, progress)
 			if err != nil {
 				return err
 			}
@@ -687,7 +743,9 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	err := g.Wait()
+	progress.close()
+	if err != nil {
 		return false, err
 	}
 
@@ -708,7 +766,7 @@ func checkSBOMsForBlockedPackages(ctx context.Context, client *http.Client, acce
 // SBOM IDs for the given SBOM subject/URI are available (the SBOM has been ingested),
 // or the context is cancelled. A hard 15-minute cap applies even when the caller's
 // context has no deadline.
-func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, ssau sbomSubjectAndURI) (softwareIDAndSbomID, error) {
+func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, tenantEndpoint string, ssau sbomSubjectAndURI, progress *waitPrinter) (softwareIDAndSbomID, error) {
 	var ids softwareIDAndSbomID
 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
@@ -736,7 +794,7 @@ func pollForSoftwareIDs(ctx context.Context, client *http.Client, accessToken, t
 			return ids, nil
 		case 404:
 			res.Body.Close() //nolint:errcheck
-			fmt.Printf("  Waiting for SBOM to be ingested (subject: %s)...\n", ssau.subject)
+			progress.tick()
 			select {
 			case <-ctx.Done():
 				return ids, ctx.Err()
@@ -787,6 +845,7 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 	g.SetLimit(5)
 
 	results := make([]sbomResult, len(ssaus))
+	progress := newWaitPrinter(os.Stdout)
 
 	for i, ssau := range ssaus {
 		if ssau.subject == "" && ssau.uri == "" {
@@ -794,9 +853,9 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 		}
 
 		g.Go(func() error {
-			result := sbomResult{SoftwareName: ssau.subject, SbomSubject: ssau.subject}
+			result := sbomResult{SoftwareName: ssau.subject, SbomSubject: ssau.subject, FilePath: ssau.filePath, docRef: ssau.docRef}
 
-			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau)
+			ids, err := pollForSoftwareIDs(ctx, client, accessToken, tenantEndpoint, ssau, progress)
 			if err != nil {
 				result.Error = err.Error()
 				results[i] = result
@@ -819,6 +878,7 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 	}
 
 	_ = g.Wait() // Goroutines never return errors; individual errors are in results
+	progress.close()
 
 	// Drop entries skipped for having no subject/URI parsed from the document
 	filtered := make([]sbomResult, 0, len(results))
@@ -833,13 +893,17 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 
 // printSoftwareAndComponentIDs prints the looked-up IDs as a table on stdout.
 func printSoftwareAndComponentIDs(results []sbomResult) {
-	fmt.Printf("\nSoftware Information:\n")
+	fmt.Printf("\nIngested Software Summary:\n")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "SBOM SUBJECT/SOFTWARE NAME\tSOFTWARE ID\tCOMPONENT ID\tCOMPONENT NAME")
-	_, _ = fmt.Fprintln(w, "--------------------------\t-----------\t------------\t--------------")
+	_, _ = fmt.Fprintln(w, "SBOM SUBJECT/SOFTWARE NAME\tFILE\tSOFTWARE ID\tCOMPONENT ID\tCOMPONENT NAME")
+	_, _ = fmt.Fprintln(w, "--------------------------\t----\t-----------\t------------\t--------------")
 	for _, r := range results {
+		file := r.FilePath
+		if file == "" {
+			file = "-"
+		}
 		if r.Error != "" {
-			_, _ = fmt.Fprintf(w, "%s\t-\t-\tlookup failed: %s\n", r.SbomSubject, r.Error)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t-\t-\tlookup failed: %s\n", r.SbomSubject, file, r.Error)
 			continue
 		}
 		componentID := "-"
@@ -850,7 +914,7 @@ func printSoftwareAndComponentIDs(results []sbomResult) {
 				componentName = *r.ComponentName
 			}
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", r.SbomSubject, *r.SoftwareID, componentID, componentName)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", r.SbomSubject, file, *r.SoftwareID, componentID, componentName)
 	}
 	_ = w.Flush()
 }
