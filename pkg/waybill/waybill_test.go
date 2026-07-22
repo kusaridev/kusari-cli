@@ -1,7 +1,7 @@
 // Copyright (c) Kusari <https://www.kusari.dev/>
 // SPDX-License-Identifier: MIT
 
-package mikebom
+package waybill
 
 import (
 	"archive/tar"
@@ -44,7 +44,7 @@ func makeTarGz(t *testing.T, entries map[string]string) []byte {
 }
 
 func TestDownloadAndVerify_Happy(t *testing.T) {
-	payload := []byte("hello mikebom")
+	payload := []byte("hello waybill")
 	sum := sha256.Sum256(payload)
 	wantHex := hex.EncodeToString(sum[:])
 
@@ -132,16 +132,16 @@ func TestDownloadAndVerify_ContextCancel(t *testing.T) {
 }
 
 func TestExtractTarGz_Happy(t *testing.T) {
-	payload := []byte("fake mikebom ELF")
+	payload := []byte("fake waybill ELF")
 	archive := makeTarGz(t, map[string]string{
-		"mikebom-v0.1.0/LICENSE":   "MIT",
-		"mikebom-v0.1.0/README.md": "hello",
-		"mikebom-v0.1.0/mikebom":   string(payload),
+		"waybill-v0.1.0/LICENSE":   "MIT",
+		"waybill-v0.1.0/README.md": "hello",
+		"waybill-v0.1.0/waybill":   string(payload),
 	})
 
 	src := filepath.Join(t.TempDir(), "src.tar.gz")
 	require.NoError(t, os.WriteFile(src, archive, 0o644))
-	dest := filepath.Join(t.TempDir(), "mikebom")
+	dest := filepath.Join(t.TempDir(), "waybill")
 
 	require.NoError(t, extractTarGz(src, dest))
 	got, err := os.ReadFile(dest)
@@ -151,32 +151,33 @@ func TestExtractTarGz_Happy(t *testing.T) {
 
 func TestExtractTarGz_MissingBinary(t *testing.T) {
 	archive := makeTarGz(t, map[string]string{
-		"mikebom-v0.1.0/LICENSE":   "MIT",
-		"mikebom-v0.1.0/README.md": "hello",
+		"waybill-v0.1.0/LICENSE":   "MIT",
+		"waybill-v0.1.0/README.md": "hello",
 	})
 
 	src := filepath.Join(t.TempDir(), "src.tar.gz")
 	require.NoError(t, os.WriteFile(src, archive, 0o644))
-	dest := filepath.Join(t.TempDir(), "mikebom")
+	dest := filepath.Join(t.TempDir(), "waybill")
 
 	err := extractTarGz(src, dest)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mikebom binary not found")
+	assert.Contains(t, err.Error(), "waybill binary not found")
 }
 
 func TestExtractTarGz_NotAGzip(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "src.tar.gz")
 	require.NoError(t, os.WriteFile(src, []byte("definitely not gzip"), 0o644))
-	dest := filepath.Join(t.TempDir(), "mikebom")
+	dest := filepath.Join(t.TempDir(), "waybill")
 
 	err := extractTarGz(src, dest)
 	require.Error(t, err)
 }
 
 func TestEnsureAvailable_EnvOverrideHonored(t *testing.T) {
-	tmp := filepath.Join(t.TempDir(), "custom-mikebom")
+	tmp := filepath.Join(t.TempDir(), "custom-waybill")
 	require.NoError(t, os.WriteFile(tmp, []byte("fake"), 0o755))
 	t.Setenv(EnvBinOverride, tmp)
+	t.Setenv(EnvBinOverrideLegacy, "")
 
 	got, err := EnsureAvailable(context.Background())
 	require.NoError(t, err)
@@ -185,10 +186,50 @@ func TestEnsureAvailable_EnvOverrideHonored(t *testing.T) {
 
 func TestEnsureAvailable_EnvOverrideMissingFile(t *testing.T) {
 	t.Setenv(EnvBinOverride, filepath.Join(t.TempDir(), "does-not-exist"))
+	t.Setenv(EnvBinOverrideLegacy, "")
 
 	_, err := EnsureAvailable(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), EnvBinOverride)
+}
+
+// TestEnsureAvailable_LegacyEnvOverrideHonored covers back-compat: the
+// pre-rename KUSARI_MIKEBOM_BIN is still honored when set on its own.
+func TestEnsureAvailable_LegacyEnvOverrideHonored(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "custom-waybill")
+	require.NoError(t, os.WriteFile(tmp, []byte("fake"), 0o755))
+	t.Setenv(EnvBinOverride, "")
+	t.Setenv(EnvBinOverrideLegacy, tmp)
+
+	got, err := EnsureAvailable(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, tmp, got)
+}
+
+// TestEnsureAvailable_NewEnvOverrideWinsOverLegacy documents the precedence
+// when both names are set: the current name takes effect.
+func TestEnsureAvailable_NewEnvOverrideWinsOverLegacy(t *testing.T) {
+	current := filepath.Join(t.TempDir(), "current-waybill")
+	require.NoError(t, os.WriteFile(current, []byte("current"), 0o755))
+	legacy := filepath.Join(t.TempDir(), "legacy-waybill")
+	require.NoError(t, os.WriteFile(legacy, []byte("legacy"), 0o755))
+	t.Setenv(EnvBinOverride, current)
+	t.Setenv(EnvBinOverrideLegacy, legacy)
+
+	got, err := EnsureAvailable(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, current, got)
+}
+
+// TestEnsureAvailable_LegacyEnvOverrideMissingFile names the legacy env var
+// in the error when that is the one supplying the (bad) path.
+func TestEnsureAvailable_LegacyEnvOverrideMissingFile(t *testing.T) {
+	t.Setenv(EnvBinOverride, "")
+	t.Setenv(EnvBinOverrideLegacy, filepath.Join(t.TempDir(), "does-not-exist"))
+
+	_, err := EnsureAvailable(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), EnvBinOverrideLegacy)
 }
 
 func TestEnsureAvailable_NoAutoInstallFailsWithoutCache(t *testing.T) {
@@ -196,6 +237,7 @@ func TestEnsureAvailable_NoAutoInstallFailsWithoutCache(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv(EnvBinOverride, "")
+	t.Setenv(EnvBinOverrideLegacy, "")
 	t.Setenv(EnvNoAutoInstall, "1")
 
 	_, err := EnsureAvailable(context.Background())
@@ -207,12 +249,13 @@ func TestEnsureAvailable_CacheHitSkipsDownload(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv(EnvBinOverride, "")
+	t.Setenv(EnvBinOverrideLegacy, "")
 
 	// Pre-populate the expected cache path so EnsureAvailable returns it
 	// without attempting any network I/O.
 	cacheDir := filepath.Join(home, ".kusari", "bin")
 	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
-	cachePath := filepath.Join(cacheDir, "mikebom-"+Version)
+	cachePath := filepath.Join(cacheDir, "waybill-"+Version)
 	require.NoError(t, os.WriteFile(cachePath, []byte("fake"), 0o755))
 
 	got, err := EnsureAvailable(context.Background())

@@ -103,7 +103,7 @@ func TestDefaultSbomFilename(t *testing.T) {
 		format string
 		want   string
 	}{
-		{"empty matches mikebom's default", "", "project.cdx.json"},
+		{"empty matches waybill's default", "", "project.cdx.json"},
 		{"explicit cyclonedx-json", "cyclonedx-json", "project.cdx.json"},
 		{"spdx-2.3-json", "spdx-2.3-json", "project.spdx.json"},
 		{"spdx-3-json", "spdx-3-json", "project.spdx.json"},
