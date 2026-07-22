@@ -86,7 +86,7 @@ jobs:
           DOCKER_CONTEXT: default
 
       # Generate and upload the image SBOM with kusari-ingest generate mode
-      # (MikeBOM, via kusari-cli). Replaces the previous anchore/sbom-action +
+      # (Waybill, via kusari-cli). Replaces the previous anchore/sbom-action +
       # kusari-ingest file-path pair, and drops the separate cyclonedx-gomod
       # build SBOM. root-name + no-root-purl keep pkg_type empty (matching the
       # prior Syft image rows) so this updates the existing software instead of
