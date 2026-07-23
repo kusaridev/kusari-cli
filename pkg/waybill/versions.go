@@ -6,7 +6,7 @@
 package waybill
 
 const (
-	Version = "0.1.0-alpha.66"
+	Version = "0.1.0-alpha.68"
 	Repo    = "kusari-oss/waybill"
 )
 
@@ -17,15 +17,15 @@ const (
 // currently publish that target.
 var assets = map[string]asset{
 	"darwin/arm64": {
-		"waybill-v0.1.0-alpha.66-aarch64-apple-darwin.tar.gz",
-		"51d363728434edeae4b913dfce19a570e3cb3b128777dd97f6e15340cc48e176",
+		"waybill-v0.1.0-alpha.68-aarch64-apple-darwin.tar.gz",
+		"b4efbdb0bbe178d97d148e60fce3d1a2f677e290b6b796ff5dc85d9cc9f6a36d",
 	},
 	"linux/amd64": {
-		"waybill-v0.1.0-alpha.66-x86_64-unknown-linux-gnu.tar.gz",
-		"9d791abec6a68967d889d247d27b68a825f1d6dcbf5cf918d62064692beb1c04",
+		"waybill-v0.1.0-alpha.68-x86_64-unknown-linux-gnu.tar.gz",
+		"49831ef340d1dd170a2c593ee75f5515213dd83aba9558e4da734e95b6847fcc",
 	},
 	"linux/arm64": {
-		"waybill-v0.1.0-alpha.66-aarch64-unknown-linux-gnu.tar.gz",
-		"f6b277d3962cdbee7d89d0ac9d31ce5614bb14b1d6aa3c7bc2ff76816498ac21",
+		"waybill-v0.1.0-alpha.68-aarch64-unknown-linux-gnu.tar.gz",
+		"4b603667bd9df3648a872fb087417541bbe68c34b0a27ad31379a3292995aeac",
 	},
 }
