@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -92,7 +92,7 @@ jobs:
       # prior Syft image rows) so this updates the existing software instead of
       # forking a new `generic` one; root-version uses the release tag, matching
       # the version Syft derived from the image tag.
-      - uses: kusaridev/kusari-ingest@cfe75b480f8e5bf11f4af9704da061ca026fb93f #v4.9.0
+      - uses: kusaridev/kusari-ingest@a0dd2cd31c7d8abede45962c05ebe2fd8c5243ac #v4.10.0
         name: Kusari image SBOM (generate + upload)
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
@@ -144,7 +144,7 @@ jobs:
   #       with:
   #         persist-credentials: false
   #     - name: Login to GitHub Container Registry
-  #       uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+  #       uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
   #       with:
   #         registry: ghcr.io
   #         username: ${{ github.actor }}
