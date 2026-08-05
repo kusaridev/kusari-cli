@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
 	l "github.com/kusaridev/kusari-cli/v2/pkg/login"
 	"github.com/kusaridev/kusari-cli/v2/pkg/port"
 	"github.com/spf13/cobra"
@@ -20,7 +21,7 @@ var (
 )
 
 func init() {
-	logincmd.Flags().StringVarP(&authEndpoint, "auth-endpoint", "p", "https://auth.us.kusari.cloud/", "authentication endpoint URL")
+	logincmd.Flags().StringVarP(&authEndpoint, "auth-endpoint", "p", constants.DefaultAuthURL, "authentication endpoint URL")
 	logincmd.Flags().StringVarP(&clientId, "client-id", "c", "4lnk6jccl3hc4lkcudai5lt36u", "OAuth2 client ID")
 	logincmd.Flags().StringVarP(&clientSecret, "client-secret", "s", "", "OAuth client secret ")
 	logincmd.Flags().BoolVar(&useSso, "use-sso", false, "Use SSO (SAML) authentication")

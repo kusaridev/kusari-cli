@@ -9,4 +9,29 @@ const (
 
 	// DefaultConsoleURL is the default Kusari console URL
 	DefaultConsoleURL = "https://console.us.kusari.cloud/"
+
+	// DefaultAuthURL is the default Kusari authentication endpoint URL
+	DefaultAuthURL = "https://auth.us.kusari.cloud/"
+)
+
+// Upload bucket hostnames, used only by `kusari connectivity check`.
+//
+// Uploads never derive a URL from these: the real host is issued per-request by
+// the platform presign response (pkg/repo/upload.go). They are a second source
+// of truth, so update them if platform bucket naming changes.
+//
+// Source: iac/app-code/preflight/kusari-preflight-test.sh
+const (
+	// SBOMUploadHostPattern takes env, s3 region, tenant, s3 region.
+	SBOMUploadHostPattern = "kusari-guac-ingest-%s-%s-%s.s3.%s.amazonaws.com"
+
+	// InspectorUploadHostPattern takes env, s3 region, s3 region.
+	InspectorUploadHostPattern = "inspector-bundle-upload-%s-%s.s3.%s.amazonaws.com"
+
+	DefaultUploadEnv = "prod"
+
+	// DefaultS3Region: non-us regions need a real mapping here, not string
+	// interpolation. The preflight script's "${REGION}-east-1" yields the
+	// nonexistent "eu-east-1".
+	DefaultS3Region = "us-east-1"
 )
