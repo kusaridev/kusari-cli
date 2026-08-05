@@ -62,7 +62,7 @@ environment variables.`,
 			}
 
 			targets := connectivity.DefaultTargets(endpoints)
-			allowlist := connectivity.AllowlistHosts(targets)
+			allowlist := connectivity.AllowlistHosts(endpoints, targets)
 			proxyEnv := connectivity.ProxyEnvConfig(os.Getenv)
 
 			printCheckHeader(proxyEnv)
@@ -72,11 +72,6 @@ environment variables.`,
 			})
 
 			printResults(results)
-			if endpoints.Tenant == "" {
-				fmt.Println("Skipped: the tenant-specific SBOM upload bucket, because no tenant is")
-				fmt.Println("  configured. Run `kusari auth login`, or set KUSARI_TENANT, to include it.")
-				fmt.Println()
-			}
 			printFailures(results)
 			printAllowlist(allowlist, proxyEnv)
 
@@ -276,6 +271,9 @@ func printAllowlist(hosts []connectivity.AllowlistHost, proxyEnv connectivity.Pr
 	for _, h := range hosts {
 		fmt.Printf("  • %s\n", h.Host)
 		fmt.Printf("    Purpose: %s\n", h.Purpose)
+		if strings.Contains(h.Host, "<tenant>") {
+			fmt.Printf("    Replace <tenant> with your tenant name (`kusari auth login` sets it).\n")
+		}
 		fmt.Println()
 	}
 	if proxyEnv.HTTP != "" || proxyEnv.HTTPS != "" {

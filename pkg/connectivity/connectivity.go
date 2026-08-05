@@ -104,11 +104,15 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// DefaultTargets returns the endpoints to probe, in display order. The SBOM
-// upload bucket is tenant-specific, so it is omitted when no tenant is known
-// rather than guessed at.
+// DefaultTargets returns the endpoints to probe, in display order.
+//
+// Only one S3 bucket hostname is probed: S3 uses wildcard DNS and serves the
+// same *.s3.<region>.amazonaws.com certificate for every bucket, so DNS, TCP,
+// TLS and proxy egress verified against one bucket hold for all of them. The
+// tenant-specific SBOM bucket still appears in AllowlistHosts for proxies that
+// filter by exact hostname.
 func DefaultTargets(e Endpoints) []Target {
-	targets := []Target{
+	return []Target{
 		{
 			Name:    "auth",
 			Purpose: "Authentication service (OAuth2)",
@@ -124,32 +128,34 @@ func DefaultTargets(e Endpoints) []Target {
 			Purpose: "Console UI (web application)",
 			URL:     joinURL(e.ConsoleURL, ""),
 		},
+		{
+			Name:    "upload",
+			Purpose: "Artifact upload (AWS S3)",
+			URL: "https://" + fmt.Sprintf(constants.InspectorUploadHostPattern,
+				constants.DefaultUploadEnv, constants.DefaultS3Region, constants.DefaultS3Region),
+		},
 	}
-
-	if e.Tenant != "" {
-		targets = append(targets, Target{
-			Name:    "upload-sbom",
-			Purpose: "SBOM artifact upload (AWS S3)",
-			URL: "https://" + fmt.Sprintf(constants.SBOMUploadHostPattern,
-				constants.DefaultUploadEnv, constants.DefaultS3Region, e.Tenant, constants.DefaultS3Region),
-		})
-	}
-
-	return append(targets, Target{
-		Name:    "upload-scan",
-		Purpose: "Repository scan bundle upload (AWS S3)",
-		URL: "https://" + fmt.Sprintf(constants.InspectorUploadHostPattern,
-			constants.DefaultUploadEnv, constants.DefaultS3Region, constants.DefaultS3Region),
-	})
 }
 
-// AllowlistHosts returns the hostnames behind targets, for the network team.
-func AllowlistHosts(targets []Target) []AllowlistHost {
-	hosts := make([]AllowlistHost, 0, len(targets))
+// AllowlistHosts returns every hostname to allow through a firewall or proxy:
+// the probed targets plus the tenant-specific SBOM upload bucket, which is not
+// probed (see DefaultTargets) but still needed by proxies that filter on exact
+// hostnames. When no tenant is known, a <tenant> placeholder is rendered.
+func AllowlistHosts(e Endpoints, targets []Target) []AllowlistHost {
+	hosts := make([]AllowlistHost, 0, len(targets)+1)
 	for _, t := range targets {
 		hosts = append(hosts, AllowlistHost{Host: hostOf(t.URL), Purpose: t.Purpose})
 	}
-	return hosts
+
+	tenant := e.Tenant
+	if tenant == "" {
+		tenant = "<tenant>"
+	}
+	return append(hosts, AllowlistHost{
+		Host: fmt.Sprintf(constants.SBOMUploadHostPattern,
+			constants.DefaultUploadEnv, constants.DefaultS3Region, tenant, constants.DefaultS3Region),
+		Purpose: "SBOM artifact upload (AWS S3)",
+	})
 }
 
 // Check probes every target concurrently and returns results in target order.
