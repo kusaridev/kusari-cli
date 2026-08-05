@@ -10,13 +10,14 @@ import (
 	"strings"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
+	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
 	"github.com/kusaridev/kusari-cli/v2/pkg/login"
 	"github.com/kusaridev/kusari-cli/v2/pkg/port"
 )
 
 const (
 	// Default auth configuration (matches CLI defaults)
-	defaultAuthEndpoint = "https://auth.us.kusari.cloud/"
+	defaultAuthEndpoint = constants.DefaultAuthURL
 	defaultClientID     = "4lnk6jccl3hc4lkcudai5lt36u"
 )
 

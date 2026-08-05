@@ -142,6 +142,7 @@ func Execute() error {
 	rootCmd.AddCommand(Platform())
 	rootCmd.AddCommand(KusariConfiguration())
 	rootCmd.AddCommand(AI())
+	rootCmd.AddCommand(Connectivity())
 
 	return rootCmd.Execute()
 }
