@@ -48,8 +48,8 @@ KUSARI_PLATFORM_URL, KUSARI_CONSOLE_URL, KUSARI_AUTH_ENDPOINT and KUSARI_TENANT
 environment variables.`,
 		Example: `  kusari connectivity check
   kusari conn check --timeout 30s --verbose
-  kusari preflight check --report kusari-preflight.json
-  HTTPS_PROXY=http://proxy.corp:8080 kusari net check`,
+  kusari connectivity check --report kusari-preflight.json
+  HTTPS_PROXY=http://proxy.corp:8080 kusari conn check`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true

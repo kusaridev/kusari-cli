@@ -171,7 +171,7 @@ func TestConnectivityCommandShape(t *testing.T) {
 	cmd := Connectivity()
 
 	assert.Equal(t, "connectivity", cmd.Name())
-	assert.ElementsMatch(t, []string{"conn", "net", "preflight"}, cmd.Aliases)
+	assert.ElementsMatch(t, []string{"conn"}, cmd.Aliases)
 
 	sub := cmd.Commands()
 	require.Len(t, sub, 1)

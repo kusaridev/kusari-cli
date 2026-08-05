@@ -10,7 +10,7 @@ import (
 func Connectivity() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "connectivity",
-		Aliases: []string{"conn", "net", "preflight"},
+		Aliases: []string{"conn"},
 		Short:   "Diagnose network connectivity to Kusari endpoints",
 		Long:    "Diagnose DNS, TCP, TLS and HTTP proxy connectivity between this machine and the Kusari services the CLI uses",
 	}
