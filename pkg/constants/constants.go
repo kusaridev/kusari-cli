@@ -19,8 +19,6 @@ const (
 // Uploads never derive a URL from these: the real host is issued per-request by
 // the platform presign response (pkg/repo/upload.go). They are a second source
 // of truth, so update them if platform bucket naming changes.
-//
-// Source: iac/app-code/preflight/kusari-preflight-test.sh
 const (
 	// SBOMUploadHostPattern takes env, s3 region, tenant, s3 region.
 	SBOMUploadHostPattern = "kusari-guac-ingest-%s-%s-%s.s3.%s.amazonaws.com"
@@ -30,8 +28,7 @@ const (
 
 	DefaultUploadEnv = "prod"
 
-	// DefaultS3Region: non-us regions need a real mapping here, not string
-	// interpolation. The preflight script's "${REGION}-east-1" yields the
-	// nonexistent "eu-east-1".
+	// DefaultS3Region: non-us Kusari regions need a real region mapping here,
+	// not string interpolation from the region name.
 	DefaultS3Region = "us-east-1"
 )

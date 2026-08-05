@@ -13,8 +13,7 @@ import (
 	"time"
 )
 
-// Report is the machine-readable result for a support ticket. The shape mirrors
-// iac/app-code/preflight/kusari-preflight-test.sh, plus the failure category.
+// Report is the machine-readable result for a support ticket.
 //
 // It is written expecting to leave the machine, so it discloses as little about
 // the environment as the diagnostics allow: no hostname, no proxy credentials or
