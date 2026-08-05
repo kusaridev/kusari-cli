@@ -95,57 +95,6 @@ func TestConnectivityDoesNotStealAuthEndpointBinding(t *testing.T) {
 	assert.Equal(t, "https://auth.eu.kusari.cloud/", authEndpointFromConfig())
 }
 
-// Same hazard for "tenant" and "tenant-endpoint", which platform.go owns.
-func TestConnectivityDoesNotStealTenantBinding(t *testing.T) {
-	resetViper(t)
-
-	fresh := &cobra.Command{Use: "platform"}
-	fresh.PersistentFlags().String("tenant", "", "Tenant name")
-	require.NoError(t, viper.BindPFlag("tenant", fresh.PersistentFlags().Lookup("tenant")))
-	require.NoError(t, fresh.PersistentFlags().Set("tenant", "acme"))
-
-	assert.Equal(t, "acme", viper.GetString("tenant"))
-	assert.Equal(t, "acme", tenantFromConfig())
-}
-
-func TestTenantFromConfig(t *testing.T) {
-	t.Run("reads the tenant key", func(t *testing.T) {
-		resetViper(t)
-		viper.Set("tenant", "acme")
-		assert.Equal(t, "acme", tenantFromConfig())
-	})
-
-	t.Run("trims whitespace", func(t *testing.T) {
-		resetViper(t)
-		viper.Set("tenant", "  acme  ")
-		assert.Equal(t, "acme", tenantFromConfig())
-	})
-
-	// platform.go treats --tenant-endpoint as highest precedence, so a user who
-	// sets only that must still get the tenant-specific bucket probed.
-	t.Run("tenant-endpoint wins over tenant", func(t *testing.T) {
-		resetViper(t)
-		viper.Set("tenant", "acme")
-		viper.Set("tenant-endpoint", "https://demo.api.dev.kusari.cloud")
-		assert.Equal(t, "demo", tenantFromConfig())
-	})
-}
-
-func TestTenantFromEndpoint(t *testing.T) {
-	cases := map[string]string{
-		"https://demo.api.dev.kusari.cloud":     "demo",
-		"https://demo.api.us.kusari.cloud/":     "demo",
-		"demo.api.us.kusari.cloud":              "demo",
-		"https://demo.api.us.kusari.cloud:8443": "demo",
-		// No dot means no tenant label to take; guessing would be worse.
-		"https://localhost": "",
-		"":                  "",
-	}
-	for in, want := range cases {
-		assert.Equal(t, want, tenantFromEndpoint(in), "input %q", in)
-	}
-}
-
 // The connectivity command must not register any flag whose name collides with
 // a key another command has already bound to viper.
 func TestConnectivityCheckFlags(t *testing.T) {

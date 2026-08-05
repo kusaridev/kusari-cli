@@ -35,6 +35,9 @@ type Target struct {
 	Name    string
 	Purpose string
 	URL     string
+	// AllowAs, when set, replaces the URL's hostname in the allowlist output --
+	// e.g. a wildcard covering every bucket on a shared S3 endpoint.
+	AllowAs string
 }
 
 // TLSInfo records what the peer presented. Captured on success too: it reveals
@@ -78,7 +81,6 @@ type Endpoints struct {
 	AuthURL     string
 	PlatformURL string
 	ConsoleURL  string
-	Tenant      string
 }
 
 // Options configures a Check run.
@@ -109,8 +111,8 @@ func (o Options) withDefaults() Options {
 // Only one S3 bucket hostname is probed: S3 uses wildcard DNS and serves the
 // same *.s3.<region>.amazonaws.com certificate for every bucket, so DNS, TCP,
 // TLS and proxy egress verified against one bucket hold for all of them. The
-// tenant-specific SBOM bucket still appears in AllowlistHosts for proxies that
-// filter by exact hostname.
+// allowlist advertises the wildcard so proxy rules cover every upload bucket,
+// including the tenant-specific ones.
 func DefaultTargets(e Endpoints) []Target {
 	return []Target{
 		{
@@ -130,32 +132,25 @@ func DefaultTargets(e Endpoints) []Target {
 		},
 		{
 			Name:    "upload",
-			Purpose: "Artifact upload (AWS S3)",
+			Purpose: "Artifact uploads (AWS S3)",
 			URL: "https://" + fmt.Sprintf(constants.InspectorUploadHostPattern,
 				constants.DefaultUploadEnv, constants.DefaultS3Region, constants.DefaultS3Region),
+			AllowAs: "*.s3." + constants.DefaultS3Region + ".amazonaws.com",
 		},
 	}
 }
 
-// AllowlistHosts returns every hostname to allow through a firewall or proxy:
-// the probed targets plus the tenant-specific SBOM upload bucket, which is not
-// probed (see DefaultTargets) but still needed by proxies that filter on exact
-// hostnames. When no tenant is known, a <tenant> placeholder is rendered.
-func AllowlistHosts(e Endpoints, targets []Target) []AllowlistHost {
-	hosts := make([]AllowlistHost, 0, len(targets)+1)
+// AllowlistHosts returns the hostnames to allow through a firewall or proxy.
+func AllowlistHosts(targets []Target) []AllowlistHost {
+	hosts := make([]AllowlistHost, 0, len(targets))
 	for _, t := range targets {
-		hosts = append(hosts, AllowlistHost{Host: hostOf(t.URL), Purpose: t.Purpose})
+		host := t.AllowAs
+		if host == "" {
+			host = hostOf(t.URL)
+		}
+		hosts = append(hosts, AllowlistHost{Host: host, Purpose: t.Purpose})
 	}
-
-	tenant := e.Tenant
-	if tenant == "" {
-		tenant = "<tenant>"
-	}
-	return append(hosts, AllowlistHost{
-		Host: fmt.Sprintf(constants.SBOMUploadHostPattern,
-			constants.DefaultUploadEnv, constants.DefaultS3Region, tenant, constants.DefaultS3Region),
-		Purpose: "SBOM artifact upload (AWS S3)",
-	})
+	return hosts
 }
 
 // Check probes every target concurrently and returns results in target order.

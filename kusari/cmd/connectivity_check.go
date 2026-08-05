@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
 	"github.com/kusaridev/kusari-cli/v2/pkg/connectivity"
 	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
 	"github.com/spf13/cobra"
@@ -58,11 +57,10 @@ environment variables.`,
 				AuthURL:     authEndpointFromConfig(),
 				PlatformURL: platformUrl,
 				ConsoleURL:  consoleUrl,
-				Tenant:      tenantFromConfig(),
 			}
 
 			targets := connectivity.DefaultTargets(endpoints)
-			allowlist := connectivity.AllowlistHosts(endpoints, targets)
+			allowlist := connectivity.AllowlistHosts(targets)
 			proxyEnv := connectivity.ProxyEnvConfig(os.Getenv)
 
 			printCheckHeader(proxyEnv)
@@ -112,41 +110,6 @@ func authEndpointFromConfig() string {
 		return v
 	}
 	return constants.DefaultAuthURL
-}
-
-// tenantFromConfig resolves the tenant for the SBOM upload bucket hostname,
-// mirroring platform.go's precedence without re-binding those viper keys.
-// Returns "" when no tenant is known, in which case the tenant-specific bucket
-// is not probed rather than guessed at.
-func tenantFromConfig() string {
-	if v := strings.TrimSpace(viper.GetString("tenant-endpoint")); v != "" {
-		return tenantFromEndpoint(v)
-	}
-	if v := strings.TrimSpace(viper.GetString("tenant")); v != "" {
-		return v
-	}
-	workspace, err := auth.LoadWorkspace(platformUrl, "")
-	if err != nil {
-		if verbose {
-			fmt.Fprintf(os.Stderr, "Note: could not load workspace configuration: %v\n", err)
-		}
-		return ""
-	}
-	return workspace.Tenant
-}
-
-// tenantFromEndpoint takes the first hostname label, as pkg/repo/uploader.go
-// does when recovering a tenant name from an endpoint.
-func tenantFromEndpoint(endpoint string) string {
-	host := endpoint
-	if u, err := url.Parse(endpoint); err == nil && u.Host != "" {
-		host = u.Hostname()
-	}
-	label, _, found := strings.Cut(host, ".")
-	if !found {
-		return ""
-	}
-	return label
 }
 
 func printCheckHeader(proxyEnv connectivity.ProxyConfig) {
@@ -271,9 +234,6 @@ func printAllowlist(hosts []connectivity.AllowlistHost, proxyEnv connectivity.Pr
 	for _, h := range hosts {
 		fmt.Printf("  • %s\n", h.Host)
 		fmt.Printf("    Purpose: %s\n", h.Purpose)
-		if strings.Contains(h.Host, "<tenant>") {
-			fmt.Printf("    Replace <tenant> with your tenant name (`kusari auth login` sets it).\n")
-		}
 		fmt.Println()
 	}
 	if proxyEnv.HTTP != "" || proxyEnv.HTTPS != "" {

@@ -215,7 +215,6 @@ func TestDefaultTargets(t *testing.T) {
 		AuthURL:     "https://auth.us.kusari.cloud",
 		PlatformURL: "https://platform.api.us.kusari.cloud",
 		ConsoleURL:  "https://console.us.kusari.cloud",
-		Tenant:      "acme",
 	})
 
 	require.Len(t, targets, 4)
@@ -228,11 +227,10 @@ func TestDefaultTargets(t *testing.T) {
 	assert.Equal(t, "upload", targets[3].Name)
 	assert.Equal(t, "https://inspector-bundle-upload-prod-us-east-1.s3.us-east-1.amazonaws.com", targets[3].URL)
 
-	// One S3 probe is representative (wildcard DNS, shared certificate), so the
-	// tenant-derived SBOM bucket must never be probed.
+	// One S3 probe is representative (wildcard DNS, shared certificate); no
+	// tenant-derived hostname may ever be built or probed.
 	for _, tg := range targets {
 		assert.NotContains(t, tg.URL, "guac-ingest")
-		assert.NotContains(t, tg.URL, "acme")
 	}
 
 	// Trailing slashes present must produce the same URLs.
@@ -240,7 +238,6 @@ func TestDefaultTargets(t *testing.T) {
 		AuthURL:     "https://auth.us.kusari.cloud/",
 		PlatformURL: "https://platform.api.us.kusari.cloud/",
 		ConsoleURL:  "https://console.us.kusari.cloud/",
-		Tenant:      "acme",
 	})
 	assert.Equal(t, targets, withSlashes)
 }
@@ -250,31 +247,17 @@ func TestAllowlistHosts(t *testing.T) {
 		AuthURL:     constants.DefaultAuthURL,
 		PlatformURL: constants.DefaultPlatformURL,
 		ConsoleURL:  constants.DefaultConsoleURL,
-		Tenant:      "acme",
 	}
-	hosts := AllowlistHosts(e, DefaultTargets(e))
+	hosts := AllowlistHosts(DefaultTargets(e))
 
-	require.Len(t, hosts, 5)
+	require.Len(t, hosts, 4)
 	for _, h := range hosts {
 		assert.NotEmpty(t, h.Purpose)
 		assert.NotContains(t, h.Host, "/", "allowlist entries are hostnames, not URLs")
 	}
-	assert.Equal(t, "inspector-bundle-upload-prod-us-east-1.s3.us-east-1.amazonaws.com", hosts[3].Host)
-	assert.Equal(t, "kusari-guac-ingest-prod-us-east-1-acme.s3.us-east-1.amazonaws.com", hosts[4].Host)
-}
-
-// Without a tenant the allowlist still shows the SBOM bucket, with an explicit
-// placeholder rather than a guessed hostname.
-func TestAllowlistHostsUsesPlaceholderWithoutTenant(t *testing.T) {
-	e := Endpoints{
-		AuthURL:     constants.DefaultAuthURL,
-		PlatformURL: constants.DefaultPlatformURL,
-		ConsoleURL:  constants.DefaultConsoleURL,
-	}
-	hosts := AllowlistHosts(e, DefaultTargets(e))
-
-	require.Len(t, hosts, 5)
-	assert.Equal(t, "kusari-guac-ingest-prod-us-east-1-<tenant>.s3.us-east-1.amazonaws.com", hosts[4].Host)
+	// The upload entry is the S3 wildcard, covering every bucket -- including
+	// tenant-specific ones -- without naming any of them.
+	assert.Equal(t, "*.s3.us-east-1.amazonaws.com", hosts[3].Host)
 }
 
 func TestOptionsDefaults(t *testing.T) {

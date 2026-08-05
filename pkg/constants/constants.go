@@ -14,15 +14,12 @@ const (
 	DefaultAuthURL = "https://auth.us.kusari.cloud/"
 )
 
-// Upload bucket hostnames, used only by `kusari connectivity check`.
+// Upload endpoint constants, used only by `kusari connectivity check`.
 //
 // Uploads never derive a URL from these: the real host is issued per-request by
 // the platform presign response (pkg/repo/upload.go). They are a second source
 // of truth, so update them if platform bucket naming changes.
 const (
-	// SBOMUploadHostPattern takes env, s3 region, tenant, s3 region.
-	SBOMUploadHostPattern = "kusari-guac-ingest-%s-%s-%s.s3.%s.amazonaws.com"
-
 	// InspectorUploadHostPattern takes env, s3 region, s3 region.
 	InspectorUploadHostPattern = "inspector-bundle-upload-%s-%s.s3.%s.amazonaws.com"
 
