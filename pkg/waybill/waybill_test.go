@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -353,10 +354,24 @@ func TestEnsureAvailable_LegacyEnvOverrideMissingFile(t *testing.T) {
 	assert.Contains(t, err.Error(), EnvBinOverrideLegacy)
 }
 
-func TestEnsureAvailable_NoAutoInstallFailsWithoutCache(t *testing.T) {
-	// Force a fresh HOME so the cache lookup misses.
+// useTempHome points os.UserHomeDir at a fresh directory for the duration of
+// the test, so the cache lookup never sees the real ~/.kusari.
+//
+// Setting only HOME is not enough: os.UserHomeDir reads USERPROFILE on Windows.
+// With a HOME-only override these tests fall through to the developer's (or CI
+// runner's) actual home, which for the cache-hit test meant a real 23 MB
+// download from GitHub on every run.
+func useTempHome(t *testing.T) string {
+	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	return home
+}
+
+func TestEnsureAvailable_NoAutoInstallFailsWithoutCache(t *testing.T) {
+	// Force a fresh home so the cache lookup misses.
+	useTempHome(t)
 	t.Setenv(EnvBinOverride, "")
 	t.Setenv(EnvBinOverrideLegacy, "")
 	t.Setenv(EnvNoAutoInstall, "1")
@@ -367,19 +382,41 @@ func TestEnsureAvailable_NoAutoInstallFailsWithoutCache(t *testing.T) {
 }
 
 func TestEnsureAvailable_CacheHitSkipsDownload(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	useTempHome(t)
 	t.Setenv(EnvBinOverride, "")
 	t.Setenv(EnvBinOverrideLegacy, "")
+	// EnsureAvailable consults the cache before this gate, so a hit still
+	// succeeds while a miss fails fast instead of downloading. Without it a
+	// broken cache lookup turns this test into a silent network fetch.
+	t.Setenv(EnvNoAutoInstall, "1")
 
-	// Pre-populate the expected cache path so EnsureAvailable returns it
-	// without attempting any network I/O.
-	cacheDir := filepath.Join(home, ".kusari", "bin")
-	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
-	cachePath := filepath.Join(cacheDir, "waybill-"+Version)
+	// Pre-populate the cache at the path the production code computes, so the
+	// test cannot drift from the platform-specific naming (waybill-<v>.exe on
+	// Windows) the way a hand-built path did.
+	cachePath, err := cachedBinaryPath()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0o755))
 	require.NoError(t, os.WriteFile(cachePath, []byte("fake"), 0o755))
 
 	got, err := EnsureAvailable(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, cachePath, got)
+}
+
+// TestCachedBinaryPath_PlatformSuffix pins the naming that the cache-hit test
+// now derives rather than asserts. Windows refuses to execute a file without an
+// executable extension, so the suffix is required there and must not appear
+// elsewhere.
+func TestCachedBinaryPath_PlatformSuffix(t *testing.T) {
+	home := useTempHome(t)
+
+	got, err := cachedBinaryPath()
+	require.NoError(t, err)
+
+	assert.Equal(t, filepath.Join(home, ".kusari", "bin"), filepath.Dir(got))
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, "waybill-"+Version+".exe", filepath.Base(got))
+	} else {
+		assert.Equal(t, "waybill-"+Version, filepath.Base(got))
+	}
 }

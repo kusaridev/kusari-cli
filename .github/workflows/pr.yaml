@@ -135,7 +135,20 @@ jobs:
         # reaches the auth gate rather than dying earlier on a Windows-specific
         # filesystem or shell-out failure -- the original bug report was a crash
         # in this command before it ever got this far.
-        $out = .\kusari.exe repo scan "$repo" HEAD 2>&1 | Out-String
+        #
+        # Start-Process with redirected streams rather than "2>&1": PowerShell
+        # turns a native command's stderr into ErrorRecords, which render as a
+        # red NativeCommandError block even when the step goes on to succeed.
+        # The CLI writes its diagnostics to stderr, so that block appeared on
+        # every passing run and read like a failure.
+        $stdout = Join-Path $env:RUNNER_TEMP "scan.out"
+        $stderr = Join-Path $env:RUNNER_TEMP "scan.err"
+        $proc = Start-Process -FilePath ".\kusari.exe" `
+          -ArgumentList @("repo", "scan", $repo, "HEAD") `
+          -NoNewWindow -Wait -PassThru `
+          -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $out = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
+        Write-Output "kusari repo scan exited $($proc.ExitCode)"
         Write-Output $out
         if ($out -match "failed to package directory" -or
             $out -match "Cannot create a file when that file already exists" -or
@@ -200,9 +213,20 @@ jobs:
       shell: powershell
       run: |
         $ErrorActionPreference = "Continue"
-        $out = .\kusari.exe connectivity check --timeout 10s --platform-url http://127.0.0.1:1 2>&1 | Out-String
-        Write-Output $out
+        # Redirected via Start-Process for the same reason as the scan step: a
+        # deliberately failing probe writes to stderr, and merging that with
+        # "2>&1" would render a red NativeCommandError block on a passing step.
+        $stdout = Join-Path $env:RUNNER_TEMP "refused.out"
+        $stderr = Join-Path $env:RUNNER_TEMP "refused.err"
+        $proc = Start-Process -FilePath ".\kusari.exe" `
+          -ArgumentList @("connectivity", "check", "--timeout", "10s",
+                          "--platform-url", "http://127.0.0.1:1") `
+          -NoNewWindow -Wait -PassThru `
+          -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $out = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
         # A failing probe makes the command exit 1; that is expected here.
+        Write-Output "connectivity check exited $($proc.ExitCode)"
+        Write-Output $out
         if ($out -notmatch "actively refused the connection") {
           throw "a refused connection was not classified as one on Windows; got: $out"
         }
