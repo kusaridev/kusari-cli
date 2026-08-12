@@ -196,10 +196,23 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 		os.Exit(1)
 	}()
 
+	// The scan runs git from the repo root, so the process working directory
+	// has to move. Restore it on the way out: Scan is also called in-process by
+	// the MCP server (kusari ai serve), which is long-lived, so leaving the
+	// working directory moved would make every later relative path resolve
+	// against whichever repo was scanned last. On Windows it additionally pins
+	// that directory open, so nothing can delete it while the process lives.
+	previousDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
 	if err := os.Chdir(dir); err != nil {
 		return fmt.Errorf("failed to change directory: %w", err)
 	}
 	defer func() {
+		// Restore before removing the temp tree so neither is the working
+		// directory when it is deleted.
+		_ = os.Chdir(previousDir)
 		cleanupWorkingDirectory(tempDir)
 	}()
 

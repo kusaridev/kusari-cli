@@ -41,8 +41,17 @@ jobs:
           go-version-file: 'go.mod'
           cache: false
 
+      # ko is pinned rather than left at the default "latest-release": it builds
+      # and publishes the release images, so it belongs under the same pinning
+      # discipline as every action above. Pinning also drops the per-run call to
+      # api.github.com that resolves the newest tag.
+      #
+      # Dependabot does not update action inputs, so bump this by hand alongside
+      # the action SHA.
       - name: Setup ko
         uses: ko-build/setup-ko@61b4d1d396f5b2e7d6bb6fefdce3dc38d1a13445 # v0.10
+        with:
+          version: v0.19.1
 
       - name: Build and publish image with ko (non-release)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}

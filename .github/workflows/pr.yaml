@@ -36,20 +36,24 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        persist-credentials: false
-    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-      with:
-        go-version-file: 'go.mod'
-    # The repo tests shell out to git; make its behavior identical on the
-    # Windows runner, which defaults to autocrlf=true.
+    # Runs BEFORE checkout on purpose. The Windows runner defaults to
+    # core.autocrlf=true, which rewrites tracked files to CRLF as they are
+    # checked out; configuring it afterwards would be too late to affect the
+    # working tree the tests read. .gitattributes pins this too -- this is the
+    # belt to its braces, and also supplies the identity the tests need to
+    # create commits.
     - name: Configure git
       run: |
         git config --global core.autocrlf false
         git config --global init.defaultBranch main
         git config --global user.email "ci@example.com"
         git config --global user.name "CI"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: 'go.mod'
     - run: go test -v ./...
     - run: go vet ./...
   windows-e2e:
@@ -143,13 +147,24 @@ jobs:
         # every passing run and read like a failure.
         $stdout = Join-Path $env:RUNNER_TEMP "scan.out"
         $stderr = Join-Path $env:RUNNER_TEMP "scan.err"
+        # -ArgumentList joins an array with spaces and quotes nothing, so the
+        # repo path -- which contains spaces by design here -- has to carry its
+        # own quotes or the CLI receives it as several arguments.
+        $quotedRepo = '"' + $repo + '"'
         $proc = Start-Process -FilePath ".\kusari.exe" `
-          -ArgumentList @("repo", "scan", $repo, "HEAD") `
+          -ArgumentList @("repo", "scan", $quotedRepo, "HEAD") `
           -NoNewWindow -Wait -PassThru `
           -RedirectStandardOutput $stdout -RedirectStandardError $stderr
         $out = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
         Write-Output "kusari repo scan exited $($proc.ExitCode)"
         Write-Output $out
+
+        # Distinguish "we invoked it wrong" from "the CLI is broken", so a
+        # quoting mistake in this workflow cannot masquerade as a product bug.
+        if ($out -match "accepts \d+ arg" -or $out -match "unknown command" -or
+            $out -match "unknown flag") {
+          throw "the workflow invoked kusari incorrectly -- the path argument was likely split: $out"
+        }
         if ($out -match "failed to package directory" -or
             $out -match "Cannot create a file when that file already exists" -or
             $out -match "error taring source code" -or
@@ -169,7 +184,10 @@ jobs:
     - name: Generate an SBOM
       shell: powershell
       run: |
-        $ErrorActionPreference = "Stop"
+        # Not "Stop": waybill writes a lot of progress tracing to stderr, and
+        # PowerShell can surface a native command's stderr as terminating
+        # errors. The exit code is checked explicitly instead.
+        $ErrorActionPreference = "Continue"
         .\kusari.exe platform generate -- --path .
         if ($LASTEXITCODE -ne 0) { throw "platform generate exited $LASTEXITCODE" }
         if (-not (Test-Path project.cdx.json)) { throw "SBOM was not written" }
@@ -181,8 +199,8 @@ jobs:
     - name: Waybill installed as a Windows executable
       shell: powershell
       run: |
-        $ErrorActionPreference = "Stop"
-        $bin = Get-ChildItem -Path (Join-Path $env:USERPROFILE ".kusari\bin") -Filter "waybill-*.exe"
+        $ErrorActionPreference = "Continue"
+        $bin = Get-ChildItem -Path (Join-Path $env:USERPROFILE ".kusari\bin") -Filter "waybill-*.exe" -ErrorAction SilentlyContinue
         if (-not $bin) { throw "no waybill-*.exe in ~/.kusari/bin" }
         $bin | Select-Object Name, Length
         # Second call must hit the cache instead of downloading again.

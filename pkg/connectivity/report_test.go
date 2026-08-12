@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -163,9 +164,15 @@ func TestWriteReportRoundTrip(t *testing.T) {
 
 	require.NoError(t, WriteReport(path, want))
 
-	info, err := os.Stat(path)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	// The report records hostnames and proxy configuration, so it is written
+	// 0600. Windows has no Unix permission bits -- Go reports 0666 for any
+	// writable file regardless of the mode passed to WriteFile -- so the
+	// assertion is only meaningful where the mode is actually enforced.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
 
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)

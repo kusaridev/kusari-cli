@@ -26,7 +26,7 @@ func TestScan_ArchiveFormat(t *testing.T) {
 		testDir := t.TempDir()
 
 		// Initialize git repo
-		require.NoError(t, os.Chdir(testDir))
+		t.Chdir(testDir)
 		require.NoError(t, runCommand("git", "init"))
 		require.NoError(t, runCommand("git", "config", "user.email", "test@example.com"))
 		require.NoError(t, runCommand("git", "config", "user.name", "Test User"))
@@ -124,7 +124,7 @@ func TestScan_OverrideBranchValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testDir := t.TempDir()
 
-			require.NoError(t, os.Chdir(testDir))
+			t.Chdir(testDir)
 			require.NoError(t, runCommand("git", "init"))
 			require.NoError(t, runCommand("git", "config", "user.email", "test@example.com"))
 			require.NoError(t, runCommand("git", "config", "user.name", "Test User"))
@@ -519,7 +519,7 @@ func TestMonoRepoCheck_OnlyForRiskCheck(t *testing.T) {
 	testDir := t.TempDir()
 
 	// Initialize git repo
-	require.NoError(t, os.Chdir(testDir))
+	t.Chdir(testDir)
 	require.NoError(t, runCommand("git", "init"))
 	require.NoError(t, runCommand("git", "config", "user.email", "test@example.com"))
 	require.NoError(t, runCommand("git", "config", "user.name", "Test User"))
@@ -571,4 +571,72 @@ func TestMonoRepoCheck_OnlyForRiskCheck(t *testing.T) {
 		assert.True(t, isMonoRepo, "should detect monorepo")
 		assert.Contains(t, indicators, "monorepo config: lerna.json", "should detect lerna.json")
 	})
+}
+
+// TestScan_RestoresWorkingDirectory pins that Scan leaves the process where it
+// found it.
+//
+// Scan has to chdir into the repo to run git, but it is not only called by a
+// short-lived CLI invocation: the MCP server (kusari ai serve) calls it
+// in-process, repeatedly, for the lifetime of the server. A leaked working
+// directory would make every later relative path resolve against whichever
+// repo was scanned last, and on Windows it pins that directory open so nothing
+// can delete it.
+func TestScan_RestoresWorkingDirectory(t *testing.T) {
+	repoDir := t.TempDir()
+	// Deliberately NOT t.Chdir(repoDir): the point is what scan() itself does
+	// to the process, so the test must not restore the directory for it.
+	setupGitRepoAt(t, repoDir)
+
+	before, err := os.Getwd()
+	require.NoError(t, err)
+
+	mock := &scanMock{
+		fileUploader: func(presignedURL, filePath string) error { return nil },
+		presignedURLGetter: func(apiEndpoint, jwtToken, filePath, workspace string, full bool, size int64) (string, error) {
+			return "https://example.com/workspace/test-workspace-id/user/human/test-user-id/diff/blob/123", nil
+		},
+		defaultWorkspaceGetter: func(platformUrl, jwtToken string) ([]login.Workspace, map[string][]string, error) {
+			return []login.Workspace{{ID: "ws", Description: "Test Workspace"}},
+				map[string][]string{"ws": {"test-tenant"}}, nil
+		},
+		token: "token",
+	}
+
+	err = scan(repoDir, "HEAD", "https://platform.example.com", "https://console.example.com",
+		false, false, false, "markdown", "", false, "", mock)
+	require.NoError(t, err)
+
+	after, err := os.Getwd()
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "scan must leave the process working directory unchanged")
+}
+
+// setupGitRepoAt builds a repo with one commit and one uncommitted change,
+// without moving the caller's working directory.
+func setupGitRepoAt(t *testing.T, dir string) {
+	t.Helper()
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test User"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "git %v: %s", args, out)
+	}
+
+	testFile := filepath.Join(dir, "test.txt")
+	require.NoError(t, os.WriteFile(testFile, []byte("test content"), 0644))
+	for _, args := range [][]string{
+		{"add", "."},
+		{"commit", "-m", "initial commit"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "git %v: %s", args, out)
+	}
+	require.NoError(t, os.WriteFile(testFile, []byte("uncommitted change"), 0644))
 }
