@@ -13,8 +13,8 @@ const (
 // asset names + SHA256 hashes per GOOS/GOARCH, taken from the upstream
 // release's SHA256SUMS. The hash is the trust root for verification.
 //
-// Intel macOS (darwin/amd64) is intentionally absent: upstream does not
-// currently publish that target.
+// Intel macOS (darwin/amd64) and ARM Windows (windows/arm64) are intentionally
+// absent: upstream does not currently publish those targets.
 var assets = map[string]asset{
 	"darwin/arm64": {
 		"waybill-v0.1.0-alpha.70-aarch64-apple-darwin.tar.gz",
@@ -27,5 +27,9 @@ var assets = map[string]asset{
 	"linux/arm64": {
 		"waybill-v0.1.0-alpha.70-aarch64-unknown-linux-gnu.tar.gz",
 		"794830e45220156f7d29ce2e91b2e1ea3403395b2fa1fb099a1454c02bc74973",
+	},
+	"windows/amd64": {
+		"waybill-v0.1.0-alpha.70-x86_64-pc-windows-msvc.zip",
+		"700b84367518d6eba645ab40bf0e99586adb1b38e92c49fc29dbb11cef02cbc8",
 	},
 }

@@ -27,7 +27,14 @@ func TestPlatform_Constants(t *testing.T) {
 	assert.Equal(t, Platform("windows"), PlatformWindows)
 }
 
-func TestExpandConfigPath_Darwin(t *testing.T) {
+func TestExpandConfigPath_Unix(t *testing.T) {
+	// ~ and $HOME are the forms used by the darwin/linux entries in the client
+	// table; Windows entries use %APPDATA% / %USERPROFILE% instead and are
+	// covered by TestExpandConfigPath_Windows.
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-style config paths are not used on windows")
+	}
+
 	homeDir, err := os.UserHomeDir()
 	require.NoError(t, err)
 
@@ -46,6 +53,11 @@ func TestExpandConfigPath_Darwin(t *testing.T) {
 			input:    "/absolute/path/config.json",
 			expected: "/absolute/path/config.json",
 		},
+		{
+			name:     "home env var",
+			input:    "$HOME/.config/test.json",
+			expected: filepath.Join(homeDir, ".config/test.json"),
+		},
 	}
 
 	for _, tt := range tests {
@@ -56,14 +68,22 @@ func TestExpandConfigPath_Darwin(t *testing.T) {
 	}
 }
 
-func TestExpandConfigPath_WithHomeEnvVar(t *testing.T) {
-	homeDir, err := os.UserHomeDir()
-	require.NoError(t, err)
+func TestExpandConfigPath_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("APPDATA / USERPROFILE variables are only expanded on windows")
+	}
 
-	// Test $HOME expansion
-	result := ExpandConfigPath("$HOME/.config/test.json")
-	expected := filepath.Join(homeDir, ".config/test.json")
-	assert.Equal(t, expected, result)
+	appData := os.Getenv("APPDATA")
+	require.NotEmpty(t, appData, "APPDATA must be set on windows")
+	userProfile := os.Getenv("USERPROFILE")
+	require.NotEmpty(t, userProfile, "USERPROFILE must be set on windows")
+
+	assert.Equal(t,
+		appData+`\Claude\claude_desktop_config.json`,
+		ExpandConfigPath(`%APPDATA%\Claude\claude_desktop_config.json`))
+	assert.Equal(t,
+		userProfile+`\.claude.json`,
+		ExpandConfigPath(`%USERPROFILE%\.claude.json`))
 }
 
 func TestGetConfigPath_ForClient(t *testing.T) {

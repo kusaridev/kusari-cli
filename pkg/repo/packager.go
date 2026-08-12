@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -16,68 +15,100 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/kusaridev/kusari-cli/v2/api"
 )
 
-// PackageDirectory creates a zip file from a directory
+// packageDirectory builds the bzip2-compressed tarball we upload, from the
+// current working directory, and returns its size in bytes.
 func packageDirectory(full bool) (int64, error) {
-	if err := os.Mkdir(tarballDir, 0700); err != nil {
-		if !errors.Is(err, syscall.EEXIST) {
-			return 0, fmt.Errorf("failed to make Kusari directory: %w", err)
-		}
+	// The caller already created this directory; MkdirAll makes that a no-op
+	// rather than a platform-specific "already exists" errno to special-case.
+	if err := os.MkdirAll(tarballDir, 0700); err != nil {
+		return 0, fmt.Errorf("failed to make Kusari directory: %w", err)
 	}
-	outFile := filepath.Join(tarballDir, tarballNameUncompressed)
 
-	// Get list of files from git (respects .gitignore)
-	// This includes tracked files and untracked files that aren't in .gitignore
-	filesListPath := filepath.Join(tarballDir, "files.txt")
-	defer func() {
-		_ = os.Remove(filesListPath)
-	}()
-
-	// Get tracked files and untracked files (excluding .gitignore entries)
-	gitCmd := exec.Command("sh", "-c", "git ls-files && git ls-files --others --exclude-standard")
-	filesOutput, err := gitCmd.Output()
+	// Get list of files from git (respects .gitignore).
+	// This includes tracked files and untracked files that aren't in .gitignore.
+	files, err := listRepoFiles()
 	if err != nil {
 		return 0, fmt.Errorf("error getting git files list: %w", err)
 	}
 
-	// Write file list to a temporary file
-	if err := os.WriteFile(filesListPath, filesOutput, 0600); err != nil {
-		return 0, fmt.Errorf("error writing files list: %w", err)
+	entries := make([]archiveEntry, 0, len(files)+2)
+	for _, f := range files {
+		// git reports slash-separated, repo-relative paths on every platform;
+		// they are already valid tar names.
+		entries = append(entries, archiveEntry{name: f, path: filepath.FromSlash(f)})
 	}
 
-	// Write the repo contents to the tarball, uncompressed so that we can append to it
-	// Use -T to specify files from list (respects .gitignore)
-	tc := exec.Command("tar", "-cf", outFile, "--dereference", "-T", filesListPath)
-	tc.Env = append(tc.Env, "COPYFILE_DISABLE=1")
-	if err := tc.Run(); err != nil {
-		return 0, fmt.Errorf("error taring source code: %w", err)
-	}
-	// Append our Inspector files
-	args := []string{"-C", workingDir, "--append", "-f", outFile, metaFile}
+	// Add our Inspector files at the root of the archive.
+	entries = append(entries, archiveEntry{name: metaFile, path: filepath.Join(workingDir, metaFile)})
 	if !full {
-		args = append(args, patchFile)
+		entries = append(entries, archiveEntry{name: patchFile, path: filepath.Join(workingDir, patchFile)})
 	}
 
-	tc2 := exec.Command("tar", args...)
-	tc2.Env = append(tc2.Env, "COPYFILE_DISABLE=1")
-	if err := tc2.Run(); err != nil {
-		return 0, fmt.Errorf("error tarring Inspector metadata: %w", err)
-	}
-	// Compress it
-	if err := exec.Command("bzip2", outFile).Run(); err != nil {
-		return 0, fmt.Errorf("error compressing file: %w", err)
+	outFile := filepath.Join(tarballDir, tarballName)
+	if err := writeTarBz2(outFile, entries); err != nil {
+		return 0, err
 	}
 
-	fi, err := os.Stat(outFile + ".bz2")
+	fi, err := os.Stat(outFile)
 	if err != nil {
 		return 0, fmt.Errorf("error stating file: %w", err)
 	}
 
 	return fi.Size(), nil
+}
+
+// listRepoFiles returns every file git considers part of the working tree:
+// tracked files plus untracked files that .gitignore doesn't exclude.
+func listRepoFiles() ([]string, error) {
+	tracked, err := gitListFiles()
+	if err != nil {
+		return nil, err
+	}
+	untracked, err := gitListFiles("--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	return append(tracked, untracked...), nil
+}
+
+// gitListFiles runs `git ls-files -z` with the given extra arguments. The -z
+// form is NUL-delimited and unquoted, so paths containing spaces, newlines or
+// non-ASCII characters survive intact regardless of core.quotePath.
+func gitListFiles(extraArgs ...string) ([]string, error) {
+	args := append([]string{"ls-files", "-z"}, extraArgs...)
+	out, err := runGit(args...)
+	if err != nil {
+		return nil, err
+	}
+
+	fields := strings.Split(string(out), "\x00")
+	files := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
+// runGit runs a git command and returns its stdout, folding git's stderr into
+// the error so failures are diagnosable instead of a bare "exit status 128".
+func runGit(args ...string) ([]byte, error) {
+	cmd := exec.Command("git", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, msg)
+		}
+		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return out, nil
 }
 
 // sanitizeRemoteURL strips any embedded credentials from a git remote URL so

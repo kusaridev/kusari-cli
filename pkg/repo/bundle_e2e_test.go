@@ -1,0 +1,302 @@
+// Copyright (c) Kusari <https://www.kusari.dev/>
+// SPDX-License-Identifier: MIT
+
+package repo
+
+import (
+	"archive/tar"
+	"compress/bzip2"
+	"encoding/json"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/kusaridev/kusari-cli/v2/api"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// bundle is the fully-built upload artifact, unpacked for inspection.
+type bundle struct {
+	files map[string]string
+	meta  api.BundleMeta
+	patch string
+	size  int64
+}
+
+// buildBundle runs the same local pipeline scan() does — temp dirs, metadata,
+// diff, tarball — stopping short of anything that needs credentials or the
+// network. This is everything the CLI does on the user's machine, so it is
+// where any platform-specific breakage shows up.
+func buildBundle(t *testing.T, repoDir, rev string, full bool) bundle {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	tarballDir = tempDir
+	workingDir = filepath.Join(tempDir, workingDirName)
+	require.NoError(t, os.Mkdir(workingDir, 0700))
+	metaName = filepath.Join(workingDir, metaFile)
+	patchName = filepath.Join(workingDir, patchFile)
+
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+	require.NoError(t, os.Chdir(repoDir))
+
+	_, err = createMeta(rev, full, "")
+	require.NoError(t, err, "createMeta")
+
+	if !full {
+		require.NoError(t, generateDiff(rev), "generateDiff")
+	}
+
+	size, err := packageDirectory(full)
+	require.NoError(t, err, "packageDirectory")
+
+	b := bundle{files: extractTarballFiles(t, filepath.Join(tarballDir, tarballName)), size: size}
+
+	rawMeta, ok := b.files[metaFile]
+	require.True(t, ok, "bundle is missing %s; has %v", metaFile, keysOf(b.files))
+	require.NoError(t, json.Unmarshal([]byte(rawMeta), &b.meta), "bundle metadata is not valid JSON")
+
+	if !full {
+		b.patch, ok = b.files[patchFile]
+		require.True(t, ok, "bundle is missing %s; has %v", patchFile, keysOf(b.files))
+	}
+	return b
+}
+
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// initRepo creates a git repo with the given extra config applied before any
+// content is written, so settings like core.autocrlf take effect on checkout.
+func initRepo(t *testing.T, dir string, config ...[2]string) {
+	t.Helper()
+	runCmd(t, dir, "git", "init")
+	runCmd(t, dir, "git", "config", "user.email", "test@example.com")
+	runCmd(t, dir, "git", "config", "user.name", "Test User")
+	// Keep the CI runner's global config from changing what these tests see.
+	runCmd(t, dir, "git", "config", "core.quotePath", "true")
+	for _, kv := range config {
+		runCmd(t, dir, "git", "config", kv[0], kv[1])
+	}
+}
+
+// TestBundle_EndToEnd walks the complete local pipeline for a diff scan and
+// asserts the upload artifact is well-formed: every working-tree file present
+// under a slash-separated name, metadata that parses, and a patch describing
+// the uncommitted work.
+func TestBundle_EndToEnd(t *testing.T) {
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, "pkg", "nested dir"), 0755))
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(repoDir, "pkg", "nested dir", "lib.go"), "package lib\n")
+	writeFile(t, filepath.Join(repoDir, ".gitignore"), "*.log\n")
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+
+	// Uncommitted work: one modified tracked file, one new untracked file, one
+	// ignored file that must not travel.
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n\nfunc main() { println(\"hi\") }\n")
+	writeFile(t, filepath.Join(repoDir, "added.go"), "package main\n")
+	writeFile(t, filepath.Join(repoDir, "debug.log"), "noise\n")
+
+	b := buildBundle(t, repoDir, "HEAD", false)
+
+	assert.Positive(t, b.size)
+
+	for _, want := range []string{"main.go", "added.go", ".gitignore", "pkg/nested dir/lib.go"} {
+		assert.Contains(t, b.files, want, "missing from bundle")
+	}
+	assert.NotContains(t, b.files, "debug.log", "gitignored file must not be bundled")
+
+	// Tar names are slash-separated on every platform, including Windows.
+	for name := range b.files {
+		assert.NotContains(t, name, `\`, "tar entry name must not contain a backslash")
+	}
+
+	// The bundle carries the working tree, not HEAD.
+	assert.Contains(t, b.files["main.go"], `println("hi")`)
+
+	assert.Equal(t, "diff", b.meta.ScanType)
+	assert.Equal(t, filepath.Base(repoDir), b.meta.DirName)
+	assert.NotEmpty(t, b.meta.CurrentBranch)
+	assert.NotEqual(t, "HEAD", b.meta.CurrentBranch)
+	assert.NotEmpty(t, b.meta.CommitSHA)
+	assert.True(t, b.meta.GitDirty)
+	assert.Contains(t, b.meta.ChangedFiles, "main.go")
+	assert.Contains(t, b.meta.ChangedFiles, "added.go")
+	assert.Contains(t, b.meta.ChangedFileHashes, "main.go")
+
+	assert.Contains(t, b.patch, "diff --git a/main.go b/main.go")
+	assert.Contains(t, b.patch, "+++ b/added.go", "untracked files must appear in the patch")
+}
+
+// TestBundle_EndToEnd_FullScan covers the risk-check path, which ships no patch.
+func TestBundle_EndToEnd_FullScan(t *testing.T) {
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n")
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+
+	b := buildBundle(t, repoDir, "", true)
+
+	assert.Contains(t, b.files, "main.go")
+	assert.Contains(t, b.files, metaFile)
+	assert.NotContains(t, b.files, patchFile, "full scans carry no patch")
+	assert.Equal(t, "full", b.meta.ScanType)
+}
+
+// TestBundle_LineEndingsUnderAutoCRLF documents how the bundle looks when git
+// is configured the way the Git for Windows installer configures it by default
+// (core.autocrlf=true).
+//
+// git renormalizes to LF when producing a diff but leaves CRLF in the working
+// tree, so the tarball and the patch disagree about line endings. That is
+// inherent to "archive the working tree, diff through git" and is not specific
+// to any one platform — this test pins the behavior so a change to it is
+// visible rather than silent.
+func TestBundle_LineEndingsUnderAutoCRLF(t *testing.T) {
+	repoDir := t.TempDir()
+	initRepo(t, repoDir, [2]string{"core.autocrlf", "true"})
+
+	writeFile(t, filepath.Join(repoDir, "a.txt"), "line one\nline two\nline three\n")
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+
+	// Re-checkout so autocrlf applies its CRLF conversion to the working tree,
+	// reproducing what a Windows user sees after a fresh clone.
+	require.NoError(t, os.Remove(filepath.Join(repoDir, "a.txt")))
+	runCmd(t, repoDir, "git", "checkout", "--", "a.txt")
+
+	onDisk, err := os.ReadFile(filepath.Join(repoDir, "a.txt"))
+	require.NoError(t, err)
+	if !strings.Contains(string(onDisk), "\r\n") {
+		t.Skip("git did not apply autocrlf conversion in this environment")
+	}
+
+	writeFile(t, filepath.Join(repoDir, "a.txt"), "line one\r\nline two CHANGED\r\nline three\r\n")
+
+	b := buildBundle(t, repoDir, "HEAD", false)
+
+	// The archived source is the working tree byte-for-byte, CRLF included.
+	assert.Contains(t, b.files["a.txt"], "\r\n", "tarball should carry working-tree bytes verbatim")
+	// The patch is what git emits, which is renormalized to LF.
+	assert.NotContains(t, b.patch, "\r\n", "git renormalizes the diff to LF under autocrlf")
+
+	t.Logf("bundle line endings: tarball=CRLF patch=LF (autocrlf=true); "+
+		"patch is %d bytes", len(b.patch))
+}
+
+// TestBundle_SubmoduleFilesUseSlashPaths covers the one path where an on-disk
+// filename becomes a tar entry name. git reports a submodule as a single
+// directory entry, so the archiver walks it, and on Windows that walk yields
+// backslash-separated relative paths. Consumers reject entry names containing a
+// backslash outright, so the conversion to slashes is load-bearing rather than
+// cosmetic.
+func TestBundle_SubmoduleFilesUseSlashPaths(t *testing.T) {
+	// The inner repo the submodule points at.
+	innerDir := t.TempDir()
+	initRepo(t, innerDir)
+	require.NoError(t, os.MkdirAll(filepath.Join(innerDir, "deep", "inner dir"), 0755))
+	writeFile(t, filepath.Join(innerDir, "deep", "inner dir", "vendored.go"), "package vendored\n")
+	runCmd(t, innerDir, "git", "add", ".")
+	runCmd(t, innerDir, "git", "commit", "-m", "inner")
+
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n")
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+
+	add := exec.Command("git", "-c", "protocol.file.allow=always",
+		"submodule", "add", innerDir, "vendor mod")
+	add.Dir = repoDir
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Skipf("git submodule add unavailable in this environment: %v\n%s", err, out)
+	}
+	runCmd(t, repoDir, "git", "commit", "-m", "add submodule")
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n\nfunc main() {}\n")
+
+	b := buildBundle(t, repoDir, "HEAD", false)
+
+	var sawSubmoduleFile bool
+	for name := range b.files {
+		assert.NotContains(t, name, `\`, "tar entry name must not contain a backslash")
+		if strings.HasPrefix(name, "vendor mod/") {
+			sawSubmoduleFile = true
+		}
+	}
+	assert.True(t, sawSubmoduleFile,
+		"expected submodule contents in the bundle, got %v", keysOf(b.files))
+	assert.Contains(t, b.files, "vendor mod/deep/inner dir/vendored.go")
+	// The submodule's own git metadata must not travel. Registered submodules
+	// have a ".git" *file* holding a "gitdir:" path from the scanning machine,
+	// so matching only on a "/.git/" directory prefix would miss it.
+	for name := range b.files {
+		assert.NotContains(t, name, "/.git/", "submodule .git directory must be skipped")
+		assert.False(t, strings.HasSuffix(name, "/.git"),
+			"submodule .git pointer file must be skipped, got %q", name)
+	}
+}
+
+// TestBundle_TarballIsWellFormed re-reads the archive with a strict reader to
+// confirm every header is internally consistent (sizes match payloads, no
+// truncated members) rather than only that the names look right.
+func TestBundle_TarballIsWellFormed(t *testing.T) {
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+	for _, name := range []string{"a.go", "b.go", "c.go"} {
+		writeFile(t, filepath.Join(repoDir, name), strings.Repeat("package main\n", 500))
+	}
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+	// A diff scan needs something to diff.
+	writeFile(t, filepath.Join(repoDir, "a.go"), strings.Repeat("package main\n", 400))
+
+	buildBundle(t, repoDir, "HEAD", false)
+
+	f, err := os.Open(filepath.Join(tarballDir, tarballName))
+	require.NoError(t, err)
+	defer func() {
+		_ = f.Close()
+	}()
+
+	tr := tar.NewReader(bzip2.NewReader(f))
+	var members int
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err, "tar header %d is malformed", members)
+
+		n, err := io.Copy(io.Discard, tr)
+		require.NoError(t, err, "payload of %s is truncated", hdr.Name)
+		require.Equal(t, hdr.Size, n, "declared size of %s does not match its payload", hdr.Name)
+		members++
+	}
+	assert.GreaterOrEqual(t, members, 4, "expected sources plus metadata")
+}
+
+// TestGitAvailable fails loudly if the environment has no usable git, which
+// would otherwise surface as a confusing cascade of failures above.
+func TestGitAvailable(t *testing.T) {
+	out, err := exec.Command("git", "--version").Output()
+	require.NoError(t, err, "git must be on PATH for the repo package tests")
+	t.Logf("using %s", strings.TrimSpace(string(out)))
+}

@@ -14,8 +14,14 @@ func OpenBrowser(url string) error {
 
 	switch runtime.GOOS {
 	case "windows":
-		cmd = "cmd"
-		args = []string{"/c", "start"}
+		// Deliberately not `cmd /c start`: cmd.exe treats & | ^ as command
+		// separators, and Go only quotes arguments containing whitespace or
+		// quotes, so an OAuth URL (which always carries & between query
+		// parameters) would be split apart before the browser ever saw it.
+		// rundll32 hands the URL to the shell's protocol handler directly,
+		// with no command interpreter in between.
+		cmd = "rundll32"
+		args = []string{"url.dll,FileProtocolHandler"}
 	case "darwin":
 		cmd = "open"
 	default: // "linux", "freebsd", "openbsd", "netbsd"

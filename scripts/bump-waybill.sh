@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Regenerate pkg/waybill/versions.go for a given Waybill release tag.
 #
-# Usage: scripts/bump-waybill.sh v0.1.0-alpha.66
+# Usage: scripts/bump-waybill.sh v0.2.0
 #
 # Fetches SHA256SUMS from the release, parses it, and writes the asset map
-# for the GOOS/GOARCH targets we support. Windows is intentionally omitted.
+# for the GOOS/GOARCH targets we support.
 
 set -euo pipefail
 
 TAG="${1:-}"
 if [[ -z "${TAG}" ]]; then
-    echo "usage: $0 <tag> (e.g. v0.1.0-alpha.66)" >&2
+    echo "usage: $0 <tag> (e.g. v0.2.0)" >&2
     exit 2
 fi
 VERSION="${TAG#v}"
@@ -24,23 +24,29 @@ sha_for() {
     awk -v f="$1" '$2 == f { print $1 }' <<<"${SUMS}"
 }
 
-DARWIN_ARM64_FILE="waybill-${TAG}-aarch64-apple-darwin.tar.gz"
-LINUX_AMD64_FILE="waybill-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
-LINUX_ARM64_FILE="waybill-${TAG}-aarch64-unknown-linux-gnu.tar.gz"
+# GOOS/GOARCH -> upstream asset filename. Unix targets ship .tar.gz, Windows
+# ships .zip; pkg/waybill picks the extractor from the extension.
+TARGETS=(
+    "darwin/arm64:waybill-${TAG}-aarch64-apple-darwin.tar.gz"
+    "linux/amd64:waybill-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+    "linux/arm64:waybill-${TAG}-aarch64-unknown-linux-gnu.tar.gz"
+    "windows/amd64:waybill-${TAG}-x86_64-pc-windows-msvc.zip"
+)
 
-DARWIN_ARM64_SHA="$(sha_for "${DARWIN_ARM64_FILE}")"
-LINUX_AMD64_SHA="$(sha_for "${LINUX_AMD64_FILE}")"
-LINUX_ARM64_SHA="$(sha_for "${LINUX_ARM64_FILE}")"
-
-for pair in \
-    "darwin/arm64:${DARWIN_ARM64_FILE}:${DARWIN_ARM64_SHA}" \
-    "linux/amd64:${LINUX_AMD64_FILE}:${LINUX_AMD64_SHA}" \
-    "linux/arm64:${LINUX_ARM64_FILE}:${LINUX_ARM64_SHA}"; do
-    IFS=':' read -r target file sha <<<"${pair}"
+ENTRIES=""
+for pair in "${TARGETS[@]}"; do
+    target="${pair%%:*}"
+    file="${pair#*:}"
+    sha="$(sha_for "${file}")"
     if [[ -z "${sha}" ]]; then
         echo "error: ${file} not found in SHA256SUMS for ${TAG}" >&2
         exit 1
     fi
+    ENTRIES+="	\"${target}\": {
+		\"${file}\",
+		\"${sha}\",
+	},
+"
 done
 
 cat >"${OUT}" <<EOF
@@ -59,22 +65,10 @@ const (
 // asset names + SHA256 hashes per GOOS/GOARCH, taken from the upstream
 // release's SHA256SUMS. The hash is the trust root for verification.
 //
-// Intel macOS (darwin/amd64) is intentionally absent: upstream does not
-// currently publish that target.
+// Intel macOS (darwin/amd64) and ARM Windows (windows/arm64) are intentionally
+// absent: upstream does not currently publish those targets.
 var assets = map[string]asset{
-	"darwin/arm64": {
-		"${DARWIN_ARM64_FILE}",
-		"${DARWIN_ARM64_SHA}",
-	},
-	"linux/amd64": {
-		"${LINUX_AMD64_FILE}",
-		"${LINUX_AMD64_SHA}",
-	},
-	"linux/arm64": {
-		"${LINUX_ARM64_FILE}",
-		"${LINUX_ARM64_SHA}",
-	},
-}
+${ENTRIES}}
 EOF
 
 gofmt -w "${OUT}"

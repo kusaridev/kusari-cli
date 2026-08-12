@@ -5,6 +5,7 @@ package waybill
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -14,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,6 +173,125 @@ func TestExtractTarGz_NotAGzip(t *testing.T) {
 
 	err := extractTarGz(src, dest)
 	require.Error(t, err)
+}
+
+// makeZip builds an in-memory .zip from a name → content map, mirroring the
+// layout of the upstream Windows release asset.
+func makeZip(t *testing.T, entries map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range entries {
+		w, err := zw.Create(name)
+		require.NoError(t, err)
+		_, err = w.Write([]byte(content))
+		require.NoError(t, err)
+	}
+	require.NoError(t, zw.Close())
+	return buf.Bytes()
+}
+
+func TestExtractZip_Happy(t *testing.T) {
+	payload := []byte("fake waybill PE")
+	archive := makeZip(t, map[string]string{
+		"waybill-v0.1.0-alpha.70-x86_64-pc-windows-msvc/LICENSE":     "MIT",
+		"waybill-v0.1.0-alpha.70-x86_64-pc-windows-msvc/README.md":   "hello",
+		"waybill-v0.1.0-alpha.70-x86_64-pc-windows-msvc/waybill.exe": string(payload),
+	})
+
+	src := filepath.Join(t.TempDir(), "src.zip")
+	require.NoError(t, os.WriteFile(src, archive, 0o644))
+	dest := filepath.Join(t.TempDir(), "waybill.exe")
+
+	require.NoError(t, extractZip(src, dest))
+	got, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	assert.Equal(t, payload, got)
+}
+
+func TestExtractZip_MissingBinary(t *testing.T) {
+	archive := makeZip(t, map[string]string{
+		"waybill-v0.1.0-alpha.70-x86_64-pc-windows-msvc/LICENSE": "MIT",
+	})
+
+	src := filepath.Join(t.TempDir(), "src.zip")
+	require.NoError(t, os.WriteFile(src, archive, 0o644))
+
+	err := extractZip(src, filepath.Join(t.TempDir(), "waybill.exe"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "waybill binary not found")
+}
+
+func TestExtractZip_NotAZip(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src.zip")
+	require.NoError(t, os.WriteFile(src, []byte("definitely not a zip"), 0o644))
+
+	require.Error(t, extractZip(src, filepath.Join(t.TempDir(), "waybill.exe")))
+}
+
+// TestExtractBinary_SelectsFormatByAssetName pins the dispatch: upstream ships
+// .tar.gz for Unix targets and .zip for Windows, so picking the wrong extractor
+// would fail on exactly one platform.
+func TestExtractBinary_SelectsFormatByAssetName(t *testing.T) {
+	tarPayload := "unix binary"
+	tarSrc := filepath.Join(t.TempDir(), "a.tar.gz")
+	require.NoError(t, os.WriteFile(tarSrc, makeTarGz(t, map[string]string{
+		"waybill-v0.1.0-alpha.70/waybill": tarPayload,
+	}), 0o644))
+
+	zipPayload := "windows binary"
+	zipSrc := filepath.Join(t.TempDir(), "a.zip")
+	require.NoError(t, os.WriteFile(zipSrc, makeZip(t, map[string]string{
+		"waybill-v0.1.0-alpha.70/waybill.exe": zipPayload,
+	}), 0o644))
+
+	tests := []struct {
+		name      string
+		src       string
+		assetName string
+		want      string
+	}{
+		{
+			name:      "unix asset extracts as tar.gz",
+			src:       tarSrc,
+			assetName: "waybill-v0.1.0-alpha.70-x86_64-unknown-linux-gnu.tar.gz",
+			want:      tarPayload,
+		},
+		{
+			name:      "windows asset extracts as zip",
+			src:       zipSrc,
+			assetName: "waybill-v0.1.0-alpha.70-x86_64-pc-windows-msvc.zip",
+			want:      zipPayload,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dest := filepath.Join(t.TempDir(), "waybill")
+			require.NoError(t, extractBinary(tt.src, tt.assetName, dest))
+			got, err := os.ReadFile(dest)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, string(got))
+		})
+	}
+}
+
+// TestAssets_CoverSupportedPlatforms guards against a bump that silently drops
+// a target from versions.go.
+func TestAssets_CoverSupportedPlatforms(t *testing.T) {
+	for _, target := range []string{"darwin/arm64", "linux/amd64", "linux/arm64", "windows/amd64"} {
+		a, ok := assets[target]
+		require.True(t, ok, "no waybill asset registered for %s", target)
+		assert.NotEmpty(t, a.Filename, "%s asset has no filename", target)
+		assert.Len(t, a.SHA256, 64, "%s asset sha256 is not a full digest", target)
+
+		wantExt := ".tar.gz"
+		if strings.HasPrefix(target, "windows/") {
+			wantExt = ".zip"
+		}
+		assert.True(t, strings.HasSuffix(a.Filename, wantExt),
+			"%s asset %q should end in %s", target, a.Filename, wantExt)
+	}
 }
 
 func TestEnsureAvailable_EnvOverrideHonored(t *testing.T) {
