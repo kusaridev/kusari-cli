@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/dsnet/compress/bzip2"
 )
@@ -38,10 +39,13 @@ type archiveEntry struct {
 
 // writeTarBz2 writes entries to outPath as a bzip2-compressed tar archive.
 //
+// root is the resolved repository root. Directories reached through a symlink
+// are only descended into when they resolve inside it -- see addDir.
+//
 // This is a pure-Go replacement for shelling out to tar(1) and bzip2(1), which
 // are not present on a stock Windows install (and whose flags differ between
 // GNU tar and the bsdtar that ships with Windows).
-func writeTarBz2(outPath string, entries []archiveEntry) (err error) {
+func writeTarBz2(outPath, root string, entries []archiveEntry) (err error) {
 	out, err := os.Create(outPath)
 	if err != nil {
 		return fmt.Errorf("error creating archive: %w", err)
@@ -63,7 +67,7 @@ func writeTarBz2(outPath string, entries []archiveEntry) (err error) {
 
 	seen := make(map[string]bool, len(entries))
 	for _, e := range entries {
-		if err := addPath(tw, e.name, e.path, seen); err != nil {
+		if err := addPath(tw, e.name, e.path, root, seen); err != nil {
 			return err
 		}
 	}
@@ -81,7 +85,7 @@ func writeTarBz2(outPath string, entries []archiveEntry) (err error) {
 // Directories (git reports submodules as a single directory entry) are walked
 // recursively. Anything that is not a regular file after symlink resolution is
 // skipped, matching the old `tar --dereference` behavior.
-func addPath(tw *tar.Writer, name, diskPath string, seen map[string]bool) error {
+func addPath(tw *tar.Writer, name, diskPath, root string, seen map[string]bool) error {
 	// Stat, not Lstat: the old invocation passed --dereference, so symlinks are
 	// stored as copies of their target rather than as links.
 	fi, err := os.Stat(diskPath)
@@ -96,7 +100,7 @@ func addPath(tw *tar.Writer, name, diskPath string, seen map[string]bool) error 
 	}
 
 	if fi.IsDir() {
-		return addDir(tw, name, diskPath, seen)
+		return addDir(tw, name, diskPath, root, seen, map[string]bool{})
 	}
 	if !fi.Mode().IsRegular() {
 		return nil
@@ -104,40 +108,86 @@ func addPath(tw *tar.Writer, name, diskPath string, seen map[string]bool) error 
 	return addFile(tw, name, diskPath, fi, seen)
 }
 
-// addDir recursively adds the regular files under diskPath. Nested git
-// metadata (submodule checkouts) is skipped: it is bloat at best, and the
-// ".git" of a submodule is a file pointing at a path on the machine that ran
-// the scan, which has no meaning anywhere else.
-func addDir(tw *tar.Writer, name, diskPath string, seen map[string]bool) error {
-	return filepath.WalkDir(diskPath, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			// Unreadable subtree: skip it rather than abort the scan.
-			return nil //nolint:nilerr // best-effort traversal
-		}
+// addDir recursively adds the regular files under diskPath.
+//
+// Directories reached through a symlink are walked like any other, because the
+// old invocation passed tar --dereference and a symlinked directory is a
+// perfectly ordinary way to lay out a repository. filepath.WalkDir cannot do
+// this -- it stats with Lstat and never descends through a link -- so the walk
+// is written out by hand.
+//
+// chain holds the resolved directories on the current path from the root, which
+// is what stops a symlink loop (a -> b -> a) from recursing forever. It is
+// scoped to the branch rather than the whole walk, so a directory legitimately
+// reachable by two different routes is still archived under both.
+//
+// Nested git metadata is skipped: it is bloat at best, and the ".git" of a
+// registered submodule is a file pointing at a path on the machine that ran the
+// scan, which means nothing anywhere else.
+func addDir(tw *tar.Writer, name, diskPath, root string, seen, chain map[string]bool) error {
+	// Absolute first, then resolve: EvalSymlinks preserves the relativity of its
+	// input, and a relative result cannot be compared against the absolute root.
+	// Resolving also lets cycle detection compare real identities rather than
+	// the routes taken to reach them.
+	abs, err := filepath.Abs(diskPath)
+	if err != nil {
+		return nil //nolint:nilerr // best-effort traversal
+	}
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		// Dangling or unreadable: skip rather than abort the scan.
+		return nil //nolint:nilerr // best-effort traversal
+	}
+	// A repository can contain a symlink to a directory anywhere on the
+	// machine. Following one would sweep that entire tree into a bundle bound
+	// for upload -- /etc, a home directory, a mounted secret -- so only links
+	// that stay inside the repository are descended into. The user is told what
+	// was left out rather than having it silently disappear.
+	if !withinRoot(root, real) {
+		fmt.Fprintf(os.Stderr,
+			"Warning: %s resolves to %s, outside the repository; its contents are excluded from this scan\n",
+			name, real)
+		return nil
+	}
+	if chain[real] {
+		return nil
+	}
+	chain[real] = true
+	defer delete(chain, real)
+
+	dirEntries, err := os.ReadDir(real)
+	if err != nil {
+		return nil //nolint:nilerr // best-effort traversal
+	}
+
+	for _, d := range dirEntries {
 		// A submodule's .git is a directory when cloned standalone and a
 		// "gitdir:" pointer file when registered as a submodule; skip both.
 		if d.Name() == ".git" {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() {
-			return nil
+			continue
 		}
 
-		rel, err := filepath.Rel(diskPath, p)
+		childPath := filepath.Join(real, d.Name())
+		childName := path.Join(name, d.Name())
+
+		// Stat, not the DirEntry's type: a symlink has to be resolved to know
+		// whether it leads to a directory or a file.
+		fi, err := os.Stat(childPath)
 		if err != nil {
-			return nil //nolint:nilerr // best-effort traversal
+			continue
 		}
-		entryName := path.Join(name, filepath.ToSlash(rel))
-
-		fi, err := os.Stat(p)
-		if err != nil || !fi.Mode().IsRegular() {
-			return nil //nolint:nilerr // best-effort traversal
+		switch {
+		case fi.IsDir():
+			if err := addDir(tw, childName, childPath, root, seen, chain); err != nil {
+				return err
+			}
+		case fi.Mode().IsRegular():
+			if err := addFile(tw, childName, childPath, fi, seen); err != nil {
+				return err
+			}
 		}
-		return addFile(tw, entryName, p, fi, seen)
-	})
+	}
+	return nil
 }
 
 // addFile writes one regular file into the archive. Duplicate names are
@@ -186,4 +236,16 @@ func addFile(tw *tar.Writer, name, diskPath string, fi os.FileInfo, seen map[str
 		}
 	}
 	return nil
+}
+
+// withinRoot reports whether p is root or sits beneath it. Both are expected to
+// be absolute and symlink-resolved, so the comparison is of real locations
+// rather than of the routes taken to reach them.
+func withinRoot(root, p string) bool {
+	rel, err := filepath.Rel(root, p)
+	if err != nil {
+		return false
+	}
+	return rel == "." ||
+		(rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }

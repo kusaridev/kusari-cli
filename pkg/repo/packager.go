@@ -35,21 +35,53 @@ func packageDirectory(full bool) (int64, error) {
 		return 0, fmt.Errorf("error getting git files list: %w", err)
 	}
 
+	// The Inspector files go in FIRST so they own their names at the root of the
+	// archive. The archiver keeps the first entry written for a given name, and
+	// a repository is perfectly capable of containing a file called
+	// kusari-inspector.json: were it to win, the backend would parse the repo's
+	// file as bundle metadata. Valid JSON would unmarshal into an empty
+	// BundleMeta and the scan would proceed against meaningless values rather
+	// than failing outright.
+	reserved := map[string]bool{metaFile: true}
 	entries := make([]archiveEntry, 0, len(files)+2)
+	entries = append(entries, archiveEntry{name: metaFile, path: filepath.Join(workingDir, metaFile)})
+	if !full {
+		reserved[patchFile] = true
+		entries = append(entries, archiveEntry{name: patchFile, path: filepath.Join(workingDir, patchFile)})
+	}
+
 	for _, f := range files {
+		if reserved[f] {
+			fmt.Fprintf(os.Stderr,
+				"Warning: %s is reserved for Kusari Inspector metadata; the repository's own copy is excluded from this scan\n", f)
+			continue
+		}
 		// git reports slash-separated, repo-relative paths on every platform;
 		// they are already valid tar names.
 		entries = append(entries, archiveEntry{name: f, path: filepath.FromSlash(f)})
 	}
 
-	// Add our Inspector files at the root of the archive.
-	entries = append(entries, archiveEntry{name: metaFile, path: filepath.Join(workingDir, metaFile)})
-	if !full {
-		entries = append(entries, archiveEntry{name: patchFile, path: filepath.Join(workingDir, patchFile)})
+	// The caller has already chdir'd to the repository root, so "." is it.
+	// Resolve it once so the archiver can tell whether a symlinked directory
+	// stays inside the repository by comparing real locations.
+	//
+	// Absolute first, then EvalSymlinks -- the same order the archiver applies
+	// to every path it compares against this one. The order matters on Windows:
+	// EvalSymlinks canonicalises 8.3 short names to their long form, so a root
+	// that skipped it would sit at C:\Users\RUNNER~1\... while its own children
+	// resolved to C:\Users\runneradmin\..., and every one of them would look
+	// like it lived outside the repository.
+	root, err := filepath.Abs(".")
+	if err != nil {
+		return 0, fmt.Errorf("error resolving repository root: %w", err)
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return 0, fmt.Errorf("error resolving repository root: %w", err)
 	}
 
 	outFile := filepath.Join(tarballDir, tarballName)
-	if err := writeTarBz2(outFile, entries); err != nil {
+	if err := writeTarBz2(outFile, root, entries); err != nil {
 		return 0, err
 	}
 

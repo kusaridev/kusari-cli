@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kusaridev/kusari-cli/v2/api"
 	"github.com/stretchr/testify/assert"
@@ -299,4 +301,158 @@ func TestGitAvailable(t *testing.T) {
 	out, err := exec.Command("git", "--version").Output()
 	require.NoError(t, err, "git must be on PATH for the repo package tests")
 	t.Logf("using %s", strings.TrimSpace(string(out)))
+}
+
+// TestBundle_MetadataNotShadowedByRepoFile covers a repository that happens to
+// contain a file named like the Inspector metadata.
+//
+// This has to be the bundle's own metadata, not the repo's file. The failure it
+// guards against is silent rather than loud: the repo's file is very likely
+// valid JSON, so the backend unmarshals it into a zero-valued BundleMeta and
+// analyses the upload against meaningless values instead of rejecting it.
+func TestBundle_MetadataNotShadowedByRepoFile(t *testing.T) {
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n")
+	writeFile(t, filepath.Join(repoDir, metaFile), `{"scan_type":"impostor","dir_name":"impostor"}`)
+	writeFile(t, filepath.Join(repoDir, patchFile), "not a real patch\n")
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n\nfunc main() {}\n")
+
+	b := buildBundle(t, repoDir, "HEAD", false)
+
+	assert.Equal(t, "diff", b.meta.ScanType, "bundle metadata was shadowed by the repository's own file")
+	assert.Equal(t, filepath.Base(repoDir), b.meta.DirName)
+	assert.NotContains(t, b.files[metaFile], "impostor")
+	assert.Contains(t, b.patch, "diff --git", "patch was shadowed by the repository's own file")
+
+	// Exactly one entry per reserved name, so every consumer agrees on which
+	// one it got regardless of whether it keeps the first or the last.
+	assert.Equal(t, 1, countTarEntries(t, filepath.Join(tarballDir, tarballName), metaFile))
+	assert.Equal(t, 1, countTarEntries(t, filepath.Join(tarballDir, tarballName), patchFile))
+}
+
+// TestBundle_SymlinkedDirectoryContentsIncluded pins that a directory reached
+// through a symlink is archived. The previous walk used filepath.WalkDir, which
+// stats with Lstat and silently treats a symlinked directory as a non-regular
+// file, dropping everything beneath it from the scan without a word.
+func TestBundle_SymlinkedDirectoryContentsIncluded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks on windows requires developer mode or elevation")
+	}
+
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, "real", "nested"), 0755))
+	writeFile(t, filepath.Join(repoDir, "real", "top.go"), "package real\n")
+	writeFile(t, filepath.Join(repoDir, "real", "nested", "deep.go"), "package nested\n")
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n")
+	require.NoError(t, os.Symlink(filepath.Join(repoDir, "real"), filepath.Join(repoDir, "linkdir")))
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n\nfunc main() {}\n")
+
+	b := buildBundle(t, repoDir, "HEAD", false)
+
+	assert.Contains(t, b.files, "linkdir/top.go", "symlinked directory contents dropped; got %v", keysOf(b.files))
+	assert.Contains(t, b.files, "linkdir/nested/deep.go", "nested contents under a symlinked directory dropped")
+	assert.Equal(t, "package real\n", b.files["linkdir/top.go"])
+}
+
+// TestBundle_SymlinkLoopTerminates checks that following symlinked directories
+// cannot spin forever. Dereferencing links is only safe with cycle detection,
+// and a self-referential link is the cheapest way to prove it is there.
+func TestBundle_SymlinkLoopTerminates(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks on windows requires developer mode or elevation")
+	}
+
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, "a", "b"), 0755))
+	writeFile(t, filepath.Join(repoDir, "a", "file.go"), "package a\n")
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n")
+	// a/b/loop points back at a, so a naive walk recurses forever.
+	require.NoError(t, os.Symlink(filepath.Join(repoDir, "a"), filepath.Join(repoDir, "a", "b", "loop")))
+	require.NoError(t, os.Symlink(filepath.Join(repoDir, "a"), filepath.Join(repoDir, "linkdir")))
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n\nfunc main() {}\n")
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		b := buildBundle(t, repoDir, "HEAD", false)
+		assert.Contains(t, b.files, "linkdir/file.go")
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(60 * time.Second):
+		t.Fatal("packaging did not terminate on a symlink loop")
+	}
+}
+
+// countTarEntries counts how many members of the archive carry a given name.
+func countTarEntries(t *testing.T, tarballPath, name string) int {
+	t.Helper()
+	f, err := os.Open(tarballPath)
+	require.NoError(t, err)
+	defer func() {
+		_ = f.Close()
+	}()
+
+	tr := tar.NewReader(bzip2.NewReader(f))
+	n := 0
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if hdr.Name == name {
+			n++
+		}
+	}
+	return n
+}
+
+// TestBundle_SymlinkEscapingRepoExcluded is the counterweight to following
+// symlinked directories at all.
+//
+// git will happily track a symlink pointing anywhere on the machine. Since the
+// bundle is uploaded, descending through such a link would sweep an unrelated
+// tree -- /etc, a home directory, a mounted secret -- into someone else's
+// storage. Links that stay inside the repository are followed; links that leave
+// it are reported and skipped.
+func TestBundle_SymlinkEscapingRepoExcluded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks on windows requires developer mode or elevation")
+	}
+
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "SECRET.txt"),
+		[]byte("private key material\n"), 0600))
+
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, "real"), 0755))
+	writeFile(t, filepath.Join(repoDir, "real", "x.go"), "package real\n")
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n")
+	require.NoError(t, os.Symlink(outside, filepath.Join(repoDir, "extdir")))
+	require.NoError(t, os.Symlink(filepath.Join(repoDir, "real"), filepath.Join(repoDir, "linkdir")))
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n\nfunc main() {}\n")
+
+	b := buildBundle(t, repoDir, "HEAD", false)
+
+	for name, content := range b.files {
+		assert.NotContains(t, name, "SECRET", "content from outside the repository was bundled")
+		assert.NotContains(t, content, "private key material",
+			"content from outside the repository was bundled as %q", name)
+	}
+	// The in-repo symlink is still followed; this is a boundary, not a ban.
+	assert.Contains(t, b.files, "linkdir/x.go")
 }

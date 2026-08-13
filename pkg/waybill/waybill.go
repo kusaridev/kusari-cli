@@ -191,12 +191,24 @@ func install(ctx context.Context, binPath string) (string, error) {
 		return "", fmt.Errorf("chmod %s: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, binPath); err != nil {
-		// Unlike POSIX rename, Windows MoveFile fails when the destination
-		// exists, which happens when a concurrent kusari process installed the
-		// same version first. That install is equally valid, so take it.
-		if _, statErr := os.Stat(binPath); statErr == nil {
+		// A rename can still fail after another kusari process has already put
+		// a good binary here. Windows is where this actually bites: os.Rename
+		// passes MOVEFILE_REPLACE_EXISTING, so an occupied destination is not
+		// itself an error, but the OS refuses to replace an executable that
+		// another process is currently running -- reported as a sharing
+		// violation or access denial, not as "already exists".
+		//
+		// So the question is not which errno came back, it is whether the
+		// destination now holds a usable binary. Only this rename ever
+		// publishes to binPath, and it publishes atomically after the download
+		// has been checksum-verified, so anything sitting there is the product
+		// of a completed, verified install and is safe to adopt. The size and
+		// mode check rejects the one thing that is not: a zero-length or
+		// non-regular leftover.
+		if isUsableBinary(binPath) {
 			_ = os.Remove(tmp)
 			s.Stop()
+			fmt.Fprintf(os.Stderr, "kusari: Waybill %s was installed concurrently at %s; using it\n", Version, binPath)
 			return binPath, nil
 		}
 		return "", fmt.Errorf("rename %s -> %s: %w", tmp, binPath, err)
@@ -205,6 +217,14 @@ func install(ctx context.Context, binPath string) (string, error) {
 	s.Stop()
 	fmt.Fprintf(os.Stderr, "kusari: installed Waybill %s to %s\n", Version, binPath)
 	return binPath, nil
+}
+
+// isUsableBinary reports whether path looks like an installed binary rather
+// than a leftover: a zero-length file at the destination is a failed install by
+// someone else, not one worth adopting.
+func isUsableBinary(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().IsRegular() && fi.Size() > 0
 }
 
 func downloadAndVerify(ctx context.Context, url, wantHex string) (string, error) {

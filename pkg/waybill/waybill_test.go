@@ -420,3 +420,19 @@ func TestCachedBinaryPath_PlatformSuffix(t *testing.T) {
 		assert.Equal(t, "waybill-"+Version, filepath.Base(got))
 	}
 }
+
+func TestIsUsableBinary(t *testing.T) {
+	dir := t.TempDir()
+
+	populated := filepath.Join(dir, "waybill")
+	require.NoError(t, os.WriteFile(populated, []byte("ELF..."), 0o755))
+	assert.True(t, isUsableBinary(populated))
+
+	// A zero-length file is someone else's failed install, not one to adopt.
+	empty := filepath.Join(dir, "empty")
+	require.NoError(t, os.WriteFile(empty, nil, 0o755))
+	assert.False(t, isUsableBinary(empty), "a zero-length file must not count as installed")
+
+	assert.False(t, isUsableBinary(filepath.Join(dir, "absent")))
+	assert.False(t, isUsableBinary(dir), "a directory must not count as installed")
+}
