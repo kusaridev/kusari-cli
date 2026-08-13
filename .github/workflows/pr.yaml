@@ -15,7 +15,11 @@ jobs:
     - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
       with:
         args: --timeout 3m --verbose
-  build:
+  # Named build-matrix, not build, so the aggregate job below can own the
+  # "build" check name. Branch protection matches checks by name, and a matrix
+  # job reports one check per leg ("build (ubuntu-latest)", ...) -- never the
+  # bare name a ruleset asks for.
+  build-matrix:
     strategy:
       fail-fast: false
       matrix:
@@ -29,7 +33,7 @@ jobs:
       with:
         go-version-file: 'go.mod'
     - run: go build -v ./...
-  test:
+  test-matrix:
     strategy:
       fail-fast: false
       matrix:
@@ -56,6 +60,35 @@ jobs:
         go-version-file: 'go.mod'
     - run: go test -v ./...
     - run: go vet ./...
+  # These two exist purely to publish the stable check names "build" and "test"
+  # that the repository ruleset requires. Each passes only when every leg of its
+  # matrix passed, so the required check still gates on all three operating
+  # systems -- and the ruleset needs no edit when a platform is added or removed.
+  #
+  # "if: always()" is load-bearing: without it a failed matrix leg would skip
+  # this job rather than fail it, and a skipped check does not block a merge.
+  build:
+    needs: build-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Verify every build matrix leg passed
+      env:
+        RESULT: ${{ needs.build-matrix.result }}
+      run: |
+        echo "build-matrix result: $RESULT"
+        test "$RESULT" = "success"
+  test:
+    needs: test-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Verify every test matrix leg passed
+      env:
+        RESULT: ${{ needs.test-matrix.result }}
+      run: |
+        echo "test-matrix result: $RESULT"
+        test "$RESULT" = "success"
   windows-e2e:
     name: Windows end-to-end
     runs-on: windows-latest
