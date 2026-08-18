@@ -18,7 +18,6 @@ import (
 type Server struct {
 	config     *Config
 	mcpServer  *mcp.Server
-	scanQueue  chan ScanRequest
 	tools      []ToolDefinition
 	picoClient *pico.Client
 }
@@ -37,8 +36,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 
 	s := &Server{
-		config:    cfg,
-		scanQueue: make(chan ScanRequest, 10),
+		config: cfg,
 	}
 
 	// Initialize MCP server with implementation info

@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -46,6 +47,17 @@ var (
 	patchName  string
 	tarballDir string
 	workingDir string
+	// scan mutates state that is global to the process: the working directory
+	// (os.Chdir, below) and the patch/meta/tarball paths in this var block. Two
+	// scans running at once therefore corrupt each other -- in practice one
+	// scan reads the other's diff and uploads it under the wrong repository,
+	// which for a security scanner means silently reporting on code the user
+	// did not ask about. The CLI only ever runs one scan per process, but the
+	// MCP server (kusari ai serve) is long-lived and the go-sdk dispatches
+	// every tool call asynchronously, so a second caller has to wait here
+	// rather than race. Holding this across the upload and result wait is
+	// deliberate: a slow scan is better than a wrong one.
+	scanMu sync.Mutex
 )
 
 func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string, commentPlatform string, fullOutput bool, overrideBranch string) error {
@@ -69,6 +81,9 @@ type scanMock struct {
 
 func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, full bool, outputFormat string,
 	commentPlatform string, fullOutput bool, overrideBranch string, mock *scanMock) error {
+	scanMu.Lock()
+	defer scanMu.Unlock()
+
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
 		fmt.Fprintf(os.Stderr, " rev: %s\n", rev)
