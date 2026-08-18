@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -502,9 +501,7 @@ func TestPackageDirectory_UnusualFilenames(t *testing.T) {
 // TestPackageDirectory_DereferencesSymlinks pins the behavior `tar --dereference`
 // used to provide: a symlink is archived as a copy of its target's contents.
 func TestPackageDirectory_DereferencesSymlinks(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("creating symlinks on windows requires developer mode or elevation")
-	}
+	requireSymlinks(t)
 
 	repoDir := setupPackagerTest(t)
 

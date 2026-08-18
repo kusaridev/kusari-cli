@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -338,9 +337,7 @@ func TestBundle_MetadataNotShadowedByRepoFile(t *testing.T) {
 // stats with Lstat and silently treats a symlinked directory as a non-regular
 // file, dropping everything beneath it from the scan without a word.
 func TestBundle_SymlinkedDirectoryContentsIncluded(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("creating symlinks on windows requires developer mode or elevation")
-	}
+	requireSymlinks(t)
 
 	repoDir := t.TempDir()
 	initRepo(t, repoDir)
@@ -364,9 +361,7 @@ func TestBundle_SymlinkedDirectoryContentsIncluded(t *testing.T) {
 // cannot spin forever. Dereferencing links is only safe with cycle detection,
 // and a self-referential link is the cheapest way to prove it is there.
 func TestBundle_SymlinkLoopTerminates(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("creating symlinks on windows requires developer mode or elevation")
-	}
+	requireSymlinks(t)
 
 	repoDir := t.TempDir()
 	initRepo(t, repoDir)
@@ -427,9 +422,7 @@ func countTarEntries(t *testing.T, tarballPath, name string) int {
 // storage. Links that stay inside the repository are followed; links that leave
 // it are reported and skipped.
 func TestBundle_SymlinkEscapingRepoExcluded(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("creating symlinks on windows requires developer mode or elevation")
-	}
+	requireSymlinks(t)
 
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "SECRET.txt"),
@@ -455,4 +448,25 @@ func TestBundle_SymlinkEscapingRepoExcluded(t *testing.T) {
 	}
 	// The in-repo symlink is still followed; this is a boundary, not a ban.
 	assert.Contains(t, b.files, "linkdir/x.go")
+}
+
+// requireSymlinks skips the calling test unless this machine can actually
+// create symlinks.
+//
+// Windows can, but only with Developer Mode enabled or an elevated shell, so
+// the capability is probed rather than assumed absent from the whole platform.
+// Skipping every Windows run outright would leave the symlink handling -- the
+// part of the archiver most likely to behave differently there -- with no
+// coverage on the one OS where it is hardest to reason about.
+func requireSymlinks(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("probe"), 0600); err != nil {
+		t.Fatalf("failed to write symlink probe target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "link")); err != nil {
+		t.Skipf("this machine cannot create symlinks (%v); on Windows enable Developer Mode "+
+			"(Settings > System > For developers) or run from an elevated shell to exercise this test", err)
+	}
 }
