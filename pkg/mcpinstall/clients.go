@@ -44,6 +44,11 @@ type ClientConfig struct {
 	InstallMethod InstallMethod
 	// CLICommand is the command to use for CLI-based install (e.g., "claude")
 	CLICommand string
+	// SkillsPaths maps platform to the directory agent skills are installed
+	// into. Empty means this client has no skills mechanism -- skills are a
+	// Claude Code construct, and the other supported editors have no equivalent,
+	// so installing files for them would just litter the disk.
+	SkillsPaths map[string]string
 }
 
 // supportedClients contains all supported MCP clients.
@@ -67,6 +72,13 @@ var supportedClients = []ClientConfig{
 		ServerKey:     "kusari-inspector",
 		ConfigFormat:  ConfigFormatStandard,
 		InstallMethod: InstallMethodFile,
+		// User-level rather than per-project, so one install covers every
+		// repository the user works in.
+		SkillsPaths: map[string]string{
+			"darwin":  "~/.claude/skills",
+			"linux":   "~/.claude/skills",
+			"windows": "%USERPROFILE%\\.claude\\skills",
+		},
 	},
 	{
 		Name: "Claude Desktop",

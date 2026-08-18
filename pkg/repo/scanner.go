@@ -60,14 +60,75 @@ var (
 	scanMu sync.Mutex
 )
 
+// ScanOptions carries everything a scan needs.
+//
+// This is a struct rather than a parameter list because the list had reached ten
+// positional arguments, four of them bare bools. At that width a call site reads
+// as `..., true, false, false, "", true, false, ""` and transposing two of the
+// bools is a silent behavior change that still compiles.
+type ScanOptions struct {
+	// Dir is the git repository to scan.
+	Dir string
+	// Rev is the base revision to diff the working tree against.
+	Rev string
+	// PlatformURL is the Kusari API endpoint.
+	PlatformURL string
+	// ConsoleURL is the Kusari web console base URL.
+	ConsoleURL string
+	// OutputFormat is "markdown" or "sarif".
+	OutputFormat string
+	// CommentPlatform posts results to a PR/MR ("github", "gitlab", or empty).
+	CommentPlatform string
+	// OverrideBranch replaces the detected branch name, needed in CI where a
+	// detached HEAD reports "HEAD".
+	OverrideBranch string
+	// Verbose enables progress detail on stderr.
+	Verbose bool
+	// Wait blocks until analysis results are available.
+	Wait bool
+	// FullOutput prints complete results instead of the truncated form.
+	FullOutput bool
+	// FailOnFindings makes the process exit non-zero when the analysis says not
+	// to proceed. Results are still printed in full; only the exit status
+	// changes. Callers can distinguish it from a real failure via FindingsError.
+	FailOnFindings bool
+}
+
+// Scan analyzes a change against a repository.
+//
+// Kept as a positional wrapper so existing callers continue to compile; new
+// callers should prefer ScanWithOptions.
 func Scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, outputFormat string, commentPlatform string, fullOutput bool, overrideBranch string) error {
-	return scan(dir, rev, platformUrl, consoleUrl, verbose, wait, false, outputFormat, commentPlatform, fullOutput, overrideBranch, nil)
+	return ScanWithOptions(ScanOptions{
+		Dir:             dir,
+		Rev:             rev,
+		PlatformURL:     platformUrl,
+		ConsoleURL:      consoleUrl,
+		OutputFormat:    outputFormat,
+		CommentPlatform: commentPlatform,
+		OverrideBranch:  overrideBranch,
+		Verbose:         verbose,
+		Wait:            wait,
+		FullOutput:      fullOutput,
+	})
+}
+
+// ScanWithOptions analyzes a change against a repository.
+func ScanWithOptions(opts ScanOptions) error {
+	return scan(opts, false, nil)
 }
 
 func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
 	// default to outputformat "markdown" for now for risk check as it will link to console
 	// commentPlatform is empty for risk-check as it's not typically run in MR context
-	return scan(dir, "", platformUrl, consoleUrl, verbose, wait, true, "markdown", "", false, "", nil)
+	return scan(ScanOptions{
+		Dir:          dir,
+		PlatformURL:  platformUrl,
+		ConsoleURL:   consoleUrl,
+		OutputFormat: "markdown",
+		Verbose:      verbose,
+		Wait:         wait,
+	}, true, nil)
 }
 
 // scanMock facilitates use of mock values for testing
@@ -79,10 +140,21 @@ type scanMock struct {
 	isMachineAuth          bool
 }
 
-func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose bool, wait bool, full bool, outputFormat string,
-	commentPlatform string, fullOutput bool, overrideBranch string, mock *scanMock) error {
+// scan is the shared implementation behind Scan and RiskCheck. full selects a
+// whole-repository risk check over a diff scan; mock injects test doubles.
+func scan(opts ScanOptions, full bool, mock *scanMock) error {
 	scanMu.Lock()
 	defer scanMu.Unlock()
+
+	// Unpacked once here so the body below reads exactly as it did before the
+	// options struct was introduced. The struct exists to make call sites
+	// legible, and rewriting sixty-odd references inside this function would be
+	// churn with no reader benefit.
+	dir, rev := opts.Dir, opts.Rev
+	platformUrl, consoleUrl := opts.PlatformURL, opts.ConsoleURL
+	outputFormat, commentPlatform := opts.OutputFormat, opts.CommentPlatform
+	overrideBranch := opts.OverrideBranch
+	verbose, wait, fullOutput := opts.Verbose, opts.Wait, opts.FullOutput
 
 	if verbose {
 		fmt.Fprintf(os.Stderr, " dir: %s\n", dir)
@@ -318,7 +390,7 @@ func scan(dir string, rev string, platformUrl string, consoleUrl string, verbose
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
-		return queryForResult(platformUrl, sortString, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose, dir, rev, fullOutput)
+		return queryForResult(platformUrl, sortString, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose, dir, rev, fullOutput, opts.FailOnFindings)
 	}
 	return nil
 }
@@ -327,7 +399,7 @@ func cleanupWorkingDirectory(tempDir string) {
 	_ = os.RemoveAll(tempDir)
 }
 
-func queryForResult(platformUrl string, sortKey string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool) error {
+func queryForResult(platformUrl string, sortKey string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool, failOnFindings bool) error {
 	maxAttempts := 750
 	attempt := 0
 	sleepDuration := time.Second
@@ -405,7 +477,7 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 
 					if full {
 						printFullScanResults(results[0].Analysis)
-						return nil
+						return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
 					}
 
 					// Check output format
@@ -425,7 +497,7 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", err)
 							}
 						}
-						return nil
+						return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
 					}
 
 					// Clean and format results for stdout
@@ -452,7 +524,7 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
 							}
 						}
-						return nil
+						return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
 					}
 
 					rendered, err := r.Render(cleanedContent)
@@ -464,7 +536,7 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
 							}
 						}
-						return nil
+						return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
 					}
 
 					fmt.Print(rendered) // stdout
@@ -475,7 +547,7 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 							fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
 						}
 					}
-					return nil
+					return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
 				}
 
 				slices.SortFunc(results, func(a, b api.UserInspectorResult) int {
