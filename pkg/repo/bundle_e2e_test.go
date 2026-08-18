@@ -5,6 +5,7 @@ package repo
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/bzip2"
 	"encoding/json"
 	"io"
@@ -469,4 +470,92 @@ func requireSymlinks(t *testing.T) {
 		t.Skipf("this machine cannot create symlinks (%v); on Windows enable Developer Mode "+
 			"(Settings > System > For developers) or run from an elevated shell to exercise this test", err)
 	}
+}
+
+// TestBundle_UntrackedBinaryExcludedFromPatch pins the reason a stray build
+// artifact used to sink a whole scan.
+//
+// git diff --binary inlines a binary file into the patch as base85, so an
+// untracked 30 MB executable produced a ~37 MB patch -- roughly 19 million
+// tokens, past any model's limit, and the analyzer rejected the upload with an
+// error naming nothing that led back to the cause.
+//
+// It also records the half this does NOT fix: the tarball is built from its own
+// git ls-files call in packageDirectory, so the binary still travels. Only the
+// patch is spared.
+func TestBundle_UntrackedBinaryExcludedFromPatch(t *testing.T) {
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n")
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+
+	// A real text change, so the diff is not empty on its own merits.
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(repoDir, "added.go"), "package main\n")
+
+	// An untracked build artifact: NUL bytes make it binary by git's heuristic.
+	binary := make([]byte, 512*1024)
+	for i := range binary {
+		binary[i] = byte(i % 256) // includes 0x00
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "app.exe"), binary, 0644))
+
+	b := buildBundle(t, repoDir, "HEAD", false)
+
+	assert.NotContains(t, b.patch, "app.exe", "an untracked binary must not reach the patch")
+	assert.NotContains(t, b.patch, "GIT binary patch", "no base85 blob belongs in the patch")
+	assert.Less(t, len(b.patch), 8*1024,
+		"patch should stay small; a binary blob would dwarf it (got %d bytes)", len(b.patch))
+
+	// Text changes are untouched by the filter.
+	assert.Contains(t, b.patch, "diff --git a/main.go b/main.go")
+	assert.Contains(t, b.patch, "+++ b/added.go")
+
+	// The tarball is assembled separately and still carries the binary. If this
+	// ever changes, it is a deliberate decision about upload size, not a
+	// side-effect of the patch filter.
+	assert.Contains(t, b.files, "app.exe",
+		"documenting current behaviour: the tarball is built from its own file list")
+}
+
+func TestIsBinaryFile(t *testing.T) {
+	dir := t.TempDir()
+
+	write := func(name string, content []byte) string {
+		p := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(p, content, 0644))
+		return p
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"go source", write("a.go", []byte("package main\n\nfunc main() {}\n")), false},
+		{"empty file", write("empty", nil), false},
+		{"utf-8 text", write("u.txt", []byte("héllo wörld — ok\n")), false},
+		{"crlf text", write("crlf.txt", []byte("line one\r\nline two\r\n")), false},
+		{"nul in the first bytes", write("bin1", []byte{'M', 'Z', 0x00, 0x01}), true},
+		{
+			// git only inspects the first 8000 bytes, so a NUL past that window
+			// is not treated as binary. Matching that keeps us consistent with
+			// what git itself will put in the diff.
+			name: "nul beyond the sniff window",
+			path: write("bin2", append(bytes.Repeat([]byte("a"), binarySniffLen+10), 0x00)),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := isBinaryFile(tt.path)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+
+	_, err := isBinaryFile(filepath.Join(dir, "does-not-exist"))
+	assert.Error(t, err, "a missing file must report an error, not a verdict")
 }
