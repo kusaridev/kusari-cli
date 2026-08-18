@@ -277,6 +277,28 @@ func TestExtractBinary_SelectsFormatByAssetName(t *testing.T) {
 	}
 }
 
+// TestAssets_MatchVersion catches versions.go drifting out of internal
+// agreement, which is not hypothetical: every asset filename embeds the release
+// tag, so a bump that updates Version without regenerating every entry builds a
+// download URL from the new tag and the old filename.
+//
+// That went unnoticed once because a pull request merges cleanly while still
+// being wrong. main bumped Version and the three targets it knew about; this
+// branch separately added windows/amd64. Neither side touched the other's
+// lines, so git produced a merge with a new Version and one stale filename --
+// caught only by a 404 on the Windows runner, on the one platform no
+// contributor runs locally.
+//
+// Regenerate with scripts/bump-waybill.sh rather than editing by hand.
+func TestAssets_MatchVersion(t *testing.T) {
+	require.NotEmpty(t, Version)
+	for target, a := range assets {
+		assert.Contains(t, a.Filename, "v"+Version,
+			"asset for %s is %q, which does not carry Version %q -- versions.go is internally "+
+				"inconsistent; re-run scripts/bump-waybill.sh", target, a.Filename, Version)
+	}
+}
+
 // TestAssets_CoverSupportedPlatforms guards against a bump that silently drops
 // a target from versions.go.
 func TestAssets_CoverSupportedPlatforms(t *testing.T) {
