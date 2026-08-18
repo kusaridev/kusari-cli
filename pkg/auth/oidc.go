@@ -86,7 +86,12 @@ func Authenticate(ctx context.Context, clientId, clientSecret, redirectUrl, auth
 		fmt.Printf("Waiting for authentication...\n\n")
 
 		if err := OpenBrowser(authURL); err != nil {
-			fmt.Printf("Failed to open browser automatically. Please visit the login page manually.")
+			// Repeat the URL rather than pointing back at earlier output: by the
+			// time this prints, the reason the browser did not appear is the one
+			// thing the user needs, and scrolling up for the link is friction in
+			// exactly the situation where things are already not working.
+			fmt.Printf("Could not open a browser automatically: %v\n\n"+
+				"Open this URL to continue signing in:\n\n%s\n\n", err, authURL)
 		}
 
 		cs := <-callbackRes
