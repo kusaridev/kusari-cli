@@ -27,15 +27,6 @@ func TestNewServer_WithNilConfig(t *testing.T) {
 	assert.NotNil(t, server)
 }
 
-func TestServer_HasScanQueue(t *testing.T) {
-	cfg := NewConfig()
-	server, err := NewServer(cfg)
-	require.NoError(t, err)
-
-	// Server should have a scan queue
-	assert.NotNil(t, server.scanQueue)
-}
-
 func TestServer_RegistersTools(t *testing.T) {
 	cfg := NewConfig()
 	server, err := NewServer(cfg)

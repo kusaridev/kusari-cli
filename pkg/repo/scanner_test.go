@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/kusaridev/kusari-cli/v2/api"
@@ -639,4 +640,86 @@ func setupGitRepoAt(t *testing.T, dir string) {
 		require.NoError(t, err, "git %v: %s", args, out)
 	}
 	require.NoError(t, os.WriteFile(testFile, []byte("uncommitted change"), 0644))
+}
+
+// Two scans running at once must not interleave. scan() mutates the process
+// working directory and the package-level patch/meta/tarball paths, so without
+// serialization one scan reads the other's diff and uploads it under the wrong
+// repository -- a security scanner silently reporting on code the caller never
+// asked about. The MCP server (kusari ai serve) is long-lived and the go-sdk
+// dispatches tool calls asynchronously, so this is reachable in practice.
+func TestScan_ConcurrentScansDoNotCorruptEachOther(t *testing.T) {
+	// Each repo gets a uniquely named file so an archive can be attributed to
+	// the scan that should have produced it.
+	newRepo := func(marker string) string {
+		dir := t.TempDir()
+		setupGitRepoAt(t, dir)
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir, "marker-"+marker+".txt"),
+			[]byte("MARKER-"+marker+"\n"), 0644))
+		return dir
+	}
+
+	type scanCase struct {
+		marker string
+		dir    string
+	}
+	cases := []scanCase{{"AAA", newRepo("AAA")}, {"BBB", newRepo("BBB")}}
+
+	var mu sync.Mutex
+	// uploaded maps a marker to the patch text captured for that scan.
+	uploaded := map[string]string{}
+
+	var wg sync.WaitGroup
+	errs := make([]error, len(cases))
+	for i, tc := range cases {
+		wg.Add(1)
+		go func(i int, tc scanCase) {
+			defer wg.Done()
+			mock := &scanMock{
+				fileUploader: func(presignedURL, filePath string) error {
+					// Read the patch that this scan actually assembled.
+					patch, err := os.ReadFile(patchName)
+					if err != nil {
+						return err
+					}
+					mu.Lock()
+					uploaded[tc.marker] = string(patch)
+					mu.Unlock()
+					return nil
+				},
+				presignedURLGetter: func(apiEndpoint, jwtToken, filePath, workspace string, full bool, size int64) (string, error) {
+					return "https://example.com/workspace/ws/user/human/u/diff/blob/123", nil
+				},
+				defaultWorkspaceGetter: func(platformUrl, jwtToken string) ([]login.Workspace, map[string][]string, error) {
+					return []login.Workspace{{ID: "ws", Description: "Test Workspace"}},
+						map[string][]string{"ws": {"test-tenant"}}, nil
+				},
+				token: "token",
+			}
+			errs[i] = scan(tc.dir, "HEAD", "https://platform.example.com", "https://console.example.com",
+				false, false, false, "markdown", "", false, "", mock)
+		}(i, tc)
+	}
+	wg.Wait()
+
+	for i, tc := range cases {
+		require.NoError(t, errs[i], "scan of repo %s should succeed", tc.marker)
+	}
+
+	// Each scan must have seen its own repository and nobody else's.
+	for _, tc := range cases {
+		patch, ok := uploaded[tc.marker]
+		require.True(t, ok, "scan %s should have uploaded a patch", tc.marker)
+		assert.Contains(t, patch, "marker-"+tc.marker+".txt",
+			"scan %s must contain its own new file", tc.marker)
+		for _, other := range cases {
+			if other.marker == tc.marker {
+				continue
+			}
+			assert.NotContains(t, patch, "marker-"+other.marker+".txt",
+				"scan %s leaked repo %s's contents: concurrent scans are not isolated",
+				tc.marker, other.marker)
+		}
+	}
 }
