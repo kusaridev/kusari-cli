@@ -8,6 +8,7 @@ package waybill
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -18,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -122,12 +124,21 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	return cmd.Run()
 }
 
+// binExt is the executable suffix for the host platform. Windows will not
+// execute a file that lacks it, so the cached binary has to carry it.
+func binExt() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
+}
+
 func cachedBinaryPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".kusari", "bin", "waybill-"+Version), nil
+	return filepath.Join(home, ".kusari", "bin", "waybill-"+Version+binExt()), nil
 }
 
 func currentAsset() (asset, error) {
@@ -173,19 +184,47 @@ func install(ctx context.Context, binPath string) (string, error) {
 
 	s.Suffix = " extracting"
 	tmp := binPath + ".tmp"
-	if err := extractTarGz(archive, tmp); err != nil {
+	if err := extractBinary(archive, a.Filename, tmp); err != nil {
 		return "", err
 	}
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		return "", fmt.Errorf("chmod %s: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, binPath); err != nil {
+		// A rename can still fail after another kusari process has already put
+		// a good binary here. Windows is where this actually bites: os.Rename
+		// passes MOVEFILE_REPLACE_EXISTING, so an occupied destination is not
+		// itself an error, but the OS refuses to replace an executable that
+		// another process is currently running -- reported as a sharing
+		// violation or access denial, not as "already exists".
+		//
+		// So the question is not which errno came back, it is whether the
+		// destination now holds a usable binary. Only this rename ever
+		// publishes to binPath, and it publishes atomically after the download
+		// has been checksum-verified, so anything sitting there is the product
+		// of a completed, verified install and is safe to adopt. The size and
+		// mode check rejects the one thing that is not: a zero-length or
+		// non-regular leftover.
+		if isUsableBinary(binPath) {
+			_ = os.Remove(tmp)
+			s.Stop()
+			fmt.Fprintf(os.Stderr, "kusari: Waybill %s was installed concurrently at %s; using it\n", Version, binPath)
+			return binPath, nil
+		}
 		return "", fmt.Errorf("rename %s -> %s: %w", tmp, binPath, err)
 	}
 
 	s.Stop()
 	fmt.Fprintf(os.Stderr, "kusari: installed Waybill %s to %s\n", Version, binPath)
 	return binPath, nil
+}
+
+// isUsableBinary reports whether path looks like an installed binary rather
+// than a leftover: a zero-length file at the destination is a failed install by
+// someone else, not one worth adopting.
+func isUsableBinary(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().IsRegular() && fi.Size() > 0
 }
 
 func downloadAndVerify(ctx context.Context, url, wantHex string) (string, error) {
@@ -205,7 +244,7 @@ func downloadAndVerify(ctx context.Context, url, wantHex string) (string, error)
 		return "", fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
 	}
 
-	f, err := os.CreateTemp("", "waybill-*.tar.gz")
+	f, err := os.CreateTemp("", "waybill-download-*")
 	if err != nil {
 		return "", err
 	}
@@ -228,6 +267,54 @@ func downloadAndVerify(ctx context.Context, url, wantHex string) (string, error)
 	return f.Name(), nil
 }
 
+// isWaybillBinary reports whether an archive member is the executable we want.
+// Upstream nests it under a versioned directory, and the Windows build carries
+// the .exe suffix.
+func isWaybillBinary(name string) bool {
+	base := path.Base(name)
+	return base == "waybill" || base == "waybill.exe"
+}
+
+// extractBinary pulls the waybill executable out of a release archive. Upstream
+// publishes .tar.gz for Unix targets and .zip for Windows, so the format is
+// selected from the asset name rather than assumed.
+func extractBinary(archivePath, assetName, destPath string) error {
+	if strings.HasSuffix(assetName, ".zip") {
+		return extractZip(archivePath, destPath)
+	}
+	return extractTarGz(archivePath, destPath)
+}
+
+func extractZip(archivePath, destPath string) error {
+	zr, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = zr.Close() }()
+
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() || !isWaybillBinary(f.Name) {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rc.Close() }()
+
+		out, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, rc); err != nil {
+			_ = out.Close()
+			return err
+		}
+		return out.Close()
+	}
+	return fmt.Errorf("waybill binary not found in archive")
+}
+
 func extractTarGz(archivePath, destPath string) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -248,7 +335,7 @@ func extractTarGz(archivePath, destPath string) error {
 		if err != nil {
 			return err
 		}
-		if hdr.Typeflag != tar.TypeReg || filepath.Base(hdr.Name) != "waybill" {
+		if hdr.Typeflag != tar.TypeReg || !isWaybillBinary(hdr.Name) {
 			continue
 		}
 		out, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)

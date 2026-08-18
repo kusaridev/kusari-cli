@@ -15,8 +15,16 @@ jobs:
     - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
       with:
         args: --timeout 3m --verbose
-  build:
-    runs-on: ubuntu-latest
+  # Named build-matrix, not build, so the aggregate job below can own the
+  # "build" check name. Branch protection matches checks by name, and a matrix
+  # job reports one check per leg ("build (ubuntu-latest)", ...) -- never the
+  # bare name a ruleset asks for.
+  build-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -25,9 +33,25 @@ jobs:
       with:
         go-version-file: 'go.mod'
     - run: go build -v ./...
-  test:
-    runs-on: ubuntu-latest
+  test-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
+    # Runs BEFORE checkout on purpose. The Windows runner defaults to
+    # core.autocrlf=true, which rewrites tracked files to CRLF as they are
+    # checked out; configuring it afterwards would be too late to affect the
+    # working tree the tests read. .gitattributes pins this too -- this is the
+    # belt to its braces, and also supplies the identity the tests need to
+    # create commits.
+    - name: Configure git
+      run: |
+        git config --global core.autocrlf false
+        git config --global init.defaultBranch main
+        git config --global user.email "ci@example.com"
+        git config --global user.name "CI"
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
@@ -36,6 +60,236 @@ jobs:
         go-version-file: 'go.mod'
     - run: go test -v ./...
     - run: go vet ./...
+  # These two exist purely to publish the stable check names "build" and "test"
+  # that the repository ruleset requires. Each passes only when every leg of its
+  # matrix passed, so the required check still gates on all three operating
+  # systems -- and the ruleset needs no edit when a platform is added or removed.
+  #
+  # "if: always()" is load-bearing: without it a failed matrix leg would skip
+  # this job rather than fail it, and a skipped check does not block a merge.
+  build:
+    needs: build-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Verify every build matrix leg passed
+      env:
+        RESULT: ${{ needs.build-matrix.result }}
+      run: |
+        echo "build-matrix result: $RESULT"
+        test "$RESULT" = "success"
+  test:
+    needs: test-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Verify every test matrix leg passed
+      env:
+        RESULT: ${{ needs.test-matrix.result }}
+      run: |
+        echo "test-matrix result: $RESULT"
+        test "$RESULT" = "success"
+  windows-e2e:
+    name: Windows end-to-end
+    runs-on: windows-latest
+    # Exercises the real kusari.exe in a native PowerShell session. The `test`
+    # matrix proves the packages compile and pass on Windows; this proves the
+    # shipped binary actually works there -- it downloads and runs Waybill,
+    # builds a scan bundle, and drives the auth-free commands end to end.
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Environment
+      shell: powershell
+      run: |
+        Write-Output "Running on Windows!"
+        Get-ComputerInfo | Select-Object WindowsProductName, OsVersion
+        git --version
+        go version
+
+    - name: Build kusari.exe
+      shell: powershell
+      run: |
+        $ErrorActionPreference = "Stop"
+        go build -o kusari.exe ./kusari
+        if (-not (Test-Path kusari.exe)) { throw "kusari.exe was not produced" }
+        Get-Item kusari.exe | Select-Object Name, Length
+
+    - name: CLI starts and reports version
+      shell: powershell
+      run: |
+        $ErrorActionPreference = "Stop"
+        .\kusari.exe --version
+        .\kusari.exe --help
+        if ($LASTEXITCODE -ne 0) { throw "kusari --help exited $LASTEXITCODE" }
+
+    # The scan bundle is built entirely on the user's machine: metadata, git
+    # diff, tar and bzip2. This is the code path that used to shell out to
+    # sh/tar/bzip2 and could not run on Windows at all.
+    - name: Scan bundle pipeline (tar + bzip2 + diff + metadata)
+      shell: powershell
+      run: |
+        $ErrorActionPreference = "Stop"
+        go test ./pkg/repo/ -run "TestBundle|TestPackageDirectory|TestGitAvailable" -v
+        if ($LASTEXITCODE -ne 0) { throw "bundle pipeline tests failed" }
+
+    # A path with a space is the Windows norm (C:\Program Files, C:\Users\First
+    # Last) and is exactly where quoting and path-joining bugs surface.
+    - name: Scan bundle from a path containing spaces
+      shell: powershell
+      run: |
+        # Deliberately not "Stop": these steps capture native stderr with 2>&1,
+        # which Windows PowerShell surfaces as ErrorRecords. Under "Stop" the
+        # first stderr line from git or kusari would abort the step. Exit codes
+        # are checked explicitly instead.
+        $ErrorActionPreference = "Continue"
+        $repo = Join-Path $env:RUNNER_TEMP "kusari e2e repo"
+        New-Item -ItemType Directory -Force -Path $repo | Out-Null
+        Push-Location $repo
+        git init --initial-branch=main 2>&1 | Out-Null
+        git config user.email "ci@example.com"
+        git config user.name "CI"
+        # The Git for Windows default, so the bundle is built the way a real
+        # user's machine builds it.
+        git config core.autocrlf true
+        New-Item -ItemType Directory -Force -Path "sub dir" | Out-Null
+        Set-Content -Path "main.go" -Value "package main`n`nfunc main() {}"
+        Set-Content -Path "sub dir\lib.go" -Value "package lib"
+        git add -A
+        git commit -q -m "initial"
+        if ($LASTEXITCODE -ne 0) { throw "failed to create the test repository" }
+        # Uncommitted work for the diff scan to pick up.
+        Set-Content -Path "main.go" -Value "package main`n`nfunc main() { println(1) }"
+        Set-Content -Path "added.go" -Value "package main"
+        Pop-Location
+
+        # repo scan requires credentials, so it cannot complete in CI. Assert it
+        # reaches the auth gate rather than dying earlier on a Windows-specific
+        # filesystem or shell-out failure -- the original bug report was a crash
+        # in this command before it ever got this far.
+        #
+        # Start-Process with redirected streams rather than "2>&1": PowerShell
+        # turns a native command's stderr into ErrorRecords, which render as a
+        # red NativeCommandError block even when the step goes on to succeed.
+        # The CLI writes its diagnostics to stderr, so that block appeared on
+        # every passing run and read like a failure.
+        $stdout = Join-Path $env:RUNNER_TEMP "scan.out"
+        $stderr = Join-Path $env:RUNNER_TEMP "scan.err"
+        # -ArgumentList joins an array with spaces and quotes nothing, so the
+        # repo path -- which contains spaces by design here -- has to carry its
+        # own quotes or the CLI receives it as several arguments.
+        $quotedRepo = '"' + $repo + '"'
+        $proc = Start-Process -FilePath ".\kusari.exe" `
+          -ArgumentList @("repo", "scan", $quotedRepo, "HEAD") `
+          -NoNewWindow -Wait -PassThru `
+          -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $out = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
+        Write-Output "kusari repo scan exited $($proc.ExitCode)"
+        Write-Output $out
+
+        # Distinguish "we invoked it wrong" from "the CLI is broken", so a
+        # quoting mistake in this workflow cannot masquerade as a product bug.
+        if ($out -match "accepts \d+ arg" -or $out -match "unknown command" -or
+            $out -match "unknown flag") {
+          throw "the workflow invoked kusari incorrectly -- the path argument was likely split: $out"
+        }
+        if ($out -match "failed to package directory" -or
+            $out -match "Cannot create a file when that file already exists" -or
+            $out -match "error taring source code" -or
+            $out -match "error compressing file" -or
+            $out -match "'sh' is not recognized" -or
+            $out -match "'tar' is not recognized" -or
+            $out -match "'bzip2' is not recognized") {
+          throw "repo scan failed inside the local packaging pipeline: $out"
+        }
+        if ($out -notmatch "auth" -and $out -notmatch "token" -and $out -notmatch "login") {
+          throw "expected repo scan to stop at authentication, got: $out"
+        }
+        Write-Output "repo scan reached the auth gate as expected"
+
+    # Downloads the Windows release zip, verifies its SHA256, unpacks
+    # waybill.exe and runs it. Exercises the whole lazy-install path natively.
+    - name: Generate an SBOM
+      shell: powershell
+      run: |
+        # Not "Stop": waybill writes a lot of progress tracing to stderr, and
+        # PowerShell can surface a native command's stderr as terminating
+        # errors. The exit code is checked explicitly instead.
+        $ErrorActionPreference = "Continue"
+        .\kusari.exe platform generate -- --path .
+        if ($LASTEXITCODE -ne 0) { throw "platform generate exited $LASTEXITCODE" }
+        if (-not (Test-Path project.cdx.json)) { throw "SBOM was not written" }
+        $sbom = Get-Content project.cdx.json -Raw | ConvertFrom-Json
+        Write-Output "SBOM format=$($sbom.bomFormat) components=$($sbom.components.Count)"
+        if ($sbom.bomFormat -ne "CycloneDX") { throw "unexpected bomFormat: $($sbom.bomFormat)" }
+        if ($sbom.components.Count -lt 1) { throw "SBOM contains no components" }
+
+    - name: Waybill installed as a Windows executable
+      shell: powershell
+      run: |
+        $ErrorActionPreference = "Continue"
+        $bin = Get-ChildItem -Path (Join-Path $env:USERPROFILE ".kusari\bin") -Filter "waybill-*.exe" -ErrorAction SilentlyContinue
+        if (-not $bin) { throw "no waybill-*.exe in ~/.kusari/bin" }
+        $bin | Select-Object Name, Length
+        # Second call must hit the cache instead of downloading again.
+        .\kusari.exe platform generate -- --path . --output cached.cdx.json
+        if ($LASTEXITCODE -ne 0) { throw "cached waybill run exited $LASTEXITCODE" }
+        if (-not (Test-Path cached.cdx.json)) { throw "cached run wrote no SBOM" }
+
+    - name: Connectivity preflight
+      shell: powershell
+      run: |
+        $ErrorActionPreference = "Continue"
+        # Runner egress can legitimately vary, so a failing probe is reported
+        # rather than fatal here. What this step guards against is the binary
+        # crashing or hanging, and a report that never gets written.
+        .\kusari.exe connectivity check --timeout 30s --report preflight.json
+        Write-Output "connectivity check exited $LASTEXITCODE"
+        if (-not (Test-Path preflight.json)) { throw "no preflight report written" }
+        $report = Get-Content preflight.json -Raw | ConvertFrom-Json
+        $report.tests | Select-Object name, status, category, statusCode | Format-Table
+        if ($report.tests.Count -lt 1) { throw "preflight report contains no probes" }
+
+    # Winsock returns WSAE* error numbers that do not equal the POSIX syscall.E*
+    # constants, so a diagnosis keyed on the POSIX names alone silently degrades
+    # to a generic message on Windows. Point a probe at a closed local port to
+    # force a refused connection and assert it is named as one -- this needs no
+    # external network, so it is deterministic on any runner.
+    - name: Refused connections are diagnosed, not swallowed
+      shell: powershell
+      run: |
+        $ErrorActionPreference = "Continue"
+        # Redirected via Start-Process for the same reason as the scan step: a
+        # deliberately failing probe writes to stderr, and merging that with
+        # "2>&1" would render a red NativeCommandError block on a passing step.
+        $stdout = Join-Path $env:RUNNER_TEMP "refused.out"
+        $stderr = Join-Path $env:RUNNER_TEMP "refused.err"
+        $proc = Start-Process -FilePath ".\kusari.exe" `
+          -ArgumentList @("connectivity", "check", "--timeout", "10s",
+                          "--platform-url", "http://127.0.0.1:1") `
+          -NoNewWindow -Wait -PassThru `
+          -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $out = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
+        # A failing probe makes the command exit 1; that is expected here.
+        Write-Output "connectivity check exited $($proc.ExitCode)"
+        Write-Output $out
+        if ($out -notmatch "actively refused the connection") {
+          throw "a refused connection was not classified as one on Windows; got: $out"
+        }
+        Write-Output "connection refused was correctly diagnosed"
+
+    - name: MCP client config paths resolve
+      shell: powershell
+      run: |
+        $ErrorActionPreference = "Stop"
+        # Expands %APPDATA% / %USERPROFILE% in the client table.
+        .\kusari.exe ai list
+        if ($LASTEXITCODE -ne 0) { throw "ai list exited $LASTEXITCODE" }
   dependency-review:
     runs-on: ubuntu-latest
     steps:

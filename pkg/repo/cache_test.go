@@ -13,12 +13,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// useHomeDir points os.UserHomeDir at dir for the duration of the test.
+//
+// Setting only HOME is not enough: os.UserHomeDir reads USERPROFILE on Windows,
+// so a HOME-only override leaves these tests reading and writing the real
+// ~/.kusari of whoever runs them -- which for the ClearCache tests means
+// deleting a developer's actual scan cache.
+func useHomeDir(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
 func TestLoadCache_EmptyFile(t *testing.T) {
 	// Create a temp directory for test
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	require.NoError(t, os.Setenv("HOME", tmpDir))
-	defer func() { _ = os.Setenv("HOME", origHome) }()
+	useHomeDir(t, tmpDir)
 
 	cache, err := loadCache()
 	require.NoError(t, err)
@@ -29,9 +39,7 @@ func TestLoadCache_EmptyFile(t *testing.T) {
 
 func TestSaveAndLoadCache(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	require.NoError(t, os.Setenv("HOME", tmpDir))
-	defer func() { _ = os.Setenv("HOME", origHome) }()
+	useHomeDir(t, tmpDir)
 
 	// Create cache directory
 	kusariDir := filepath.Join(tmpDir, ".kusari")
@@ -91,9 +99,7 @@ func TestCleanupOldEntries(t *testing.T) {
 
 func TestClearCache(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	require.NoError(t, os.Setenv("HOME", tmpDir))
-	defer func() { _ = os.Setenv("HOME", origHome) }()
+	useHomeDir(t, tmpDir)
 
 	// Create cache directory and file
 	kusariDir := filepath.Join(tmpDir, ".kusari")
@@ -112,9 +118,7 @@ func TestClearCache(t *testing.T) {
 
 func TestClearCache_NoFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	require.NoError(t, os.Setenv("HOME", tmpDir))
-	defer func() { _ = os.Setenv("HOME", origHome) }()
+	useHomeDir(t, tmpDir)
 
 	// Clear cache when no file exists should not error
 	err := ClearCache()
@@ -123,9 +127,7 @@ func TestClearCache_NoFile(t *testing.T) {
 
 func TestLoadCache_CorruptedFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	require.NoError(t, os.Setenv("HOME", tmpDir))
-	defer func() { _ = os.Setenv("HOME", origHome) }()
+	useHomeDir(t, tmpDir)
 
 	// Create cache directory with corrupted file
 	kusariDir := filepath.Join(tmpDir, ".kusari")
@@ -171,9 +173,7 @@ func TestCacheResult_Fields(t *testing.T) {
 
 func TestCheckCache_NoEntry(t *testing.T) {
 	tmpDir := t.TempDir()
-	origHome := os.Getenv("HOME")
-	require.NoError(t, os.Setenv("HOME", tmpDir))
-	defer func() { _ = os.Setenv("HOME", origHome) }()
+	useHomeDir(t, tmpDir)
 
 	result, err := CheckCache("/nonexistent/repo", "HEAD", false)
 	require.NoError(t, err)

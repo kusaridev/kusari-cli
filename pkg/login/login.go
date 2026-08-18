@@ -125,7 +125,7 @@ func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoin
 
 				fmt.Println("\nOpening console in your browser...")
 				if err := auth.OpenBrowser(parsedURL.String()); err != nil {
-					fmt.Printf("Failed to open browser automatically. Please visit: %s\n", parsedURL.String())
+					fmt.Printf("Could not open a browser automatically: %v\n\nVisit: %s\n", err, parsedURL.String())
 				}
 			}
 		}

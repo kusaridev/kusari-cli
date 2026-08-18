@@ -1,3 +1,22 @@
 kusari/kusari
 kusari/kusari.exe
 .claude
+
+# Built binaries and release artifacts.
+#
+# These are deliberately broad. Anything untracked and not ignored here is
+# picked up by `git ls-files --others --exclude-standard`, so it lands in the
+# scan bundle -- and `git diff --binary` embeds an untracked binary in the patch
+# as base85, which is what the analyzer reads. A ~30 MB executable becomes a
+# ~37 MB blob and roughly 19 million tokens, well past any model's limit, and
+# the scan fails with an error that says nothing about the real cause.
+#
+# The two lines at the top only cover binaries built inside kusari/. Building at
+# the repo root (go build -o kusari.exe ./kusari) lands one here instead.
+/kusari.exe
+/kusari-cli
+/kusari-cli.exe
+*.exe
+
+# goreleaser output; hundreds of MB across every target platform.
+/dist/

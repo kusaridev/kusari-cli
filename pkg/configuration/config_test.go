@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -18,7 +17,7 @@ import (
 
 // Test generating a new file when none exists
 func TestGenerate(t *testing.T) {
-	// Get the current directory so that we can change back to it later
+	// testdata paths are resolved before chdir, so capture the package dir.
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	// Create a temporary test directory
@@ -26,18 +25,16 @@ func TestGenerate(t *testing.T) {
 	sourceFile := filepath.Join(cwd, "testdata", "config-default.yaml")
 	destFile := "kusari.yaml"
 
-	require.NoError(t, os.Chdir(testDir))
+	t.Chdir(testDir)
 	require.NoFileExists(t, destFile)
 
 	require.NoError(t, GenerateConfig(false))
 	require.True(t, compareHashes(sourceFile, destFile))
-
-	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test generating a new file when one exists
 func TestGenerateWithExisting(t *testing.T) {
-	// Get the current directory so that we can change back to it later
+	// testdata paths are resolved before chdir, so capture the package dir.
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	// Create a temporary test directory
@@ -45,8 +42,8 @@ func TestGenerateWithExisting(t *testing.T) {
 	// Copy the test file
 	sourceFile := filepath.Join(cwd, "testdata", "config-default.yaml")
 	destFile := filepath.Join(testDir, "kusari.yaml")
-	require.NoError(t, runCommand("cp", sourceFile, destFile))
-	require.NoError(t, os.Chdir(testDir))
+	copyFixture(t, sourceFile, destFile)
+	t.Chdir(testDir)
 
 	// Try to generate a new file when one exists. This should fail.
 	require.ErrorContains(t, GenerateConfig(false), "not overwriting")
@@ -57,13 +54,11 @@ func TestGenerateWithExisting(t *testing.T) {
 	require.NoError(t, GenerateConfig(true))
 	// Make sure they match!
 	require.True(t, compareHashes(sourceFile, destFile))
-
-	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test that update-config produces a default config file when none already exists
 func TestUpdateWithNoFile(t *testing.T) {
-	// Get the current directory so that we can change back to it later
+	// testdata paths are resolved before chdir, so capture the package dir.
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	// Create a temporary test directory
@@ -72,7 +67,7 @@ func TestUpdateWithNoFile(t *testing.T) {
 	destFile := "kusari.yaml"
 
 	// Make sure there's no file
-	require.NoError(t, os.Chdir(testDir))
+	t.Chdir(testDir)
 	require.NoFileExists(t, destFile)
 
 	// Write the file
@@ -80,13 +75,11 @@ func TestUpdateWithNoFile(t *testing.T) {
 
 	// Make sure the new file matches the test data
 	require.True(t, compareHashes(sourceFile, destFile))
-
-	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test that the update function doesn't change user configs
 func TestUpdateWithChanges(t *testing.T) {
-	// Get the current directory so that we can change back to it later
+	// testdata paths are resolved before chdir, so capture the package dir.
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	// Create a temporary test directory
@@ -94,8 +87,8 @@ func TestUpdateWithChanges(t *testing.T) {
 	// Copy the test file
 	sourceFile := filepath.Join(cwd, "testdata", "config-changed.yaml")
 	destFile := filepath.Join(testDir, "kusari.yaml")
-	require.NoError(t, runCommand("cp", sourceFile, destFile))
-	require.NoError(t, os.Chdir(testDir))
+	copyFixture(t, sourceFile, destFile)
+	t.Chdir(testDir)
 
 	// Write the file
 	require.NoError(t, UpdateConfig())
@@ -105,13 +98,11 @@ func TestUpdateWithChanges(t *testing.T) {
 	readContent, err := os.ReadFile(destFile)
 	require.NoError(t, err)
 	require.Contains(t, string(readContent), expectedConfig)
-
-	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test that the update function adds missing configs
 func TestUpdateAddMissing(t *testing.T) {
-	// Get the current directory so that we can change back to it later
+	// testdata paths are resolved before chdir, so capture the package dir.
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	// Create a temporary test directory
@@ -120,21 +111,19 @@ func TestUpdateAddMissing(t *testing.T) {
 	sourceFile := filepath.Join(cwd, "testdata", "config-missing.yaml")
 	destFile := filepath.Join(testDir, "kusari.yaml")
 	desiredFile := filepath.Join(cwd, "testdata", "config-default.yaml")
-	require.NoError(t, runCommand("cp", sourceFile, destFile))
-	require.NoError(t, os.Chdir(testDir))
+	copyFixture(t, sourceFile, destFile)
+	t.Chdir(testDir)
 
 	// Write the file
 	require.NoError(t, UpdateConfig())
 
 	// Check to make sure all of the missing configs were added
 	require.True(t, compareHashes(desiredFile, destFile))
-
-	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test that SBOM configuration fields are properly preserved during update
 func TestUpdatePreservesSBOMConfig(t *testing.T) {
-	// Get the current directory so that we can change back to it later
+	// testdata paths are resolved before chdir, so capture the package dir.
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	// Create a temporary test directory
@@ -142,8 +131,8 @@ func TestUpdatePreservesSBOMConfig(t *testing.T) {
 	// Copy the test file
 	sourceFile := filepath.Join(cwd, "testdata", "config-sbom-enabled.yaml")
 	destFile := filepath.Join(testDir, "kusari.yaml")
-	require.NoError(t, runCommand("cp", sourceFile, destFile))
-	require.NoError(t, os.Chdir(testDir))
+	copyFixture(t, sourceFile, destFile)
+	t.Chdir(testDir)
 
 	// Write the file
 	require.NoError(t, UpdateConfig())
@@ -157,8 +146,6 @@ func TestUpdatePreservesSBOMConfig(t *testing.T) {
 	require.Contains(t, content, "sbom_generation_enabled: true")
 	require.Contains(t, content, "sbom_subject_name_override: custom-subject")
 	require.Contains(t, content, "sbom_subject_version_override: v1.0.0")
-
-	require.NoError(t, os.Chdir(cwd))
 }
 
 // Test that default SBOM config has generation disabled
@@ -170,13 +157,7 @@ func TestDefaultSBOMConfigDisabled(t *testing.T) {
 
 // Test that generated config omits empty SBOM string fields
 func TestGeneratedConfigOmitsEmptySBOMFields(t *testing.T) {
-	// Get the current directory so that we can change back to it later
-	cwd, err := os.Getwd()
-	require.NoError(t, err)
-	// Create a temporary test directory
-	testDir := t.TempDir()
-
-	require.NoError(t, os.Chdir(testDir))
+	t.Chdir(t.TempDir())
 
 	// Generate a new config file
 	require.NoError(t, GenerateConfig(false))
@@ -192,20 +173,20 @@ func TestGeneratedConfigOmitsEmptySBOMFields(t *testing.T) {
 	// Empty string fields should NOT be present (they have omitempty)
 	require.NotContains(t, content, "sbom_subject_name_override")
 	require.NotContains(t, content, "sbom_subject_version_override")
-
-	require.NoError(t, os.Chdir(cwd))
 }
 
 //
 // Some helper functions along the way
 //
 
-// Run shell commands
-func runCommand(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+// copyFixture copies a testdata file into the test's working directory.
+// Done in Go rather than by shelling out to cp(1), which a stock Windows
+// install does not have.
+func copyFixture(t *testing.T, src, dst string) {
+	t.Helper()
+	data, err := os.ReadFile(src)
+	require.NoError(t, err, "failed to read fixture %s", src)
+	require.NoError(t, os.WriteFile(dst, data, 0600), "failed to write %s", dst)
 }
 
 // Compute a file's SHA256 hash
@@ -232,6 +213,6 @@ func compareHashes(fileOne string, fileTwo string) bool {
 	hashTwo, _ := computeFileHash(fileTwo)
 
 	//DEBUG
-	fmt.Fprintf(os.Stderr, "Comparing %s to %s", fileOne, fileTwo)
+	fmt.Fprintf(os.Stderr, "Comparing %s to %s\n", fileOne, fileTwo)
 	return hashOne == hashTwo
 }

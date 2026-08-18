@@ -1,0 +1,11 @@
+# Normalize text files to LF in the index and in the working tree on every
+# platform.
+#
+# Without this, a Windows checkout with core.autocrlf=true -- what the Git for
+# Windows installer configures by default -- rewrites tracked files to CRLF.
+# That silently breaks anything comparing generated output byte-for-byte against
+# a checked-in fixture: pkg/configuration's tests hash testdata/*.yaml against
+# the config the CLI writes, and the CLI always writes LF.
+#
+# "text=auto" still detects binary content and leaves it untouched.
+* text=auto eol=lf

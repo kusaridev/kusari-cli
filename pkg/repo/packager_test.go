@@ -439,6 +439,134 @@ func TestPackageDirectory_NonGitRepo(t *testing.T) {
 	}
 }
 
+// setupPackagerTest wires the package-level globals packageDirectory reads,
+// chdirs into a fresh git repo, and returns its path. Cleanup is registered on
+// t, so callers just use the returned directory.
+func setupPackagerTest(t *testing.T) string {
+	t.Helper()
+
+	repoDir := t.TempDir()
+	tempDir := t.TempDir()
+	// Note that tempDir already exists: scan() creates it with os.MkdirTemp
+	// before calling packageDirectory, so "the output directory is already
+	// there" is the normal case, not an edge case.
+	tarballDir = tempDir
+	workingDir = filepath.Join(tempDir, workingDirName)
+	require.NoError(t, os.Mkdir(workingDir, 0700))
+	metaName = filepath.Join(workingDir, metaFile)
+	patchName = filepath.Join(workingDir, patchFile)
+	writeFile(t, metaName, `{"test": "meta"}`)
+	writeFile(t, patchName, "patch content")
+
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+	require.NoError(t, os.Chdir(repoDir))
+
+	runCmd(t, repoDir, "git", "init")
+	runCmd(t, repoDir, "git", "config", "user.email", "test@example.com")
+	runCmd(t, repoDir, "git", "config", "user.name", "Test User")
+
+	return repoDir
+}
+
+// TestPackageDirectory_UnusualFilenames covers paths that git quotes by default
+// (core.quotePath), which the old files.txt + `tar -T` pipeline could not
+// round-trip.
+func TestPackageDirectory_UnusualFilenames(t *testing.T) {
+	repoDir := setupPackagerTest(t)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, "deep", "nest"), 0755))
+	writeFile(t, filepath.Join(repoDir, "deep", "nest", "a b c.txt"), "spaces")
+	writeFile(t, filepath.Join(repoDir, "deep", "nest", "üñîçø∂é.txt"), "unicode")
+	writeFile(t, filepath.Join(repoDir, "dollar$sign.txt"), "shell metacharacter")
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "Initial commit")
+
+	_, err := packageDirectory(false)
+	require.NoError(t, err)
+
+	files := extractTarballContents(t, filepath.Join(tarballDir, tarballName))
+	for _, want := range []string{
+		"deep/nest/a b c.txt",
+		"deep/nest/üñîçø∂é.txt",
+		"dollar$sign.txt",
+	} {
+		assert.True(t, containsFile(files, want), "%q missing from tarball; got %v", want, files)
+	}
+}
+
+// TestPackageDirectory_DereferencesSymlinks pins the behavior `tar --dereference`
+// used to provide: a symlink is archived as a copy of its target's contents.
+func TestPackageDirectory_DereferencesSymlinks(t *testing.T) {
+	requireSymlinks(t)
+
+	repoDir := setupPackagerTest(t)
+
+	writeFile(t, filepath.Join(repoDir, "target.txt"), "real contents")
+	require.NoError(t, os.Symlink(filepath.Join(repoDir, "target.txt"), filepath.Join(repoDir, "link.txt")))
+	// A dangling symlink must be skipped rather than fail the scan.
+	require.NoError(t, os.Symlink(filepath.Join(repoDir, "gone.txt"), filepath.Join(repoDir, "dangling.txt")))
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "Initial commit")
+
+	_, err := packageDirectory(false)
+	require.NoError(t, err)
+
+	contents := extractTarballFiles(t, filepath.Join(tarballDir, tarballName))
+	assert.Equal(t, "real contents", contents["link.txt"], "symlink should be stored as its target's contents")
+	assert.NotContains(t, contents, "dangling.txt")
+}
+
+// TestPackageDirectory_ProducesValidBzip2 checks the whole-archive round trip,
+// including that entries carry no local account information.
+func TestPackageDirectory_ProducesValidBzip2(t *testing.T) {
+	repoDir := setupPackagerTest(t)
+
+	// Large enough to span more than one bzip2 block.
+	big := make([]byte, 2<<20)
+	for i := range big {
+		big[i] = byte(i % 251)
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "big.bin"), big, 0644))
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "Initial commit")
+
+	size, err := packageDirectory(false)
+	require.NoError(t, err)
+	assert.Positive(t, size)
+
+	f, err := os.Open(filepath.Join(tarballDir, tarballName))
+	require.NoError(t, err)
+	defer func() {
+		_ = f.Close()
+	}()
+
+	tr := tar.NewReader(bzip2.NewReader(f))
+	var sawBig bool
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+
+		assert.Zero(t, hdr.Uid, "uid should not be recorded for %s", hdr.Name)
+		assert.Zero(t, hdr.Gid, "gid should not be recorded for %s", hdr.Name)
+		assert.Empty(t, hdr.Uname, "username should not leak into %s", hdr.Name)
+
+		if hdr.Name == "big.bin" {
+			sawBig = true
+			got, err := io.ReadAll(tr)
+			require.NoError(t, err)
+			assert.Equal(t, big, got)
+		}
+	}
+	assert.True(t, sawBig, "big.bin missing from tarball")
+}
+
 // Helper functions
 
 func runCmd(t *testing.T, dir string, name string, args ...string) {
@@ -491,6 +619,41 @@ func extractTarballContents(t *testing.T, tarballPath string) []string {
 		}
 	}
 
+	return files
+}
+
+// extractTarballFiles returns the archive's regular files keyed by tar name,
+// with their contents.
+func extractTarballFiles(t *testing.T, tarballPath string) map[string]string {
+	t.Helper()
+
+	f, err := os.Open(tarballPath)
+	if err != nil {
+		t.Fatalf("Failed to open tarball: %v", err)
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	tr := tar.NewReader(bzip2.NewReader(f))
+	files := make(map[string]string)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Failed to read tar: %v", err)
+		}
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+		content, err := io.ReadAll(tr)
+		if err != nil {
+			t.Fatalf("Failed to read %s from tar: %v", header.Name, err)
+		}
+		files[header.Name] = string(content)
+	}
 	return files
 }
 

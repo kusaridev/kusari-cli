@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"syscall"
 )
 
 // Category is a stable, machine-readable classification of a probe outcome.
@@ -197,7 +196,7 @@ func proxyConnectDiagnosis(cc classifyCtx, err error) Diagnosis {
 		d.Cause = fmt.Sprintf("the proxy hostname %q does not resolve (%s). "+
 			"NOTE: %q is the PROXY hostname from your environment, not the Kusari endpoint.",
 			dnsErr.Name, dnsErr.Err, dnsErr.Name)
-	case errors.Is(err, syscall.ECONNREFUSED):
+	case isConnRefused(err):
 		d.Cause = fmt.Sprintf("proxy %s refused the connection. "+
 			"NOTE: this is your PROXY, not the Kusari endpoint.", proxyHost)
 	default:
@@ -336,21 +335,21 @@ func tcpDiagnosis(cc classifyCtx, err error) (Diagnosis, bool) {
 	)
 
 	switch {
-	case errors.Is(err, syscall.ECONNREFUSED):
+	case isConnRefused(err):
 		summary = "connection refused"
 		cause = fmt.Sprintf("%s:443 actively refused the connection.", cc.Host)
 		fixes = []string{
 			"Something answered but rejected the connection -- often a proxy or firewall on the path.",
 			fmt.Sprintf("Ask your network team to allow outbound TCP 443 to %s.", cc.Host),
 		}
-	case errors.Is(err, syscall.ECONNRESET):
+	case isConnReset(err):
 		summary = "connection reset"
 		cause = fmt.Sprintf("the connection to %s:443 was reset before completing.", cc.Host)
 		fixes = []string{
 			"A firewall or intrusion-prevention device commonly resets connections it blocks.",
 			fmt.Sprintf("Ask your network team whether TLS to %s is being terminated or dropped.", cc.Host),
 		}
-	case errors.Is(err, syscall.EHOSTUNREACH), errors.Is(err, syscall.ENETUNREACH):
+	case isUnreachable(err):
 		summary = "host unreachable"
 		cause = fmt.Sprintf("no route to %s:443 from this machine.", cc.Host)
 		fixes = []string{
