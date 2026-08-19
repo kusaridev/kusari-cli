@@ -118,6 +118,28 @@ func printUninstallSuccess(client mcpinstall.ClientConfig, result *mcpinstall.In
 	fmt.Printf("Kusari Inspector has been removed from %s.\n", client.Name)
 	fmt.Println()
 
+	if result.SkillsSupported {
+		switch {
+		case result.SkillsError != nil:
+			fmt.Printf("! Agent skills could not be removed: %v\n", result.SkillsError)
+			fmt.Printf("  Remove them by hand from %s if needed.\n", result.SkillsPath)
+		case len(result.Skills) > 0:
+			fmt.Printf("✓ Removed %d agent skill(s) from %s.\n", len(result.Skills), result.SkillsPath)
+		default:
+			fmt.Println("Agent skills: none were installed.")
+		}
+		fmt.Println()
+	}
+
+	switch {
+	case result.CommitHookError != nil:
+		fmt.Printf("! Commit hook could not be removed: %v\n", result.CommitHookError)
+		fmt.Println()
+	case result.CommitHookInstalled:
+		fmt.Println("✓ Removed the pre-commit scan hook and its settings entry.")
+		fmt.Println()
+	}
+
 	if result.NeedsRestart {
 		fmt.Println("Note: You may need to restart your coding agent to apply the changes.")
 		fmt.Println()

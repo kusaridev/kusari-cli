@@ -28,6 +28,11 @@ Supported clients: claude-code, claude-desktop, cline, continue, cursor, windsur
   kusari ai install cursor    # Install for Cursor`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			withCommitHook, err := cmd.Flags().GetBool("with-commit-hook")
+			if err != nil {
+				return err
+			}
+
 			var clientID string
 
 			if len(args) > 0 {
@@ -50,7 +55,9 @@ Supported clients: claude-code, claude-desktop, cline, continue, cursor, windsur
 			printInstallHeader(client)
 
 			// Perform installation
-			result, err := mcpinstall.Install(client)
+			result, err := mcpinstall.InstallWithOptions(client, mcpinstall.InstallOptions{
+				WithCommitHook: withCommitHook,
+			})
 			if err != nil {
 				return fmt.Errorf("installation failed: %w", err)
 			}
@@ -65,6 +72,9 @@ Supported clients: claude-code, claude-desktop, cline, continue, cursor, windsur
 			return nil
 		},
 	}
+
+	cmd.Flags().Bool("with-commit-hook", false,
+		"also install a Claude Code hook that scans with Kusari before Claude makes a git commit (Claude Code only)")
 
 	return cmd
 }
@@ -117,13 +127,18 @@ func printInstallSuccess(client mcpinstall.ClientConfig, result *mcpinstall.Inst
 	fmt.Println()
 	fmt.Printf("Kusari Inspector has been configured for %s.\n", client.Name)
 	fmt.Println()
+	printSkillsResult(client, result)
+	printCommitHookResult(client, result)
 	fmt.Println("Next steps:")
 
 	// Client-specific instructions
 	switch client.ID {
-	case "claude":
-		fmt.Println("1. Reload VS Code: Cmd+Shift+P → 'Developer: Reload Window'")
-		fmt.Println("2. Check MCP status - you should see 'kusari-inspector' running")
+	case "claude-code":
+		fmt.Println("1. Restart Claude Code so it picks up the new MCP server")
+		fmt.Println("2. Run /mcp - you should see 'kusari-inspector' connected")
+	case "claude-desktop":
+		fmt.Println("1. Restart Claude Desktop to load the new MCP configuration")
+		fmt.Println("2. Check that 'kusari-inspector' appears in the connectors list")
 	case "cursor":
 		fmt.Println("1. Restart Cursor to load the new MCP configuration")
 		fmt.Println("2. The kusari-inspector server will be available in Cursor")
@@ -142,6 +157,9 @@ func printInstallSuccess(client mcpinstall.ClientConfig, result *mcpinstall.Inst
 
 	fmt.Println()
 	fmt.Println("3. Ask your AI assistant: 'Scan my local changes for security issues'")
+	if len(result.Skills) > 0 && result.SkillsError == nil {
+		fmt.Println("   ...or run /kusari-scan to scan and fix in one step")
+	}
 	fmt.Println()
 	fmt.Println("For authentication:")
 	fmt.Println("- On first use, your browser will open to authenticate with Kusari")
@@ -152,4 +170,66 @@ func printInstallSuccess(client mcpinstall.ClientConfig, result *mcpinstall.Inst
 	if verbose {
 		fmt.Printf("\nConfig file: %s\n", result.ConfigPath)
 	}
+}
+
+// printSkillsResult reports what happened to agent skills. Skills are a Claude
+// Code construct, so for every other client this says so plainly rather than
+// leaving the user to wonder whether something was installed.
+func printSkillsResult(client mcpinstall.ClientConfig, result *mcpinstall.InstallationResult) {
+	if !result.SkillsSupported {
+		fmt.Printf("Agent skills: not supported by %s (MCP server only).\n", client.Name)
+		fmt.Println()
+		return
+	}
+
+	if result.SkillsError != nil {
+		fmt.Printf("! Agent skills could not be installed: %v\n", result.SkillsError)
+		fmt.Println("  The MCP server is configured and usable; only the skills are missing.")
+		fmt.Println()
+		return
+	}
+
+	if len(result.Skills) == 0 {
+		fmt.Println("Agent skills: none available in this build.")
+		fmt.Println()
+		return
+	}
+
+	fmt.Printf("✓ Installed %d agent skill(s) to %s:\n", len(result.Skills), result.SkillsPath)
+	for _, name := range result.Skills {
+		fmt.Printf("    /%s\n", name)
+	}
+	fmt.Println()
+}
+
+// printCommitHookResult states exactly what was written and where. A hook runs
+// a shell command on every matching tool call, so the user is told the script
+// path and the settings file rather than just "installed".
+func printCommitHookResult(client mcpinstall.ClientConfig, result *mcpinstall.InstallationResult) {
+	if !result.CommitHookRequested {
+		return
+	}
+
+	if result.CommitHookError != nil {
+		fmt.Printf("! Commit hook not installed: %v\n", result.CommitHookError)
+		fmt.Println("  The MCP server and skills are unaffected.")
+		fmt.Println()
+		return
+	}
+
+	fmt.Println("✓ Installed the pre-commit scan hook:")
+	fmt.Printf("    script:   %s\n", result.CommitHookScript)
+	fmt.Printf("    settings: %s (hooks.PreToolUse)\n", result.CommitHookSettings)
+	fmt.Printf("    binary:   %s\n", result.CommitHookBinary)
+	if mcpinstall.TransientBinary(result.CommitHookBinary) {
+		fmt.Println("  ! That binary is not what 'kusari' resolves to on your PATH, so it")
+		fmt.Println("    looks like a local build. If it is rebuilt elsewhere or removed, the")
+		fmt.Println("    hook stops scanning (commits are still allowed through, silently).")
+		fmt.Println("    Run 'go install ./kusari' and reinstall to pin the installed binary.")
+	}
+	fmt.Println("  It runs when Claude is about to make a git commit, and only when")
+	fmt.Println("  Kusari reports findings does it stop the commit. Your own commits from")
+	fmt.Println("  the terminal are never intercepted.")
+	fmt.Printf("  Remove it with: kusari ai uninstall %s\n", client.ID)
+	fmt.Println()
 }

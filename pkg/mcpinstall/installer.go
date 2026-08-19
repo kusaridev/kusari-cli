@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -24,6 +25,38 @@ type InstallationResult struct {
 	Message string
 	// NeedsRestart indicates whether the client needs restart.
 	NeedsRestart bool
+	// SkillsPath is the directory skills were installed into, empty if none were.
+	SkillsPath string
+	// Skills lists the skill names installed or removed.
+	Skills []string
+	// SkillsSupported reports whether the client has a skills mechanism at all;
+	// false means the caller should say so rather than imply skills were set up.
+	SkillsSupported bool
+	// SkillsError is set when MCP configuration succeeded but skills did not.
+	// Skills are an enhancement, so this does not fail the install.
+	SkillsError error
+	// CommitHookRequested reports whether the caller asked for the commit hook.
+	CommitHookRequested bool
+	// CommitHookInstalled reports whether it was actually installed or removed.
+	CommitHookInstalled bool
+	// CommitHookScript is the path of the installed hook script.
+	CommitHookScript string
+	// CommitHookSettings is the settings file the hook was registered in.
+	CommitHookSettings string
+	// CommitHookBinary is the kusari executable the hook will invoke. Reported
+	// because the hook records whichever binary installed it, which may be a
+	// throwaway build rather than the installed one.
+	CommitHookBinary string
+	// CommitHookError is set when the hook could not be installed or removed.
+	CommitHookError error
+}
+
+// InstallOptions carries opt-in choices for an install.
+type InstallOptions struct {
+	// WithCommitHook installs a PreToolUse hook that scans before Claude commits.
+	// Off by default: unlike a skill file, a hook is a shell command that runs on
+	// the user's machine, so it has to be asked for explicitly.
+	WithCommitHook bool
 }
 
 // GetServerConfig returns the MCP server configuration to add to client configs.
@@ -41,10 +74,50 @@ func GetServerArgs() []string {
 
 // Install installs the Kusari MCP server for the given client.
 func Install(client ClientConfig) (*InstallationResult, error) {
+	return InstallWithOptions(client, InstallOptions{})
+}
+
+// InstallWithOptions configures the MCP server plus any opted-in extras.
+func InstallWithOptions(client ClientConfig, opts InstallOptions) (*InstallationResult, error) {
+	var result *InstallationResult
+	var err error
 	if client.InstallMethod == InstallMethodCLI {
-		return installViaCLI(client)
+		result, err = installViaCLI(client)
+	} else {
+		result, err = installViaFile(client)
 	}
-	return installViaFile(client)
+	if err != nil || result == nil || !result.Success {
+		return result, err
+	}
+
+	// Skills are an enhancement layered on top of the MCP server. A failure here
+	// must not fail the install: the server is already configured and useful.
+	result.SkillsSupported = SupportsSkills(client)
+	if result.SkillsSupported {
+		if path, pathErr := GetSkillsPath(client); pathErr == nil {
+			result.SkillsPath = path
+		}
+		installed, skillErr := InstallSkills(client)
+		result.Skills = installed
+		result.SkillsError = skillErr
+	}
+
+	// Same reasoning as skills: a hook failure must not fail the install, since
+	// the MCP server is already configured and useful without it.
+	result.CommitHookRequested = opts.WithCommitHook
+	if opts.WithCommitHook {
+		if !CommitHookSupported(client) {
+			result.CommitHookError = fmt.Errorf("the commit hook is not supported for %s on %s", client.Name, runtime.GOOS)
+		} else {
+			script, settings, binary, hookErr := InstallCommitHook(client)
+			result.CommitHookScript = script
+			result.CommitHookSettings = settings
+			result.CommitHookBinary = binary
+			result.CommitHookError = hookErr
+			result.CommitHookInstalled = hookErr == nil
+		}
+	}
+	return result, nil
 }
 
 // installViaCLI installs using the client's CLI command (e.g., claude mcp add).
@@ -141,10 +214,36 @@ func installViaFile(client ClientConfig) (*InstallationResult, error) {
 
 // Uninstall removes the Kusari MCP server from the given client.
 func Uninstall(client ClientConfig) (*InstallationResult, error) {
+	var result *InstallationResult
+	var err error
 	if client.InstallMethod == InstallMethodCLI {
-		return uninstallViaCLI(client)
+		result, err = uninstallViaCLI(client)
+	} else {
+		result, err = uninstallViaFile(client)
 	}
-	return uninstallViaFile(client)
+	if err != nil || result == nil {
+		return result, err
+	}
+
+	// Remove skills even if the MCP removal reported a problem: leaving orphaned
+	// skill directories behind is worse than a partial cleanup.
+	result.SkillsSupported = SupportsSkills(client)
+	if result.SkillsSupported {
+		if path, pathErr := GetSkillsPath(client); pathErr == nil {
+			result.SkillsPath = path
+		}
+		removed, skillErr := UninstallSkills(client)
+		result.Skills = removed
+		result.SkillsError = skillErr
+	}
+
+	// Always attempt hook removal, whether or not it was ever installed:
+	// leaving a hook behind that shells to a removed integration is worse than
+	// a no-op cleanup.
+	hookRemoved, hookErr := UninstallCommitHook(client)
+	result.CommitHookInstalled = hookRemoved
+	result.CommitHookError = hookErr
+	return result, nil
 }
 
 // uninstallViaCLI uninstalls using the client's CLI command.

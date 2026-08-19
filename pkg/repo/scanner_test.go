@@ -74,7 +74,7 @@ func TestScan_ArchiveFormat(t *testing.T) {
 		}
 
 		// Run the scan with dependencies injection
-		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, full, "markdown", "", false, "", mock)
+		err := scan(testScanOpts(testDir), full, mock)
 		require.NoError(t, err)
 
 		// Verify upload was called
@@ -156,8 +156,9 @@ func TestScan_OverrideBranchValidation(t *testing.T) {
 				token: "token",
 			}
 
-			err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com",
-				false, false, false, "markdown", "", false, tt.overrideBranch, mock)
+			opts := testScanOpts(testDir)
+			opts.OverrideBranch = tt.overrideBranch
+			err := scan(opts, false, mock)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -559,7 +560,7 @@ func TestMonoRepoCheck_OnlyForRiskCheck(t *testing.T) {
 
 	t.Run("diff scan should succeed on monorepo", func(t *testing.T) {
 		// Diff scan (full=false) should succeed even with monorepo
-		err := scan(testDir, "HEAD", "https://platform.example.com", "https://console.example.com", false, false, false, "markdown", "", false, "", mock)
+		err := scan(testScanOpts(testDir), false, mock)
 		assert.NoError(t, err, "diff scan should succeed on monorepo")
 	})
 
@@ -604,8 +605,7 @@ func TestScan_RestoresWorkingDirectory(t *testing.T) {
 		token: "token",
 	}
 
-	err = scan(repoDir, "HEAD", "https://platform.example.com", "https://console.example.com",
-		false, false, false, "markdown", "", false, "", mock)
+	err = scan(testScanOpts(repoDir), false, mock)
 	require.NoError(t, err)
 
 	after, err := os.Getwd()
@@ -697,8 +697,7 @@ func TestScan_ConcurrentScansDoNotCorruptEachOther(t *testing.T) {
 				},
 				token: "token",
 			}
-			errs[i] = scan(tc.dir, "HEAD", "https://platform.example.com", "https://console.example.com",
-				false, false, false, "markdown", "", false, "", mock)
+			errs[i] = scan(testScanOpts(tc.dir), false, mock)
 		}(i, tc)
 	}
 	wg.Wait()
@@ -721,5 +720,17 @@ func TestScan_ConcurrentScansDoNotCorruptEachOther(t *testing.T) {
 				"scan %s leaked repo %s's contents: concurrent scans are not isolated",
 				tc.marker, other.marker)
 		}
+	}
+}
+
+// testScanOpts builds the ScanOptions these tests share: a diff scan against
+// HEAD with markdown output and no CI/comment behavior.
+func testScanOpts(dir string) ScanOptions {
+	return ScanOptions{
+		Dir:          dir,
+		Rev:          "HEAD",
+		PlatformURL:  "https://platform.example.com",
+		ConsoleURL:   "https://console.example.com",
+		OutputFormat: "markdown",
 	}
 }

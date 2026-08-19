@@ -17,6 +17,7 @@ var (
 	commentPlatform string
 	fullOutput      bool
 	overrideBranch  string
+	failOnFindings  bool
 )
 
 func init() {
@@ -25,6 +26,7 @@ func init() {
 	scancmd.Flags().StringVar(&commentPlatform, "comment", "", "post results as a comment to the specified platform's PR/MR (e.g., 'gitlab', 'github')")
 	scancmd.Flags().BoolVar(&fullOutput, "full-output", false, "output full results instead of truncated")
 	scancmd.Flags().StringVar(&overrideBranch, "override-branch", "", "override the detected branch name (useful in CI environments with detached HEAD state)")
+	scancmd.Flags().BoolVar(&failOnFindings, "fail-on-findings", false, "exit non-zero (3) when the analysis reports findings; results are still printed in full")
 
 	// Bind flags to viper
 	mustBindPFlag("wait", scancmd.Flags().Lookup("wait"))
@@ -32,6 +34,7 @@ func init() {
 	mustBindPFlag("comment", scancmd.Flags().Lookup("comment"))
 	mustBindPFlag("full-output", scancmd.Flags().Lookup("full-output"))
 	mustBindPFlag("override-branch", scancmd.Flags().Lookup("override-branch"))
+	mustBindPFlag("fail-on-findings", scancmd.Flags().Lookup("fail-on-findings"))
 }
 
 func scan() *cobra.Command {
@@ -46,7 +49,19 @@ func scan() *cobra.Command {
 		dir := args[0]
 		ref := args[1]
 
-		return repo.Scan(dir, ref, platformUrl, consoleUrl, verbose, wait, outputFormat, commentPlatform, fullOutput, overrideBranch)
+		return repo.ScanWithOptions(repo.ScanOptions{
+			Dir:             dir,
+			Rev:             ref,
+			PlatformURL:     platformUrl,
+			ConsoleURL:      consoleUrl,
+			OutputFormat:    outputFormat,
+			CommentPlatform: commentPlatform,
+			OverrideBranch:  overrideBranch,
+			Verbose:         verbose,
+			Wait:            wait,
+			FullOutput:      fullOutput,
+			FailOnFindings:  failOnFindings,
+		})
 	}
 
 	return scancmd
@@ -66,5 +81,6 @@ var scancmd = &cobra.Command{
 		commentPlatform = viper.GetString("comment")
 		fullOutput = viper.GetBool("full-output")
 		overrideBranch = viper.GetString("override-branch")
+		failOnFindings = viper.GetBool("fail-on-findings")
 	},
 }
