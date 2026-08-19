@@ -122,11 +122,14 @@ func TestConvertToSARIF(t *testing.T) {
 			},
 		},
 		{
+			// A blocking verdict, so the mitigations are reported. Advisory
+			// mitigations attached to a proceed verdict are covered separately
+			// below.
 			name: "analysis with dependency mitigations",
 			analysis: &api.SecurityAnalysis{
 				Recommendation: "Update dependencies",
 				Justification:  "Outdated packages found",
-				ShouldProceed:  true,
+				ShouldProceed:  false,
 				HealthScore:    3,
 				RequiredDependencyMitigations: []api.DependencyMitigationItem{
 					{Content: "Update lodash to 4.17.21"},
@@ -136,7 +139,7 @@ func TestConvertToSARIF(t *testing.T) {
 			},
 			consoleUrl:    testConsoleUrl,
 			wantErr:       false,
-			expectedLevel: "warning",
+			expectedLevel: "error",
 			validateFn: func(t *testing.T, output string) {
 				var sarif SarifLog
 				if err := json.Unmarshal([]byte(output), &sarif); err != nil {
@@ -291,8 +294,11 @@ func TestConvertToSARIF(t *testing.T) {
 				}
 
 				// JSON unmarshals numbers as float64
-				if healthScore, ok := result.Properties["health_score"].(float64); !ok || healthScore != 0.0 {
-					t.Errorf("Expected health_score to be 0, got %v (type: %T)", result.Properties["health_score"], result.Properties["health_score"])
+				// health_score must not be emitted: it is a full-repo-scan rating,
+				// and SARIF is only produced for diff scans, where it is always
+				// an unpopulated zero that contradicts the recommendation.
+				if _, present := result.Properties["health_score"]; present {
+					t.Errorf("health_score should not be present in diff-scan SARIF, got %v", result.Properties["health_score"])
 				}
 
 				if failedAnalysis, ok := result.Properties["failed_analysis"].(bool); !ok || failedAnalysis != false {
@@ -759,4 +765,56 @@ func TestSARIFStructureCompliance(t *testing.T) {
 			t.Errorf("Expected help text 'View your full detailed results here', got '%s'", securityAnalysisResult.Help.Text)
 		}
 	})
+}
+
+// A proceed verdict must not carry mitigation results.
+//
+// should_proceed is the backend's verdict and it has already weighed whatever
+// mitigations it attached. Emitting those as "required" beside a "safe to
+// proceed" recommendation contradicts itself, and sends people looking for a
+// blocker that the analysis did not raise.
+func TestConvertToSARIF_ProceedSuppressesMitigations(t *testing.T) {
+	analysis := &api.SecurityAnalysis{
+		Recommendation: "Safe to merge",
+		Justification:  "Minor advisory items only",
+		ShouldProceed:  true,
+		RequiredCodeMitigations: []api.CodeMitigationItem{
+			{Path: "src/config.js", LineNumber: 18, Content: "consider using env vars"},
+		},
+		RequiredDependencyMitigations: []api.DependencyMitigationItem{
+			{Content: "lodash could be updated"},
+		},
+	}
+
+	output, err := ConvertToSARIF(analysis, "https://console.kusari.dev/analysis/abc123")
+	if err != nil {
+		t.Fatalf("ConvertToSARIF() error = %v", err)
+	}
+
+	var doc SarifLog
+	if err := json.Unmarshal([]byte(output), &doc); err != nil {
+		t.Fatalf("Failed to parse SARIF output: %v", err)
+	}
+
+	if len(doc.Runs[0].Results) != 1 {
+		t.Errorf("Expected only the overall result, got %d results", len(doc.Runs[0].Results))
+	}
+	for _, result := range doc.Runs[0].Results {
+		if result.RuleID == "code-mitigation" || result.RuleID == "dependency-mitigation" {
+			t.Errorf("A proceed verdict must not emit %s results", result.RuleID)
+		}
+	}
+
+	overall := doc.Runs[0].Results[0]
+	if overall.RuleID != "security-analysis" {
+		t.Errorf("Expected the overall result, got ruleId %q", overall.RuleID)
+	}
+	// With no mitigations reported, flagging a warning would point at nothing.
+	if overall.Level != "note" {
+		t.Errorf("Expected level 'note' when proceeding with nothing to report, got %q", overall.Level)
+	}
+	// The prose still has to carry the advisory content.
+	if overall.Message.Text != "Safe to merge" {
+		t.Errorf("Expected the recommendation as the message, got %q", overall.Message.Text)
+	}
 }
