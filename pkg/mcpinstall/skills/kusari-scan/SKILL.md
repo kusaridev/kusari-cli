@@ -70,15 +70,22 @@ The SARIF result carries three kinds of entry:
 
 | Rule ID | What it is | What you get |
 |---|---|---|
-| `security-analysis` | Overall verdict | `should_proceed`, `health_score`, `justification`, `recommendation` |
+| `security-analysis` | Overall verdict | `should_proceed`, `justification`, `recommendation` |
 | `code-mitigation` | A code finding | File path, start line, code snippet |
 | `dependency-mitigation` | A dependency finding | Text only — **no** file or line |
 
-Lead with the overall verdict (`should_proceed` and `health_score`), then list the
-findings grouped by kind, most serious first. Cite code findings as `path:line` so the
-user can click through. Include the console URL from the result.
+`should_proceed` is the verdict. Lead with it, together with the `recommendation`
+and `justification` prose.
 
-If there are no findings, say so and stop — there is nothing to fix.
+- **`should_proceed: true`** — say so and stop. There is nothing to fix. The analysis
+  weighed whatever it looked at and cleared the change; do not go hunting for issues
+  it did not raise, and do not present advisory notes as work the user has to do.
+- **`should_proceed: false`** — list the findings grouped by kind, most serious first.
+  Cite code findings as `path:line` so the user can click through.
+
+Include the console URL either way.
+
+If the verdict is proceed, there is nothing to fix — stop there.
 
 ## Step 4: Fix the findings
 
@@ -113,8 +120,8 @@ rather than leaving it silently unaddressed.
 Re-run the scan from Step 2 with the same arguments.
 
 Editing files changed the diff, so this is a genuinely fresh scan rather than a cached
-result. Report the new `should_proceed` and `health_score` against the old ones, and
-name anything still outstanding.
+result. Report whether `should_proceed` flipped to true, and name anything still
+outstanding.
 
 ---
 

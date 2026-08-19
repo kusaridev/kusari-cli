@@ -134,10 +134,25 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis, consoleUrl string) (string, 
 	// Determine the main message text and markdown
 	messageText, messageMarkdown := buildMessage(analysis, consoleUrl)
 
+	// Mitigations are only reported when the verdict blocks.
+	//
+	// should_proceed is the backend's verdict and it has already weighed the
+	// mitigations it attached. When it says proceed, those items are advisory --
+	// listing them as "required" beside a "safe to proceed" recommendation reads
+	// as a contradiction and sends people hunting for a blocker that does not
+	// exist.
+	emitMitigations := !analysis.ShouldProceed
+
+	codeCount, depCount := 0, 0
+	if emitMitigations {
+		codeCount = len(analysis.RequiredCodeMitigations)
+		depCount = len(analysis.RequiredDependencyMitigations)
+	}
+
 	// Add overall analysis result
 	overallResult := SarifResult{
 		RuleID: "security-analysis",
-		Level:  getLevel(analysis.ShouldProceed, len(analysis.RequiredCodeMitigations), len(analysis.RequiredDependencyMitigations)),
+		Level:  getLevel(analysis.ShouldProceed, codeCount, depCount),
 		Message: SarifMessage{
 			Text:     messageText,
 			Markdown: messageMarkdown,
@@ -146,10 +161,15 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis, consoleUrl string) (string, 
 			Text: "View your full detailed results here",
 		},
 		HelpUri: consoleUrl,
+		// health_score is deliberately absent. It is a 0-5 rating produced only by
+		// full repository risk checks (see api.SecurityAnalysis.HealthScore), and
+		// this function is only ever reached for diff scans -- the full-scan path
+		// returns earlier via printFullScanResults. So the value was always the
+		// unpopulated zero, which reads as "health: 0 out of 5" rather than "not
+		// applicable" and contradicted the accompanying recommendation.
 		Properties: map[string]interface{}{
 			"should_proceed":  analysis.ShouldProceed,
 			"failed_analysis": analysis.FailedAnalysis,
-			"health_score":    analysis.HealthScore,
 			"justification":   analysis.Justification,
 		},
 	}
@@ -160,6 +180,10 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis, consoleUrl string) (string, 
 	}
 
 	sarifLog.Runs[0].Results = append(sarifLog.Runs[0].Results, overallResult)
+
+	if !emitMitigations {
+		return marshalSarif(sarifLog)
+	}
 
 	// Add code mitigations as individual results
 	for _, mitigation := range analysis.RequiredCodeMitigations {
@@ -207,7 +231,11 @@ func ConvertToSARIF(analysis *api.SecurityAnalysis, consoleUrl string) (string, 
 		sarifLog.Runs[0].Results = append(sarifLog.Runs[0].Results, result)
 	}
 
-	// Convert to JSON
+	return marshalSarif(sarifLog)
+}
+
+// marshalSarif renders the SARIF document.
+func marshalSarif(sarifLog SarifLog) (string, error) {
 	jsonBytes, err := json.MarshalIndent(sarifLog, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal sarif: %w", err)

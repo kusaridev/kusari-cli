@@ -31,9 +31,21 @@ type FindingsError struct {
 	DependencyMitigations int
 	// ConsoleURL links to the full results.
 	ConsoleURL string
+	// Reason is the analysis justification, used when the verdict blocks without
+	// itemized findings attached.
+	Reason string
 }
 
 func (e *FindingsError) Error() string {
+	// should_proceed is the verdict, and it can be false with no itemized
+	// mitigations attached. Reporting "0 code and 0 dependency findings that must
+	// be addressed" in that case is nonsense, so fall back to the justification.
+	if e.CodeMitigations == 0 && e.DependencyMitigations == 0 {
+		if e.Reason != "" {
+			return fmt.Sprintf("Kusari Inspector advises against proceeding: %s: %s", e.Reason, e.ConsoleURL)
+		}
+		return fmt.Sprintf("Kusari Inspector advises against proceeding: %s", e.ConsoleURL)
+	}
 	return fmt.Sprintf(
 		"Kusari Inspector reported %d code and %d dependency finding(s) that must be addressed: %s",
 		e.CodeMitigations, e.DependencyMitigations, e.ConsoleURL)
@@ -45,6 +57,11 @@ func (e *FindingsError) ExitCode() int { return findingsExitCode }
 
 // findingsResult turns a "do not proceed" verdict into a FindingsError, and is
 // only ever called after results have been printed and cached.
+//
+// The gate is should_proceed alone, which the backend owns. Findings attached to
+// a proceed verdict are advisory and never block: the analysis has already
+// weighed them and decided they are not disqualifying, and second-guessing that
+// here would fail commits the platform itself called safe.
 //
 // The ordering matters: a caller that fails the scan is usually a hook or a CI
 // job that needs the findings text to act on. Returning early, before the
@@ -58,5 +75,6 @@ func findingsResult(failOnFindings bool, analysis *api.SecurityAnalysis, console
 		CodeMitigations:       len(analysis.RequiredCodeMitigations),
 		DependencyMitigations: len(analysis.RequiredDependencyMitigations),
 		ConsoleURL:            consoleURL,
+		Reason:                analysis.Justification,
 	}
 }
