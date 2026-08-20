@@ -114,7 +114,11 @@ func computeDiffHash(repoPath, baseRef string) (string, error) {
 	}
 
 	// Get list of untracked files (excluding ignored files)
-	untrackedCmd := exec.Command("git", "-C", repoPath, "ls-files", "--others", "--exclude-standard")
+	// -z: NUL-delimited and unquoted. Without it git C-quotes non-ASCII paths
+	// under core.quotePath, os.ReadFile below fails on the quoted name, and the
+	// hash silently folds in an error string instead of the file's contents —
+	// so edits to such a file would never invalidate the cache.
+	untrackedCmd := exec.Command("git", "-C", repoPath, "ls-files", "-z", "--others", "--exclude-standard")
 	untrackedOutput, err := untrackedCmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to list untracked files: %w", err)
@@ -136,7 +140,7 @@ func computeDiffHash(repoPath, baseRef string) (string, error) {
 		// Add a separator to distinguish diff from untracked content
 		hasher.Write([]byte("\x00UNTRACKED\x00"))
 
-		untrackedFiles := strings.Split(strings.TrimSpace(string(untrackedOutput)), "\n")
+		untrackedFiles := strings.Split(string(untrackedOutput), "\x00")
 		for _, file := range untrackedFiles {
 			if file == "" {
 				continue

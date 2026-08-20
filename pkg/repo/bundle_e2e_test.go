@@ -559,3 +559,46 @@ func TestIsBinaryFile(t *testing.T) {
 	_, err := isBinaryFile(filepath.Join(dir, "does-not-exist"))
 	assert.Error(t, err, "a missing file must report an error, not a verdict")
 }
+
+// TestBundle_ChangedFilesUnusualFilenames pins the incremental-scan metadata
+// against git's quoting. The tarball path was fixed earlier (see
+// TestPackageDirectory_UnusualFilenames), but the changed-files listings were
+// still `git diff --name-only` / `git ls-files --others` without -z, so under
+// core.quotePath a non-ASCII path arrived C-quoted
+// ("...10.45.37\342\200\257AM.png"), matched nothing on disk, and dropped out of
+// ChangedFileHashes silently — leaving the server a changed-files list that
+// disagreed with the bundle. U+202F (narrow no-break space) is the real-world
+// case: recent macOS puts one before AM/PM in screenshot filenames.
+func TestBundle_ChangedFilesUnusualFilenames(t *testing.T) {
+	repoDir := t.TempDir()
+	initRepo(t, repoDir)
+
+	const tracked = "Screenshot 2026-02-13 at 10.45.37 AM.png"
+	const untracked = "notes  draft.md"
+
+	writeFile(t, filepath.Join(repoDir, "main.go"), "package main\n")
+	writeFile(t, filepath.Join(repoDir, tracked), "v1")
+	runCmd(t, repoDir, "git", "add", ".")
+	runCmd(t, repoDir, "git", "commit", "-m", "initial")
+
+	// One modified tracked file and one new untracked file, both with a U+202F
+	// in the name — the two listings that were missing -z.
+	writeFile(t, filepath.Join(repoDir, tracked), "v2")
+	writeFile(t, filepath.Join(repoDir, untracked), "scratch")
+
+	b := buildBundle(t, repoDir, "HEAD", false)
+
+	assert.Contains(t, b.meta.ChangedFiles, tracked, "modified tracked file missing from ChangedFiles")
+	assert.Contains(t, b.meta.ChangedFiles, untracked, "untracked file missing from ChangedFiles")
+	assert.Contains(t, b.meta.ChangedFileHashes, tracked, "no content hash for the modified file")
+	assert.Contains(t, b.meta.ChangedFileHashes, untracked, "no content hash for the untracked file")
+
+	// Canary: a quoted path would arrive wrapped in quotes with escaped bytes.
+	for _, f := range b.meta.ChangedFiles {
+		assert.NotContains(t, f, `\`, "changed-file path is C-quoted, not raw")
+		assert.NotContains(t, f, `"`, "changed-file path is C-quoted, not raw")
+	}
+
+	// The file itself must also be in the bundle under its real name.
+	assert.Contains(t, b.files, tracked, "bundle is missing the renamed-byte file")
+}

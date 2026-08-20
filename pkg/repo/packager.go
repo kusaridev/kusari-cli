@@ -111,7 +111,16 @@ func listRepoFiles() ([]string, error) {
 // form is NUL-delimited and unquoted, so paths containing spaces, newlines or
 // non-ASCII characters survive intact regardless of core.quotePath.
 func gitListFiles(extraArgs ...string) ([]string, error) {
-	args := append([]string{"ls-files", "-z"}, extraArgs...)
+	return gitNulFields(append([]string{"ls-files", "-z"}, extraArgs...)...)
+}
+
+// gitNulFields runs a git command whose output is NUL-delimited (the -z form of
+// ls-files, diff, status, ...) and returns its non-empty fields. Every path git
+// hands us must come through here or an equivalent -z listing: with the default
+// core.quotePath, git C-quotes any path containing non-ASCII bytes
+// ("...10.45.37\342\200\257AM.png"), and that quoted string never matches a
+// real file on disk.
+func gitNulFields(args ...string) ([]string, error) {
 	out, err := runGit(args...)
 	if err != nil {
 		return nil, err
@@ -230,29 +239,23 @@ func createMeta(rev string, full bool, overrideBranch string) (*api.BundleMeta, 
 		commitSHA = []byte{}
 	}
 
-	// Get list of changed files for incremental scanning support
+	// Get list of changed files for incremental scanning support.
+	//
+	// Both listings are NUL-delimited: a quoted path would not match anything on
+	// disk, so computeFileHash below would silently skip it (its error is
+	// swallowed) and the server would receive a changed-files list that
+	// disagrees with the tarball. Non-fatal on error, as before — incremental
+	// scanning is an optimisation, not a requirement.
 	var changedFiles []string
 	if !full && rev != "" {
 		// For diff scans, get the list of files that changed (tracked files)
-		diffOutput, err := exec.Command("git", "diff", "--name-only", rev).Output()
-		if err == nil && len(diffOutput) > 0 {
-			files := strings.SplitSeq(strings.TrimSpace(string(diffOutput)), "\n")
-			for f := range files {
-				if f != "" {
-					changedFiles = append(changedFiles, f)
-				}
-			}
+		if files, err := gitNulFields("diff", "-z", "--name-only", rev); err == nil {
+			changedFiles = append(changedFiles, files...)
 		}
 
 		// Also include untracked files (new files not yet added to git)
-		untrackedOutput, err := exec.Command("git", "ls-files", "--others", "--exclude-standard").Output()
-		if err == nil && len(untrackedOutput) > 0 {
-			files := strings.SplitSeq(strings.TrimSpace(string(untrackedOutput)), "\n")
-			for f := range files {
-				if f != "" {
-					changedFiles = append(changedFiles, f)
-				}
-			}
+		if files, err := gitListFiles("--others", "--exclude-standard"); err == nil {
+			changedFiles = append(changedFiles, files...)
 		}
 	}
 
