@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/kusaridev/kusari-cli/v2/api"
+	"github.com/kusaridev/kusari-cli/v2/pkg/login"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -155,4 +156,108 @@ func TestFindingsResult(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "2 code and 1 dependency")
 	})
+}
+
+// End to end through scan(): a live gated scan populates the cache, and the
+// next identical scan is served from cache and still reaches the same verdict.
+//
+// This is the behavior the gate depends on. Serving the cached report and
+// returning success would silently pass a commit or a CI job that the analysis
+// said not to proceed with, and it would happen precisely on a re-run of an
+// unchanged diff.
+func TestScan_GatedScanIsServedFromCacheAndStillBlocks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	srv := resultServer(t, withFindings())
+
+	repoDir := t.TempDir()
+	setupGitRepoAt(t, repoDir)
+
+	var uploads int
+	newMock := func() *scanMock {
+		return &scanMock{
+			fileUploader: func(presignedURL, filePath string) error { uploads++; return nil },
+			presignedURLGetter: func(apiEndpoint, jwtToken, filePath, workspace string, full bool, size int64) (string, error) {
+				return "https://example.com/workspace/ws/user/human/u/diff/blob/123", nil
+			},
+			defaultWorkspaceGetter: func(platformUrl, jwtToken string) ([]login.Workspace, map[string][]string, error) {
+				return []login.Workspace{{ID: "ws", Description: "Test Workspace"}},
+					map[string][]string{"ws": {"test-tenant"}}, nil
+			},
+			token: "token",
+		}
+	}
+
+	opts := ScanOptions{
+		Dir:            repoDir,
+		Rev:            "HEAD",
+		PlatformURL:    srv.URL,
+		ConsoleURL:     "https://console.example.com",
+		OutputFormat:   "sarif",
+		Wait:           true,
+		FullOutput:     true,
+		FailOnFindings: true,
+	}
+
+	// First run: a real scan. It must report the findings.
+	_, err := captureStdout(t, func() error { return scan(opts, false, newMock()) })
+	require.Error(t, err, "a blocking verdict must fail a gated scan")
+	var first *FindingsError
+	require.ErrorAs(t, err, &first)
+	require.Equal(t, 1, uploads, "the first run should actually scan")
+
+	// Second run: identical diff, so it is served from cache.
+	out, err := captureStdout(t, func() error { return scan(opts, false, newMock()) })
+	require.Error(t, err, "a cached blocking verdict must still fail a gated scan")
+	var second *FindingsError
+	require.ErrorAs(t, err, &second)
+
+	assert.Equal(t, 1, uploads, "the second run must be served from cache, not re-uploaded")
+	assert.Equal(t, first.CodeMitigations, second.CodeMitigations, "the cached verdict must match the live one")
+	assert.Equal(t, first.DependencyMitigations, second.DependencyMitigations)
+	assert.Equal(t, first.ExitCode(), second.ExitCode())
+	assert.NotEmpty(t, out, "cached results must still be printed")
+}
+
+// The same cache entry must not fail an ungated scan: the flag decides, not the
+// stored verdict.
+func TestScan_CachedVerdictDoesNotAffectUngatedScan(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	srv := resultServer(t, withFindings())
+	repoDir := t.TempDir()
+	setupGitRepoAt(t, repoDir)
+
+	mock := func() *scanMock {
+		return &scanMock{
+			fileUploader: func(presignedURL, filePath string) error { return nil },
+			presignedURLGetter: func(apiEndpoint, jwtToken, filePath, workspace string, full bool, size int64) (string, error) {
+				return "https://example.com/workspace/ws/user/human/u/diff/blob/123", nil
+			},
+			defaultWorkspaceGetter: func(platformUrl, jwtToken string) ([]login.Workspace, map[string][]string, error) {
+				return []login.Workspace{{ID: "ws", Description: "Test Workspace"}},
+					map[string][]string{"ws": {"test-tenant"}}, nil
+			},
+			token: "token",
+		}
+	}
+
+	base := ScanOptions{
+		Dir: repoDir, Rev: "HEAD", PlatformURL: srv.URL,
+		ConsoleURL: "https://console.example.com", OutputFormat: "sarif",
+		Wait: true, FullOutput: true,
+	}
+
+	gated := base
+	gated.FailOnFindings = true
+	_, err := captureStdout(t, func() error { return scan(gated, false, mock()) })
+	require.Error(t, err)
+
+	// Same repo, same diff, same cached entry -- but not gated.
+	_, err = captureStdout(t, func() error { return scan(base, false, mock()) })
+	assert.NoError(t, err, "without --fail-on-findings a cached blocking verdict must not fail the scan")
 }

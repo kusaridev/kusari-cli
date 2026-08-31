@@ -22,12 +22,33 @@ const (
 )
 
 // ScanCacheEntry represents a cached scan result for a repository.
+// CachedVerdict is the part of an analysis a gated scan needs. It is stored
+// alongside the rendered report so that a cache hit can answer
+// --fail-on-findings without re-running the scan.
+//
+// The verdict is recorded rather than derived from the report text: a scan can
+// legitimately return should_proceed=false with no itemized mitigations, so
+// counting findings in the output would reach the wrong answer.
+type CachedVerdict struct {
+	ShouldProceed         bool   `json:"should_proceed"`
+	CodeMitigations       int    `json:"code_mitigations"`
+	DependencyMitigations int    `json:"dependency_mitigations"`
+	Justification         string `json:"justification,omitempty"`
+}
+
 type ScanCacheEntry struct {
-	DiffHash   string    `json:"diff_hash"`
-	BaseRef    string    `json:"base_ref"`
-	Results    string    `json:"results"`     // The scan output (SARIF or markdown)
-	ConsoleURL string    `json:"console_url"` // Link to console results
-	Timestamp  time.Time `json:"timestamp"`
+	DiffHash string `json:"diff_hash"`
+	BaseRef  string `json:"base_ref"`
+	// OutputFormat is the format Results was rendered in. Without it a scan
+	// asking for markdown could be served a cached SARIF document, since the
+	// rest of the key is identical for the same diff.
+	OutputFormat string    `json:"output_format,omitempty"`
+	Results      string    `json:"results"`     // The scan output (SARIF or markdown)
+	ConsoleURL   string    `json:"console_url"` // Link to console results
+	Timestamp    time.Time `json:"timestamp"`
+	// Verdict is absent on entries written before it was recorded. A gated scan
+	// treats that as a miss rather than assuming an outcome.
+	Verdict *CachedVerdict `json:"verdict,omitempty"`
 }
 
 // ScanCache manages cached scan results.
@@ -40,6 +61,8 @@ type CacheResult struct {
 	Hit        bool
 	Results    string
 	ConsoleURL string
+	// Verdict is nil when the entry predates verdict caching.
+	Verdict *CachedVerdict
 }
 
 // getCachePath returns the path to the cache file.
@@ -169,7 +192,7 @@ func computeDiffHash(repoPath, baseRef string) (string, error) {
 // CheckCache checks if there's a valid cached result for the given repo and base ref.
 // Returns CacheResult with Hit=true if cache is valid, or Hit=false if scan needed.
 // Returns error only for the special case of no changes to scan.
-func CheckCache(repoPath, baseRef string, verbose bool) (*CacheResult, error) {
+func CheckCache(repoPath, baseRef, outputFormat string, verbose bool) (*CacheResult, error) {
 	// Normalize repo path to absolute
 	absPath, err := filepath.Abs(repoPath)
 	if err != nil {
@@ -196,6 +219,16 @@ func CheckCache(repoPath, baseRef string, verbose bool) (*CacheResult, error) {
 	if entry.BaseRef != baseRef {
 		if verbose {
 			fmt.Fprintf(os.Stderr, "Cache base ref mismatch: %s vs %s\n", entry.BaseRef, baseRef)
+		}
+		return &CacheResult{Hit: false}, nil
+	}
+
+	// A cached SARIF document is not a valid answer to a request for markdown.
+	// Entries written before this field existed have an empty format and are
+	// treated as a miss rather than guessed at.
+	if entry.OutputFormat != outputFormat {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Cache output format mismatch: %q vs %q\n", entry.OutputFormat, outputFormat)
 		}
 		return &CacheResult{Hit: false}, nil
 	}
@@ -231,6 +264,7 @@ func CheckCache(repoPath, baseRef string, verbose bool) (*CacheResult, error) {
 			Hit:        true,
 			Results:    entry.Results,
 			ConsoleURL: entry.ConsoleURL,
+			Verdict:    entry.Verdict,
 		}, nil
 	}
 
@@ -241,7 +275,7 @@ func CheckCache(repoPath, baseRef string, verbose bool) (*CacheResult, error) {
 }
 
 // SaveToCache stores a scan result in the cache.
-func SaveToCache(repoPath, baseRef, results, consoleURL string, verbose bool) error {
+func SaveToCache(repoPath, baseRef, outputFormat, results, consoleURL string, verdict *CachedVerdict, verbose bool) error {
 	// Normalize repo path to absolute
 	absPath, err := filepath.Abs(repoPath)
 	if err != nil {
@@ -260,11 +294,13 @@ func SaveToCache(repoPath, baseRef, results, consoleURL string, verbose bool) er
 	}
 
 	cache.Entries[absPath] = ScanCacheEntry{
-		DiffHash:   diffHash,
-		BaseRef:    baseRef,
-		Results:    results,
-		ConsoleURL: consoleURL,
-		Timestamp:  time.Now(),
+		DiffHash:     diffHash,
+		BaseRef:      baseRef,
+		OutputFormat: outputFormat,
+		Results:      results,
+		ConsoleURL:   consoleURL,
+		Timestamp:    time.Now(),
+		Verdict:      verdict,
 	}
 
 	// Clean up old entries while we're at it

@@ -1,6 +1,12 @@
 # ko build configuration
 # https://ko.build/configuration/
 
-# Use Chainguard's wolfi-base as the base image
-# This provides a minimal secure image with shell support needed for CI environments
+# Fallback base for local `ko build` only.
+#
+# Release builds override this via KO_DEFAULTBASEIMAGE with the image built from
+# base/Dockerfile in the same run, which additionally contains git and jq. git is
+# a hard requirement: the CLI shells out to it, so an image built on the fallback
+# below cannot scan -- it fails with `git: not found`.
+#
+# Use the fallback only to check that the build itself works.
 defaultBaseImage: cgr.dev/chainguard/wolfi-base:latest

@@ -173,9 +173,9 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 		os.Exit(1)
 	}
 
-	// For diff scans (not full), check cache first
+	// For diff scans (not full), check cache first.
 	if !full && wait {
-		cacheResult, cacheErr := CheckCache(dir, rev, verbose)
+		cacheResult, cacheErr := CheckCache(dir, rev, outputFormat, verbose)
 		if cacheErr != nil {
 			// "no changes to scan" is a valid case - return early
 			if strings.Contains(cacheErr.Error(), "no changes to scan") {
@@ -193,7 +193,13 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 				fmt.Fprintf(os.Stderr, "View results at: %s\n", cacheResult.ConsoleURL)
 			}
 			fmt.Print(cacheResult.Results)
-			return nil
+			// Reach the same decision the original scan did, rather than
+			// returning success just because the work was skipped. A nil verdict
+			// yields no error, matching what the live path does when an analysis
+			// carries no verdict -- entries written before verdicts were recorded
+			// cannot reach here at all, since they also predate the output format
+			// being part of the cache key.
+			return cacheResult.Verdict.findingsError(opts.FailOnFindings, cacheResult.ConsoleURL)
 		}
 	}
 
@@ -493,7 +499,7 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 
 						// Save to cache for diff scans
 						if !full && repoDir != "" {
-							if err := SaveToCache(repoDir, baseRef, sarifOutput, *consoleFullUrl, verbose); err != nil && verbose {
+							if err := SaveToCache(repoDir, baseRef, outputFormat, sarifOutput, *consoleFullUrl, verdictFrom(results[0].Analysis.RawLLMAnalysis), verbose); err != nil && verbose {
 								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", err)
 							}
 						}
@@ -520,7 +526,7 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 						fmt.Print(cleanedContent) // stdout
 						// Save to cache for diff scans (save cleaned content for re-rendering)
 						if !full && repoDir != "" {
-							if cacheErr := SaveToCache(repoDir, baseRef, cleanedContent, *consoleFullUrl, verbose); cacheErr != nil && verbose {
+							if cacheErr := SaveToCache(repoDir, baseRef, outputFormat, cleanedContent, *consoleFullUrl, verdictFrom(results[0].Analysis.RawLLMAnalysis), verbose); cacheErr != nil && verbose {
 								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
 							}
 						}
@@ -532,7 +538,7 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 						fmt.Print(cleanedContent) // stdout
 						// Save to cache for diff scans
 						if !full && repoDir != "" {
-							if cacheErr := SaveToCache(repoDir, baseRef, cleanedContent, *consoleFullUrl, verbose); cacheErr != nil && verbose {
+							if cacheErr := SaveToCache(repoDir, baseRef, outputFormat, cleanedContent, *consoleFullUrl, verdictFrom(results[0].Analysis.RawLLMAnalysis), verbose); cacheErr != nil && verbose {
 								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
 							}
 						}
@@ -543,7 +549,7 @@ func queryForResult(platformUrl string, sortKey string, accessToken string, cons
 
 					// Save to cache for diff scans (save rendered content for immediate reuse)
 					if !full && repoDir != "" {
-						if cacheErr := SaveToCache(repoDir, baseRef, rendered, *consoleFullUrl, verbose); cacheErr != nil && verbose {
+						if cacheErr := SaveToCache(repoDir, baseRef, outputFormat, rendered, *consoleFullUrl, verdictFrom(results[0].Analysis.RawLLMAnalysis), verbose); cacheErr != nil && verbose {
 							fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
 						}
 					}
