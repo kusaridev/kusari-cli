@@ -53,8 +53,38 @@ jobs:
         with:
           version: v0.19.1
 
+      # The CLI shells out to git, so the image has to contain it -- without it
+      # the CLI fails with `git: not found` before a scan even starts. jq is
+      # included for the CI templates that read SARIF output.
+      #
+      # These are resolved and verified here rather than installed by consumers
+      # at run time. A digest-pinned image installing from a rolling apk
+      # repository drifts, and when it does every downstream pipeline breaks; see
+      # base/Dockerfile for the outage this prevents.
+      #
+      # Building it in this job keeps the base and the CLI image in lockstep: ko
+      # consumes the exact digest produced a step earlier, so there is no
+      # separate artifact for anyone to bump by hand.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build and publish CLI base image
+        id: base
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: base
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}-base:sha-${{ github.sha }}
+
       - name: Build and publish image with ko (non-release)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          # Overrides defaultBaseImage in .ko.yaml with the base built above,
+          # addressed by digest so the published image records exactly the base
+          # that was verified in this run.
+          KO_DEFAULTBASEIMAGE: ghcr.io/${{ github.repository }}-base@${{ steps.base.outputs.digest }}
         run: |
           ko build ./kusari --bare \
             --platform=linux/amd64,linux/arm64 \
@@ -62,6 +92,8 @@ jobs:
 
       - name: Build and publish image with ko (release)
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          KO_DEFAULTBASEIMAGE: ghcr.io/${{ github.repository }}-base@${{ steps.base.outputs.digest }}
         run: |
           ko build ./kusari --bare \
             --platform=linux/amd64,linux/arm64 \

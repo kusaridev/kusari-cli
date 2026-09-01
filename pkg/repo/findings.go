@@ -78,3 +78,30 @@ func findingsResult(failOnFindings bool, analysis *api.SecurityAnalysis, console
 		Reason:                analysis.Justification,
 	}
 }
+
+// verdictFrom captures the parts of an analysis a later gated scan will need.
+func verdictFrom(analysis *api.SecurityAnalysis) *CachedVerdict {
+	if analysis == nil {
+		return nil
+	}
+	return &CachedVerdict{
+		ShouldProceed:         analysis.ShouldProceed,
+		CodeMitigations:       len(analysis.RequiredCodeMitigations),
+		DependencyMitigations: len(analysis.RequiredDependencyMitigations),
+		Justification:         analysis.Justification,
+	}
+}
+
+// findingsError rebuilds the gate result from a cached verdict, so a cache hit
+// reaches the same decision the original scan did.
+func (v *CachedVerdict) findingsError(failOnFindings bool, consoleURL string) error {
+	if !failOnFindings || v == nil || v.ShouldProceed {
+		return nil
+	}
+	return &FindingsError{
+		CodeMitigations:       v.CodeMitigations,
+		DependencyMitigations: v.DependencyMitigations,
+		ConsoleURL:            consoleURL,
+		Reason:                v.Justification,
+	}
+}
