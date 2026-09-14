@@ -133,7 +133,7 @@ jobs:
       # prior Syft image rows) so this updates the existing software instead of
       # forking a new `generic` one; root-version uses the release tag, matching
       # the version Syft derived from the image tag.
-      - uses: kusaridev/kusari-ingest@18b89a106dd4f81d82709a0d132d36cd047a1fc5 #v4.13.0
+      - uses: kusaridev/kusari-ingest@dc06541b0ca55ab94004e81f049235150a123690 #v4.14.0
         name: Kusari image SBOM (generate + upload)
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
