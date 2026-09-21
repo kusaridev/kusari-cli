@@ -33,6 +33,7 @@ func Platform() *cobra.Command {
 	platformCmd.AddCommand(software())
 	platformCmd.AddCommand(components())
 	platformCmd.AddCommand(generate())
+	platformCmd.AddCommand(sboms())
 
 	return platformCmd
 }

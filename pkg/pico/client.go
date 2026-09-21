@@ -323,3 +323,35 @@ func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, sub
 
 	return json.RawMessage(respBody), nil
 }
+
+// v2
+// GetSbomIDVersions retrieves versions of a specific SBOM by ID.
+func (c *Client) GetSbomIDVersions(ctx context.Context, sbomID, page, size int, sort, tag_label, tag_value, as_of string) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v1/sboms/%d/versions", sbomID)
+	params := make(map[string]string)
+	if page >= 0 {
+		params["page"] = fmt.Sprintf("%d", page)
+	}
+	if size > 0 {
+		params["size"] = fmt.Sprintf("%d", size)
+	}
+	if sort != "" {
+		params["sort"] = sort
+	}
+	if tag_label != "" {
+		params["sbom_tag_label"] = tag_label
+	}
+	if tag_value != "" {
+		params["sbom_tag_value"] = tag_value
+	}
+	if as_of != "" {
+		params["as_of"] = as_of
+	}
+
+	respBody, err := c.makeRequest(ctx, "GET", path, params, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(respBody), nil
+}
