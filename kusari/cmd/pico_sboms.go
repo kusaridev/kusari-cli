@@ -29,9 +29,9 @@ func picoSbomIDGetVersions() *cobra.Command {
 	var page int
 	var size int
 	var sort string
-	var tag_label string
-	var tag_value string
-	var as_of string
+	var tagLabel string
+	var tagValue string
+	var asOf string
 
 	cmd := &cobra.Command{
 		Use:   "versions <sbom-id>",
@@ -51,9 +51,9 @@ func picoSbomIDGetVersions() *cobra.Command {
 			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
-			result, err := client.GetSbomIDVersions(ctx, sbomID, page, size, sort, tag_label, tag_value, as_of)
+			result, err := client.GetSbomIDVersions(ctx, sbomID, page, size, sort, tagLabel, tagValue, asOf)
 			if err != nil {
-				return fmt.Errorf("failed to fetch software vulnerabilities: %w", err)
+				return fmt.Errorf("failed to fetch SBOM #%d versions: %w", sbomID, err)
 			}
 
 			// Pretty print JSON
@@ -75,9 +75,9 @@ func picoSbomIDGetVersions() *cobra.Command {
 	cmd.Flags().IntVar(&page, "page", 0, "Page number (default: 0)")
 	cmd.Flags().IntVar(&size, "size", 1000, "Page size (default: 1000)")
 	cmd.Flags().StringVar(&sort, "sort", "", "Sort (default: newest first)")
-	cmd.Flags().StringVar(&tag_label, "sbom_tag_label", "", "SBOM tag label (default: none, ex: 'environment')")
-	cmd.Flags().StringVar(&tag_value, "sbom_tag_value", "", "SBOM tag value (default: none, ex: 'dev')")
-	cmd.Flags().StringVar(&as_of, "as_of", "", "As of date-time (default: none, ex: 'dev')")
+	cmd.Flags().StringVar(&tagLabel, "sbom-tag-label", "", "SBOM tag label (default: none, ex: 'environment')")
+	cmd.Flags().StringVar(&tagValue, "sbom-tag-value", "", "SBOM tag value (default: none, ex: 'prod')")
+	cmd.Flags().StringVar(&asOf, "as-of", "", "As of date-time (default: none, ex: '2025-01-01T00:00:00Z')")
 
 	return cmd
 }

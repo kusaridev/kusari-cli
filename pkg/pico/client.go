@@ -326,8 +326,8 @@ func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, sub
 
 // v2
 // GetSbomIDVersions retrieves versions of a specific SBOM by ID.
-func (c *Client) GetSbomIDVersions(ctx context.Context, sbomID, page, size int, sort, tag_label, tag_value, as_of string) (json.RawMessage, error) {
-	path := fmt.Sprintf("/pico/v1/sboms/%d/versions", sbomID)
+func (c *Client) GetSbomIDVersions(ctx context.Context, sbomID, page, size int, sort, tagLabel, tagValue, asOf string) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v2/sboms/%d/versions", sbomID)
 	params := make(map[string]string)
 	if page >= 0 {
 		params["page"] = fmt.Sprintf("%d", page)
@@ -338,14 +338,14 @@ func (c *Client) GetSbomIDVersions(ctx context.Context, sbomID, page, size int, 
 	if sort != "" {
 		params["sort"] = sort
 	}
-	if tag_label != "" {
-		params["sbom_tag_label"] = tag_label
+	if tagLabel != "" {
+		params["sbom_tag_label"] = tagLabel
 	}
-	if tag_value != "" {
-		params["sbom_tag_value"] = tag_value
+	if tagValue != "" {
+		params["sbom_tag_value"] = tagValue
 	}
-	if as_of != "" {
-		params["as_of"] = as_of
+	if asOf != "" {
+		params["as_of"] = asOf
 	}
 
 	respBody, err := c.makeRequest(ctx, "GET", path, params, nil)
