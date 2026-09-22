@@ -325,8 +325,8 @@ func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, sub
 }
 
 // v2
-// GetSbomIDVersions retrieves versions of a specific SBOM by ID.
-func (c *Client) GetSbomIDVersions(ctx context.Context, sbomID, page, size int, sort, tagLabel, tagValue, asOf string) (json.RawMessage, error) {
+// GetSbomVersions retrieves versions of a specific SBOM by ID.
+func (c *Client) GetSbomVersions(ctx context.Context, sbomID, page, size int, sort, tagLabel, tagValue, asOf string) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/sboms/%d/versions", sbomID)
 	params := make(map[string]string)
 	if page >= 0 {
@@ -397,4 +397,36 @@ func (c *Client) CreateSbomVersionTag(ctx context.Context, sbomID, versionID int
 	}
 
 	return json.RawMessage(respBody), nil
+}
+
+// GetSbomVersionTag retrieves a single tag on a specific SBOM version.
+func (c *Client) GetSbomVersionTag(ctx context.Context, sbomID, versionID, tagID int) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d/tags/%d", sbomID, versionID, tagID)
+	respBody, err := c.makeRequest(ctx, "GET", path, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(respBody), nil
+}
+
+// UpdateSbomVersionTag partially updates a tag on a specific SBOM version and returns the updated tag.
+// body keys correspond to V2SBOMTagUpdateRequest (tag_label, tag_value, start_timestamp, end_timestamp).
+// Only keys present are written; an explicit nil end_timestamp re-opens a closed tag.
+func (c *Client) UpdateSbomVersionTag(ctx context.Context, sbomID, versionID, tagID int, body map[string]any) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d/tags/%d", sbomID, versionID, tagID)
+	respBody, err := c.makeRequest(ctx, "PATCH", path, nil, body)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(respBody), nil
+}
+
+// DeleteSbomVersionTag permanently removes a tag from a specific SBOM version, including its history.
+// To stop a tag applying while keeping its history, set end_timestamp with UpdateSbomVersionTag instead.
+func (c *Client) DeleteSbomVersionTag(ctx context.Context, sbomID, versionID, tagID int) error {
+	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d/tags/%d", sbomID, versionID, tagID)
+	_, err := c.makeRequest(ctx, "DELETE", path, nil, nil)
+	return err
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
 	"github.com/spf13/cobra"
@@ -20,14 +21,17 @@ func sboms() *cobra.Command {
 		Long:  "List and retrieve information about internal SBOMs, and their versions and tags",
 	}
 
-	cmd.AddCommand(picoSbomIDGetVersions())
+	cmd.AddCommand(picoSbomListVersions())
 	cmd.AddCommand(picoSbomVersionListTags())
 	cmd.AddCommand(picoSbomVersionCreateTag())
+	cmd.AddCommand(picoSbomVersionGetTag())
+	cmd.AddCommand(picoSbomVersionUpdateTag())
+	cmd.AddCommand(picoSbomVersionDeleteTag())
 
 	return cmd
 }
 
-func picoSbomIDGetVersions() *cobra.Command {
+func picoSbomListVersions() *cobra.Command {
 	var page int
 	var size int
 	var sort string
@@ -53,7 +57,7 @@ func picoSbomIDGetVersions() *cobra.Command {
 			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
-			result, err := client.GetSbomIDVersions(ctx, sbomID, page, size, sort, tagLabel, tagValue, asOf)
+			result, err := client.GetSbomVersions(ctx, sbomID, page, size, sort, tagLabel, tagValue, asOf)
 			if err != nil {
 				return fmt.Errorf("failed to fetch SBOM #%d versions: %w", sbomID, err)
 			}
@@ -166,6 +170,190 @@ func picoSbomVersionCreateTag() *cobra.Command {
 			}
 
 			return printJSON(result)
+		},
+	}
+
+	return cmd
+}
+
+// parseSbomTagIDs parses the <sbom-id> <version-id> <tag-id> positional args shared by the per-tag commands.
+func parseSbomTagIDs(args []string) (sbomID, versionID, tagID int, err error) {
+	sbomID, err = strconv.Atoi(args[0])
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid SBOM ID: %w", err)
+	}
+
+	versionID, err = strconv.Atoi(args[1])
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid version ID: %w", err)
+	}
+
+	tagID, err = strconv.Atoi(args[2])
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid tag ID: %w", err)
+	}
+
+	return sbomID, versionID, tagID, nil
+}
+
+// parseTimestampFlag validates an RFC3339 timestamp flag value. "now" is replaced with the current UTC time.
+func parseTimestampFlag(name, value string) (string, error) {
+	if value == "now" {
+		return time.Now().UTC().Format(time.RFC3339), nil
+	}
+	if _, err := time.Parse(time.RFC3339, value); err != nil {
+		return "", fmt.Errorf("invalid --%s: must be RFC3339 (ex: '2025-01-01T00:00:00Z') or 'now': %w", name, err)
+	}
+	return value, nil
+}
+
+func picoSbomVersionGetTag() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "tag <sbom-id> <version-id> <tag-id>",
+		Short: "Get a specific tag on an SBOM version",
+		Long:  "Get a single tag by ID. The tag must belong to the given SBOM version.",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sbomID, versionID, tagID, err := parseSbomTagIDs(args)
+			if err != nil {
+				return err
+			}
+
+			if platformTenantEndpoint == "" {
+				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			}
+
+			client := pico.NewClient(platformTenantEndpoint)
+
+			ctx := context.Background()
+			result, err := client.GetSbomVersionTag(ctx, sbomID, versionID, tagID)
+			if err != nil {
+				return fmt.Errorf("failed to fetch tag #%d on SBOM #%d version #%d: %w", tagID, sbomID, versionID, err)
+			}
+
+			return printJSON(result)
+		},
+	}
+
+	return cmd
+}
+
+func picoSbomVersionUpdateTag() *cobra.Command {
+	var (
+		tagLabel string
+		tagValue string
+		start    string
+		end      string
+		reopen   bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update-tag <sbom-id> <version-id> <tag-id>",
+		Short: "Update a tag on an SBOM version",
+		Long: `Partially update a tag. Only the flags provided are written; everything else keeps its stored value.
+
+To end a tag (stop it applying while keeping its history), set --end. Use '--end now' to end it at the current time.
+To re-open a closed tag, pass --reopen. --end must be after the tag's start timestamp and must not be in the future.
+Label and value are lowercased by the server. Fails with 409 if the change would leave the version carrying the same label and value open twice at once.`,
+		Args: cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sbomID, versionID, tagID, err := parseSbomTagIDs(args)
+			if err != nil {
+				return err
+			}
+
+			labelSet := cmd.Flags().Changed("label")
+			valueSet := cmd.Flags().Changed("value")
+			startSet := cmd.Flags().Changed("start")
+			endSet := cmd.Flags().Changed("end")
+			if !labelSet && !valueSet && !startSet && !endSet && !reopen {
+				return fmt.Errorf("at least one of --label, --value, --start, --end, or --reopen must be provided")
+			}
+			if endSet && reopen {
+				return fmt.Errorf("--end and --reopen are mutually exclusive")
+			}
+
+			body := map[string]any{}
+			if labelSet {
+				if tagLabel == "" {
+					return fmt.Errorf("--label must not be empty")
+				}
+				body["tag_label"] = tagLabel
+			}
+			if valueSet {
+				if tagValue == "" {
+					return fmt.Errorf("--value must not be empty")
+				}
+				body["tag_value"] = tagValue
+			}
+			if startSet {
+				ts, err := parseTimestampFlag("start", start)
+				if err != nil {
+					return err
+				}
+				body["start_timestamp"] = ts
+			}
+			if endSet {
+				ts, err := parseTimestampFlag("end", end)
+				if err != nil {
+					return err
+				}
+				body["end_timestamp"] = ts
+			}
+			if reopen {
+				body["end_timestamp"] = nil
+			}
+
+			if platformTenantEndpoint == "" {
+				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			}
+
+			client := pico.NewClient(platformTenantEndpoint)
+
+			ctx := context.Background()
+			result, err := client.UpdateSbomVersionTag(ctx, sbomID, versionID, tagID, body)
+			if err != nil {
+				return fmt.Errorf("failed to update tag #%d on SBOM #%d version #%d: %w", tagID, sbomID, versionID, err)
+			}
+
+			return printJSON(result)
+		},
+	}
+
+	cmd.Flags().StringVar(&tagLabel, "label", "", "New tag label (ex: 'environment')")
+	cmd.Flags().StringVar(&tagValue, "value", "", "New tag value (ex: 'production')")
+	cmd.Flags().StringVar(&start, "start", "", "New start timestamp, RFC3339 or 'now' (ex: '2025-01-01T00:00:00Z')")
+	cmd.Flags().StringVar(&end, "end", "", "End timestamp to close the tag, RFC3339 or 'now' (ex: '2025-01-01T00:00:00Z')")
+	cmd.Flags().BoolVar(&reopen, "reopen", false, "Clear the end timestamp so a closed tag is in effect again")
+
+	return cmd
+}
+
+func picoSbomVersionDeleteTag() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "delete-tag <sbom-id> <version-id> <tag-id>",
+		Short: "Delete a tag on an SBOM version",
+		Long:  "Permanently remove a tag, including any record that it ever applied. To stop a tag applying while keeping its history, use update-tag --end instead.",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sbomID, versionID, tagID, err := parseSbomTagIDs(args)
+			if err != nil {
+				return err
+			}
+
+			if platformTenantEndpoint == "" {
+				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			}
+
+			client := pico.NewClient(platformTenantEndpoint)
+
+			ctx := context.Background()
+			if err := client.DeleteSbomVersionTag(ctx, sbomID, versionID, tagID); err != nil {
+				return fmt.Errorf("failed to delete tag #%d on SBOM #%d version #%d: %w", tagID, sbomID, versionID, err)
+			}
+
+			fmt.Printf("Tag %d on SBOM %d version %d deleted\n", tagID, sbomID, versionID)
+			return nil
 		},
 	}
 
