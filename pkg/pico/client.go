@@ -17,6 +17,17 @@ import (
 	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
 )
 
+// APIError is returned by the client when the Pico API responds with a 4xx or 5xx status.
+// Callers can use errors.As to branch on StatusCode (e.g. 404 not found, 409 conflict).
+type APIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("API request failed with status %d: %s", e.StatusCode, e.Body)
+}
+
 // Client handles HTTP requests to the Kusari Pico API.
 type Client struct {
 	baseURL    string
@@ -97,7 +108,7 @@ func (c *Client) makeRequest(ctx context.Context, method, path string, params ma
 
 	// Check response status
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(respBody))
+		return nil, &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
 	return respBody, nil

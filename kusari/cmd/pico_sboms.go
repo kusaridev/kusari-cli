@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +27,7 @@ func sboms() *cobra.Command {
 	cmd.AddCommand(picoSbomVersionGetTag())
 	cmd.AddCommand(picoSbomVersionUpdateTag())
 	cmd.AddCommand(picoSbomVersionDeleteTag())
+	cmd.AddCommand(picoSbomVersionMoveTag())
 
 	return cmd
 }
@@ -413,4 +415,75 @@ only hidden ones instead. Returns a 404 error if no SBOM matches.`,
 	cmd.Flags().StringVar(&visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
 
 	return cmd
+}
+
+func picoSbomVersionMoveTag() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "move-tag <sbom-id> <version-id> <label> <value>",
+		Short: "Make a version the only one carrying a tag",
+		Long: `Tag the given version with label=value and end that tag on every other version of the SBOM,
+in one command. This is the deploy step for a CI pipeline: after a version is deployed to an
+environment, move the environment tag to it.
+
+The tags on the other versions are ended at the instant the tag on the given version started, so
+the intervals meet with no gap or overlap. That timestamp comes from the server, not this machine.
+
+Safe to rerun: if the given version already carries the tag it is left as is, and any other
+versions still carrying it are ended.`,
+		Example: `  # After deploying SBOM 42 version 99 to prod:
+  kusari platform sboms move-tag 42 99 environment prod`,
+		Args: cobra.ExactArgs(4),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sbomID, err := parseIDArg(args[0], "SBOM")
+			if err != nil {
+				return err
+			}
+
+			versionID, err := parseIDArg(args[1], "version")
+			if err != nil {
+				return err
+			}
+
+			tagLabel := args[2]
+			tagValue := args[3]
+			if tagLabel == "" || tagValue == "" {
+				return fmt.Errorf("label and value must not be empty")
+			}
+
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			res, moveErr := client.MoveSbomVersionTag(ctx, sbomID, versionID, tagLabel, tagValue)
+			if res != nil {
+				printMoveTagResult(res, sbomID)
+			}
+			if moveErr != nil {
+				return fmt.Errorf("failed to move tag %s=%s on SBOM #%d: %w", tagLabel, tagValue, sbomID, moveErr)
+			}
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+// printMoveTagResult reports each step MoveSbomVersionTag completed, one line per tag.
+func printMoveTagResult(res *pico.MoveTagResult, sbomID int) {
+	switch {
+	case res.Created != nil:
+		t := res.Created
+		fmt.Printf("Created tag %d (%s=%s) on SBOM %d version %d, in effect from %s\n", t.ID, t.TagLabel, t.TagValue, sbomID, t.VersionID, t.StartTimestamp)
+	case res.Existing != nil:
+		t := res.Existing
+		fmt.Printf("SBOM %d version %d already carries tag %d (%s=%s) since %s; left as is\n", sbomID, t.VersionID, t.ID, t.TagLabel, t.TagValue, t.StartTimestamp)
+	}
+	for _, t := range res.Ended {
+		fmt.Printf("Ended tag %d (%s=%s) on SBOM %d version %d at %s\n", t.ID, t.TagLabel, t.TagValue, sbomID, t.VersionID, res.EndTimestamp)
+	}
+	if len(res.Ended) == 0 && (res.Created != nil || res.Existing != nil) {
+		fmt.Println("No other versions carried that tag")
+	}
 }
