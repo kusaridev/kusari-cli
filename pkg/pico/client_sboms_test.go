@@ -246,6 +246,40 @@ func TestClient_FindSbomIDsByIdentifier(t *testing.T) {
 	assert.JSONEq(t, `{"commit_sha":"abc123"}`, string(rec.Body))
 }
 
+func TestClient_FindSbomIDsByRepo(t *testing.T) {
+	setupTestAuth(t)
+	response := []map[string]any{{"sbom_id": 13, "name": "frontend-console"}}
+	server, rec := recordingServer(t, http.StatusOK, response)
+	client := NewClient(server.URL)
+
+	t.Run("all params", func(t *testing.T) {
+		result, err := client.FindSbomIDsByRepo(context.Background(), "github.com", "kusaridev", "iac", "app-code/frontend-console", "hidden")
+		require.NoError(t, err)
+		assert.JSONEq(t, `[{"sbom_id":13,"name":"frontend-console"}]`, string(result))
+
+		assert.Equal(t, http.MethodGet, rec.Method)
+		assert.Equal(t, "/pico/v2/sboms/id/by-repo", rec.Path)
+		assert.Equal(t, url.Values{
+			"forge":        {"github.com"},
+			"org":          {"kusaridev"},
+			"repo":         {"iac"},
+			"subrepo_path": {"app-code/frontend-console"},
+			"visibility":   {"hidden"},
+		}, rec.Query)
+		assert.Empty(t, rec.Body)
+	})
+
+	t.Run("optional params omitted", func(t *testing.T) {
+		_, err := client.FindSbomIDsByRepo(context.Background(), "github.com", "kusaridev", "iac", "", "")
+		require.NoError(t, err)
+		assert.Equal(t, url.Values{
+			"forge": {"github.com"},
+			"org":   {"kusaridev"},
+			"repo":  {"iac"},
+		}, rec.Query)
+	})
+}
+
 func TestClient_SbomMethods_ErrorResponses(t *testing.T) {
 	setupTestAuth(t)
 
@@ -271,6 +305,14 @@ func TestClient_SbomMethods_ErrorResponses(t *testing.T) {
 		}},
 		{"by-identifier 404", http.StatusNotFound, func(c *Client) error {
 			_, err := c.FindSbomIDsByIdentifier(context.Background(), "nope")
+			return err
+		}},
+		{"by-repo 404", http.StatusNotFound, func(c *Client) error {
+			_, err := c.FindSbomIDsByRepo(context.Background(), "github.com", "nope", "nope", "", "")
+			return err
+		}},
+		{"by-repo 400", http.StatusBadRequest, func(c *Client) error {
+			_, err := c.FindSbomIDsByRepo(context.Background(), "github.com", "kusaridev", "iac", "", "bogus")
 			return err
 		}},
 	}

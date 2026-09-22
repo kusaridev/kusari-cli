@@ -356,6 +356,25 @@ func (c *Client) FindSbomIDsByIdentifier(ctx context.Context, commitSha string) 
 	return c.requestJSON(ctx, "POST", "/pico/v2/sboms/id/by-identifier", nil, body)
 }
 
+// FindSbomIDsByRepo returns every SBOM matching the given repository metadata (forge, org, repo, subrepo_path).
+// subrepoPath and visibility are optional - pass empty strings to omit them. visibility is "active" (server default,
+// visible SBOMs only) or "hidden" (hidden SBOMs only).
+func (c *Client) FindSbomIDsByRepo(ctx context.Context, forge, org, repo, subrepoPath, visibility string) (json.RawMessage, error) {
+	params := map[string]string{
+		"forge": forge,
+		"org":   org,
+		"repo":  repo,
+	}
+	if subrepoPath != "" {
+		params["subrepo_path"] = subrepoPath
+	}
+	if visibility != "" {
+		params["visibility"] = visibility
+	}
+
+	return c.requestJSON(ctx, "GET", "/pico/v2/sboms/id/by-repo", params, nil)
+}
+
 // ListComponentSboms retrieves the SBOMs linked to a component (v2).
 func (c *Client) ListComponentSboms(ctx context.Context, compID int, params map[string]string) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/components/%d/sboms", compID)

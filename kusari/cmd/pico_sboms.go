@@ -19,6 +19,7 @@ func sboms() *cobra.Command {
 	}
 
 	cmd.AddCommand(picoSbomIDsByIdentifier())
+	cmd.AddCommand(picoSbomIDsByRepo())
 	cmd.AddCommand(picoSbomListVersions())
 	cmd.AddCommand(picoSbomVersionListTags())
 	cmd.AddCommand(picoSbomVersionCreateTag())
@@ -364,6 +365,52 @@ Returns a 404 error if no version matches.`,
 	}
 
 	cmd.Flags().StringVar(&commitSha, "commit-sha", "", "Commit SHA recorded on the SBOM at ingestion time (required)")
+
+	return cmd
+}
+
+func picoSbomIDsByRepo() *cobra.Command {
+	var (
+		forge       string
+		org         string
+		repo        string
+		subrepoPath string
+		visibility  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "id-by-repo",
+		Short: "Find SBOM IDs by repository",
+		Long: `Find every SBOM whose upload metadata matches the given forge, org, repo, and (optional) subrepo path.
+
+One repo can hold many SBOMs, so this returns only visible SBOMs by default; use --visibility hidden to return
+only hidden ones instead. Returns a 404 error if no SBOM matches.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if forge == "" || org == "" || repo == "" {
+				return fmt.Errorf("--forge, --org, and --repo are required")
+			}
+
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			result, err := client.FindSbomIDsByRepo(ctx, forge, org, repo, subrepoPath, visibility)
+			if err != nil {
+				return fmt.Errorf("failed to find SBOM IDs for %s/%s/%s: %w", forge, org, repo, err)
+			}
+
+			return printJSON(result)
+		},
+	}
+
+	cmd.Flags().StringVar(&forge, "forge", "", "Forge recorded in the SBOM's upload metadata (required, ex: 'github.com')")
+	cmd.Flags().StringVar(&org, "org", "", "Organization recorded in the SBOM's upload metadata (required, ex: 'kusaridev')")
+	cmd.Flags().StringVar(&repo, "repo", "", "Repo recorded in the SBOM's upload metadata (required, ex: 'iac')")
+	cmd.Flags().StringVar(&subrepoPath, "subrepo-path", "", "Subrepo path recorded in the SBOM's upload metadata (default: none, ex: 'app-code/frontend-console')")
+	cmd.Flags().StringVar(&visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
 
 	return cmd
 }
