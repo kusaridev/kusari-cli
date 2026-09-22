@@ -51,8 +51,7 @@ func picoVulnerabilitiesList() *cobra.Command {
 
 	cmd.Flags().StringVar(&search, "search", "", "Search glob for affected/vulnerable package name")
 	cmd.Flags().StringVar(&kusariScore, "kusari-score", "", "Minimum Kusari score (0-10)")
-	cmd.Flags().IntVar(&page, "page", 0, "Page number for pagination")
-	cmd.Flags().IntVar(&size, "size", 20, "Number of results per page (max 100)")
+	addPaginationFlags(cmd, &page, &size, 20, 100)
 
 	return cmd
 }

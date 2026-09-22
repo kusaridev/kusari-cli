@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
 	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
@@ -51,6 +52,22 @@ func printJSON(raw json.RawMessage) error {
 
 	fmt.Println(string(output))
 	return nil
+}
+
+// parseIDArg parses a positional Kusari Platform ID argument, naming the ID kind (e.g. "SBOM") in the error.
+func parseIDArg(arg, name string) (int, error) {
+	id, err := strconv.Atoi(arg)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s ID: %w", name, err)
+	}
+	return id, nil
+}
+
+// addPaginationFlags registers the --page and --size flags shared by paginated list commands.
+// maxSize is the API's upper bound for this endpoint and is only used in the help text.
+func addPaginationFlags(cmd *cobra.Command, page, size *int, defaultSize, maxSize int) {
+	cmd.Flags().IntVar(page, "page", 0, "Page number, starting at 0")
+	cmd.Flags().IntVar(size, "size", defaultSize, fmt.Sprintf("Number of results per page (max %d)", maxSize))
 }
 
 func Platform() *cobra.Command {

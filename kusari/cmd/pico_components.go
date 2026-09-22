@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
 	"github.com/spf13/cobra"
 )
 
@@ -70,12 +71,7 @@ func picoComponentsList() *cobra.Command {
 			if cmd.Flags().Changed("has-tags") {
 				params["has_tags"] = strconv.FormatBool(hasTags)
 			}
-			if page >= 0 {
-				params["page"] = strconv.Itoa(page)
-			}
-			if size > 0 {
-				params["size"] = strconv.Itoa(size)
-			}
+			pico.AddPaginationParams(params, page, size)
 
 			client, err := newPicoClient()
 			if err != nil {
@@ -99,8 +95,7 @@ func picoComponentsList() *cobra.Command {
 	cmd.Flags().StringVar(&tags, "tags", "", "Comma-separated tag IDs to include (OR semantics)")
 	cmd.Flags().StringVar(&excludeTags, "exclude-tags", "", "Comma-separated tag IDs to exclude")
 	cmd.Flags().BoolVar(&hasTags, "has-tags", false, "Only tagged (true) or only untagged (false) components; omit the flag to disable filter")
-	cmd.Flags().IntVar(&page, "page", 0, "Page number for pagination")
-	cmd.Flags().IntVar(&size, "size", 1000, "Number of results per page (max 1000)")
+	addPaginationFlags(cmd, &page, &size, 1000, 1000)
 
 	return cmd
 }
@@ -112,9 +107,9 @@ func picoComponentsGet() *cobra.Command {
 		Long:  "Get detailed information about a specific component",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
 			client, err := newPicoClient()
@@ -187,9 +182,9 @@ func picoComponentsUpdate() *cobra.Command {
 		Long:  "Update the display_name and/or meta fields of a component",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
 			displayNameSet := cmd.Flags().Changed("display-name")
@@ -236,9 +231,9 @@ func picoComponentsDelete() *cobra.Command {
 		Long:  "Unassign all software from the component and delete it",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
 			client, err := newPicoClient()
@@ -266,9 +261,9 @@ func picoComponentsAssignSoftware() *cobra.Command {
 		Long:  "Bulk-assign one or more software entries to a component. Each software is moved from any prior component into the target component. Atomic — if any software ID does not exist, no changes are made. Maximum 100 software IDs per call.",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
 			softwareIDs := make([]int, 0, len(args)-1)
@@ -305,14 +300,14 @@ func picoComponentsRemoveSoftware() *cobra.Command {
 		Long:  "Remove the link between a component and a single software entry. Returns an error if no such link exists.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
-			softwareID, err := strconv.Atoi(args[1])
+			softwareID, err := parseIDArg(args[1], "software")
 			if err != nil {
-				return fmt.Errorf("invalid software ID: %w", err)
+				return err
 			}
 
 			client, err := newPicoClient()
@@ -349,4 +344,3 @@ func parseMetaFlag(set bool, metaJSON string) (map[string]any, error) {
 	}
 	return meta, nil
 }
-

@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -44,9 +43,9 @@ func picoSbomListVersions() *cobra.Command {
 		Long:  "Get paginated list of all historical versions of an SBOM by its ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			sbomID, err := strconv.Atoi(args[0])
+			sbomID, err := parseIDArg(args[0], "SBOM")
 			if err != nil {
-				return fmt.Errorf("invalid SBOM ID: %w", err)
+				return err
 			}
 
 			client, err := newPicoClient()
@@ -64,8 +63,7 @@ func picoSbomListVersions() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&page, "page", 0, "Page number (default: 0)")
-	cmd.Flags().IntVar(&size, "size", 1000, "Page size (default: 1000)")
+	addPaginationFlags(cmd, &page, &size, 1000, 1000)
 	cmd.Flags().StringVar(&sort, "sort", "", "Sort order (default: newest first). One of: sbom_time_desc, sbom_time_asc, sbom_type_desc, sbom_type_asc, first_ingested_desc, first_ingested_asc")
 	cmd.Flags().StringVar(&tagLabel, "sbom-tag-label", "", "SBOM tag label (default: none, ex: 'environment')")
 	cmd.Flags().StringVar(&tagValue, "sbom-tag-value", "", "SBOM tag value (default: none, ex: 'prod')")
@@ -86,14 +84,14 @@ func picoSbomVersionListTags() *cobra.Command {
 		Long:  "Get paginated list of tags applied to a specific SBOM version. A tag is an interval: it applies from start_timestamp until end_timestamp, and an absent end_timestamp means it is still in effect. Ended tags are included by default; use --active to return only tags still in effect.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			sbomID, err := strconv.Atoi(args[0])
+			sbomID, err := parseIDArg(args[0], "SBOM")
 			if err != nil {
-				return fmt.Errorf("invalid SBOM ID: %w", err)
+				return err
 			}
 
-			versionID, err := strconv.Atoi(args[1])
+			versionID, err := parseIDArg(args[1], "version")
 			if err != nil {
-				return fmt.Errorf("invalid version ID: %w", err)
+				return err
 			}
 
 			client, err := newPicoClient()
@@ -111,8 +109,7 @@ func picoSbomVersionListTags() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&page, "page", 0, "Page number (default: 0)")
-	cmd.Flags().IntVar(&size, "size", 1000, "Page size (default: 1000)")
+	addPaginationFlags(cmd, &page, &size, 1000, 1000)
 	cmd.Flags().StringVar(&label, "label", "", "Only return tags with this exact label, case-insensitive (default: none, ex: 'environment')")
 	cmd.Flags().BoolVar(&active, "active", false, "Only return tags still in effect (no end_timestamp)")
 
@@ -126,14 +123,14 @@ func picoSbomVersionCreateTag() *cobra.Command {
 		Long:  "Create a tag (label/value pair) on a specific SBOM version. The server sets the start timestamp and lowercases the label and value. Fails with 409 if the version already has the same label and value still in effect.",
 		Args:  cobra.ExactArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			sbomID, err := strconv.Atoi(args[0])
+			sbomID, err := parseIDArg(args[0], "SBOM")
 			if err != nil {
-				return fmt.Errorf("invalid SBOM ID: %w", err)
+				return err
 			}
 
-			versionID, err := strconv.Atoi(args[1])
+			versionID, err := parseIDArg(args[1], "version")
 			if err != nil {
-				return fmt.Errorf("invalid version ID: %w", err)
+				return err
 			}
 
 			tagLabel := args[2]
@@ -162,21 +159,15 @@ func picoSbomVersionCreateTag() *cobra.Command {
 
 // parseSbomTagIDs parses the <sbom-id> <version-id> <tag-id> positional args shared by the per-tag commands.
 func parseSbomTagIDs(args []string) (sbomID, versionID, tagID int, err error) {
-	sbomID, err = strconv.Atoi(args[0])
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("invalid SBOM ID: %w", err)
+	if sbomID, err = parseIDArg(args[0], "SBOM"); err != nil {
+		return 0, 0, 0, err
 	}
-
-	versionID, err = strconv.Atoi(args[1])
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("invalid version ID: %w", err)
+	if versionID, err = parseIDArg(args[1], "version"); err != nil {
+		return 0, 0, 0, err
 	}
-
-	tagID, err = strconv.Atoi(args[2])
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("invalid tag ID: %w", err)
+	if tagID, err = parseIDArg(args[2], "tag"); err != nil {
+		return 0, 0, 0, err
 	}
-
 	return sbomID, versionID, tagID, nil
 }
 

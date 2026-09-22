@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
 	"github.com/spf13/cobra"
@@ -55,8 +54,7 @@ func picoSoftwareList() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&search, "search", "", "Search term to filter software by name")
-	cmd.Flags().IntVar(&page, "page", 0, "Page number for pagination")
-	cmd.Flags().IntVar(&size, "size", 20, "Number of results per page (max 100)")
+	addPaginationFlags(cmd, &page, &size, 20, 100)
 
 	return cmd
 }
@@ -68,9 +66,9 @@ func picoSoftwareGet() *cobra.Command {
 		Long:  "Get detailed information about a specific software/application including its vulnerabilities and dependencies",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			softwareID, err := strconv.Atoi(args[0])
+			softwareID, err := parseIDArg(args[0], "software")
 			if err != nil {
-				return fmt.Errorf("invalid software ID: %w", err)
+				return err
 			}
 
 			client, err := newPicoClient()
@@ -143,9 +141,9 @@ func picoSoftwareVulnerabilities() *cobra.Command {
 		Long:  "Get paginated list of vulnerabilities affecting a specific software/application by its ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			softwareID, err := strconv.Atoi(args[0])
+			softwareID, err := parseIDArg(args[0], "software")
 			if err != nil {
-				return fmt.Errorf("invalid software ID: %w", err)
+				return err
 			}
 
 			client, err := newPicoClient()
@@ -163,8 +161,7 @@ func picoSoftwareVulnerabilities() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&page, "page", 0, "Page number (default: 0)")
-	cmd.Flags().IntVar(&size, "size", 1000, "Page size (default: 1000)")
+	addPaginationFlags(cmd, &page, &size, 1000, 1000)
 
 	return cmd
 }
@@ -176,14 +173,14 @@ func picoSoftwareVulnerabilityByID() *cobra.Command {
 		Long:  "Get detailed information about how a specific vulnerability affects a specific software, including remediation plans",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			softwareID, err := strconv.Atoi(args[0])
+			softwareID, err := parseIDArg(args[0], "software")
 			if err != nil {
-				return fmt.Errorf("invalid software ID: %w", err)
+				return err
 			}
 
-			vulnID, err := strconv.Atoi(args[1])
+			vulnID, err := parseIDArg(args[1], "vulnerability")
 			if err != nil {
-				return fmt.Errorf("invalid vulnerability ID: %w", err)
+				return err
 			}
 
 			client, err := newPicoClient()

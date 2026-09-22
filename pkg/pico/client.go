@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
@@ -102,6 +103,26 @@ func (c *Client) makeRequest(ctx context.Context, method, path string, params ma
 	return respBody, nil
 }
 
+// requestJSON performs an API request and returns the raw JSON response body.
+func (c *Client) requestJSON(ctx context.Context, method, path string, params map[string]string, body interface{}) (json.RawMessage, error) {
+	respBody, err := c.makeRequest(ctx, method, path, params, body)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(respBody), nil
+}
+
+// AddPaginationParams adds page and size query params to params.
+// page is included when >= 0 and size when > 0, so zero-value size means "use the API default".
+func AddPaginationParams(params map[string]string, page, size int) {
+	if page >= 0 {
+		params["page"] = strconv.Itoa(page)
+	}
+	if size > 0 {
+		params["size"] = strconv.Itoa(size)
+	}
+}
+
 // GetVulnerabilities retrieves vulnerabilities with optional filters.
 func (c *Client) GetVulnerabilities(ctx context.Context, search string, kusariScore string, page, size int) (json.RawMessage, error) {
 	params := make(map[string]string)
@@ -111,30 +132,15 @@ func (c *Client) GetVulnerabilities(ctx context.Context, search string, kusariSc
 	if kusariScore != "" {
 		params["kusari_score"] = kusariScore
 	}
-	if page >= 0 {
-		params["page"] = fmt.Sprintf("%d", page)
-	}
-	if size > 0 {
-		params["size"] = fmt.Sprintf("%d", size)
-	}
+	AddPaginationParams(params, page, size)
 
-	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/vulnerabilities", params, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", "/pico/v1/vulnerabilities", params, nil)
 }
 
 // GetVulnerabilityByExternalID retrieves vulnerability details by external ID (CVE, GHSA, etc.).
 func (c *Client) GetVulnerabilityByExternalID(ctx context.Context, externalID string) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v1/vulnerabilities/by-external-id/%s", url.PathEscape(externalID))
-	respBody, err := c.makeRequest(ctx, "GET", path, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", path, nil, nil)
 }
 
 // SearchPackages searches for packages by name.
@@ -145,12 +151,7 @@ func (c *Client) SearchPackages(ctx context.Context, name, version string) (json
 		params["version"] = version
 	}
 
-	respBody, err := c.makeRequest(ctx, "GET", path, params, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", path, params, nil)
 }
 
 // GetSoftwareList retrieves a list of software with optional search filter.
@@ -159,81 +160,42 @@ func (c *Client) GetSoftwareList(ctx context.Context, search string, page, size 
 	if search != "" {
 		params["search"] = search
 	}
-	if page >= 0 {
-		params["page"] = fmt.Sprintf("%d", page)
-	}
-	if size > 0 {
-		params["size"] = fmt.Sprintf("%d", size)
-	}
+	AddPaginationParams(params, page, size)
 
-	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/software", params, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", "/pico/v1/software", params, nil)
 }
 
 // GetSoftwareByID retrieves detailed information about a specific software by ID.
 func (c *Client) GetSoftwareByID(ctx context.Context, softwareID int) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v1/software/%d", softwareID)
-	respBody, err := c.makeRequest(ctx, "GET", path, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", path, nil, nil)
 }
 
 // GetSoftwareVulnerabilities retrieves vulnerabilities for a specific software by ID.
 func (c *Client) GetSoftwareVulnerabilities(ctx context.Context, softwareID, page, size int) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v1/software/%d/vulnerabilities", softwareID)
 	params := make(map[string]string)
-	if page >= 0 {
-		params["page"] = fmt.Sprintf("%d", page)
-	}
-	if size > 0 {
-		params["size"] = fmt.Sprintf("%d", size)
-	}
+	AddPaginationParams(params, page, size)
 
-	respBody, err := c.makeRequest(ctx, "GET", path, params, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", path, params, nil)
 }
 
 // GetSoftwareVulnerabilityByID retrieves detailed information about how a specific vulnerability affects a specific software.
 func (c *Client) GetSoftwareVulnerabilityByID(ctx context.Context, softwareID, vulnID int) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v1/software/%d/vulnerabilities/%d", softwareID, vulnID)
-	respBody, err := c.makeRequest(ctx, "GET", path, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", path, nil, nil)
 }
 
 // GetPackagesWithLifecycle retrieves packages filtered by lifecycle status.
 func (c *Client) GetPackagesWithLifecycle(ctx context.Context, params map[string]string) (json.RawMessage, error) {
-	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/packages/lifecycle", params, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", "/pico/v1/packages/lifecycle", params, nil)
 }
 
 // ListComponents retrieves a list of components with optional filters.
 // params keys correspond to the OpenAPI query parameters (search, status_filter, filter, sort,
 // tags, exclude_tags, has_tags, page, size). Empty values are omitted.
 func (c *Client) ListComponents(ctx context.Context, params map[string]string) (json.RawMessage, error) {
-	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/components", params, nil)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", "/pico/v1/components", params, nil)
 }
 
 // CreateComponent creates a new component. displayName and meta are optional (pass "" / nil to omit).
@@ -246,21 +208,13 @@ func (c *Client) CreateComponent(ctx context.Context, name, displayName string, 
 		body["meta"] = meta
 	}
 
-	respBody, err := c.makeRequest(ctx, "POST", "/pico/v1/components", nil, body)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "POST", "/pico/v1/components", nil, body)
 }
 
 // GetComponentByID retrieves a specific component by ID.
 func (c *Client) GetComponentByID(ctx context.Context, compID int) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v1/components/%d", compID)
-	respBody, err := c.makeRequest(ctx, "GET", path, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", path, nil, nil)
 }
 
 // UpdateComponent updates a component's display_name and/or meta. Pass nil for fields to leave unchanged.
@@ -316,12 +270,7 @@ func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, sub
 		params["subrepo_path"] = subrepoPath
 	}
 
-	respBody, err := c.makeRequest(ctx, "GET", "/pico/v1/software/id/by-repo", params, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", "/pico/v1/software/id/by-repo", params, nil)
 }
 
 // v2
@@ -329,12 +278,7 @@ func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, sub
 func (c *Client) GetSbomVersions(ctx context.Context, sbomID, page, size int, sort, tagLabel, tagValue, asOf string) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/sboms/%d/versions", sbomID)
 	params := make(map[string]string)
-	if page >= 0 {
-		params["page"] = fmt.Sprintf("%d", page)
-	}
-	if size > 0 {
-		params["size"] = fmt.Sprintf("%d", size)
-	}
+	AddPaginationParams(params, page, size)
 	if sort != "" {
 		params["sort"] = sort
 	}
@@ -348,12 +292,7 @@ func (c *Client) GetSbomVersions(ctx context.Context, sbomID, page, size int, so
 		params["as_of"] = asOf
 	}
 
-	respBody, err := c.makeRequest(ctx, "GET", path, params, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", path, params, nil)
 }
 
 // ListSbomVersionTags retrieves the tags on a specific SBOM version.
@@ -361,12 +300,7 @@ func (c *Client) GetSbomVersions(ctx context.Context, sbomID, page, size int, so
 func (c *Client) ListSbomVersionTags(ctx context.Context, sbomID, versionID, page, size int, label string, active bool) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d/tags", sbomID, versionID)
 	params := make(map[string]string)
-	if page >= 0 {
-		params["page"] = fmt.Sprintf("%d", page)
-	}
-	if size > 0 {
-		params["size"] = fmt.Sprintf("%d", size)
-	}
+	AddPaginationParams(params, page, size)
 	if label != "" {
 		params["label"] = label
 	}
@@ -374,12 +308,7 @@ func (c *Client) ListSbomVersionTags(ctx context.Context, sbomID, versionID, pag
 		params["active"] = "true"
 	}
 
-	respBody, err := c.makeRequest(ctx, "GET", path, params, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", path, params, nil)
 }
 
 // CreateSbomVersionTag adds a tag (label/value pair) to a specific SBOM version.
@@ -391,23 +320,13 @@ func (c *Client) CreateSbomVersionTag(ctx context.Context, sbomID, versionID int
 		"tag_value": tagValue,
 	}
 
-	respBody, err := c.makeRequest(ctx, "POST", path, nil, body)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "POST", path, nil, body)
 }
 
 // GetSbomVersionTag retrieves a single tag on a specific SBOM version.
 func (c *Client) GetSbomVersionTag(ctx context.Context, sbomID, versionID, tagID int) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d/tags/%d", sbomID, versionID, tagID)
-	respBody, err := c.makeRequest(ctx, "GET", path, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "GET", path, nil, nil)
 }
 
 // UpdateSbomVersionTag partially updates a tag on a specific SBOM version and returns the updated tag.
@@ -415,12 +334,7 @@ func (c *Client) GetSbomVersionTag(ctx context.Context, sbomID, versionID, tagID
 // Only keys present are written; an explicit nil end_timestamp re-opens a closed tag.
 func (c *Client) UpdateSbomVersionTag(ctx context.Context, sbomID, versionID, tagID int, body map[string]any) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d/tags/%d", sbomID, versionID, tagID)
-	respBody, err := c.makeRequest(ctx, "PATCH", path, nil, body)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "PATCH", path, nil, body)
 }
 
 // DeleteSbomVersionTag permanently removes a tag from a specific SBOM version, including its history.
@@ -439,10 +353,5 @@ func (c *Client) FindSbomIDsByIdentifier(ctx context.Context, commitSha string) 
 		"commit_sha": commitSha,
 	}
 
-	respBody, err := c.makeRequest(ctx, "POST", "/pico/v2/sboms/id/by-identifier", nil, body)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.RawMessage(respBody), nil
+	return c.requestJSON(ctx, "POST", "/pico/v2/sboms/id/by-identifier", nil, body)
 }
