@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -34,6 +35,22 @@ func newPicoClient() (*pico.Client, error) {
 		return nil, fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
 	}
 	return pico.NewClient(platformTenantEndpoint), nil
+}
+
+// printJSON pretty-prints a raw JSON API response to stdout.
+func printJSON(raw json.RawMessage) error {
+	var formatted any
+	if err := json.Unmarshal(raw, &formatted); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	output, err := json.MarshalIndent(formatted, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to format output: %w", err)
+	}
+
+	fmt.Println(string(output))
+	return nil
 }
 
 func Platform() *cobra.Command {

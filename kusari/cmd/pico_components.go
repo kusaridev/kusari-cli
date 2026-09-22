@@ -350,17 +350,3 @@ func parseMetaFlag(set bool, metaJSON string) (map[string]any, error) {
 	return meta, nil
 }
 
-func printJSON(raw json.RawMessage) error {
-	var formatted any
-	if err := json.Unmarshal(raw, &formatted); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	output, err := json.MarshalIndent(formatted, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to format output: %w", err)
-	}
-
-	fmt.Println(string(output))
-	return nil
-}

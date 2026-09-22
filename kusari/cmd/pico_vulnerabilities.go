@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -46,19 +45,7 @@ func picoVulnerabilitiesList() *cobra.Command {
 				return fmt.Errorf("failed to fetch vulnerabilities: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
@@ -90,19 +77,7 @@ func picoVulnerabilitiesGet() *cobra.Command {
 				return fmt.Errorf("failed to fetch vulnerability: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 

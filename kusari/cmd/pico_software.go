@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -51,19 +50,7 @@ func picoSoftwareList() *cobra.Command {
 				return fmt.Errorf("failed to fetch software: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
@@ -97,19 +84,7 @@ func picoSoftwareGet() *cobra.Command {
 				return fmt.Errorf("failed to fetch software: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
@@ -149,19 +124,7 @@ func picoSoftwareCurrent() *cobra.Command {
 				return fmt.Errorf("failed to fetch software IDs: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
@@ -196,19 +159,7 @@ func picoSoftwareVulnerabilities() *cobra.Command {
 				return fmt.Errorf("failed to fetch software vulnerabilities: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
@@ -246,19 +197,7 @@ func picoSoftwareVulnerabilityByID() *cobra.Command {
 				return fmt.Errorf("failed to fetch software vulnerability details: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
