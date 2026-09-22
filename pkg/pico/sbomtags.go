@@ -11,7 +11,11 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
+
+// timeNow is overridable in tests so the fallback end timestamp is deterministic.
+var timeNow = time.Now
 
 // SbomVersionTag is a tag on an SBOM version (V2SBOMTag). A tag is an interval: it applies from
 // StartTimestamp until EndTimestamp, and a nil EndTimestamp means it is still in effect.
@@ -30,11 +34,13 @@ type MoveTagResult struct {
 	Created *SbomVersionTag
 	// Existing is the tag the target version already carried, or nil if one had to be created.
 	Existing *SbomVersionTag
-	// Ended lists the tags on other versions that were closed, ordered by version ID.
+	// Ended lists the tags on other versions that were closed, ordered by version ID
 	// On a partial failure it holds the tags that were closed before the error.
 	Ended []SbomVersionTag
-	// EndTimestamp is the instant the Ended tags were closed at: the start of the tag on the target version.
-	EndTimestamp string
+	// Anchor is the start_timestamp of the tag on the target version. Each Ended tag was closed at
+	// Anchor when Anchor is after that tag's own start, so the intervals meet with no gap or
+	// overlap; otherwise at the current time (see endTimestampFor).
+	Anchor string
 }
 
 // sbomVersionsPage is the subset of V2SBOMVersionList that MoveSbomVersionTag needs.
@@ -54,13 +60,16 @@ type sbomTagsPage struct {
 // MoveSbomVersionTag makes versionID the only version of sbomID carrying label=value.
 //
 // It tags versionID (unless it already carries the tag in effect) and then closes that tag on every
-// other version of the SBOM, setting their end_timestamp to the start_timestamp of the tag on
-// versionID so the intervals meet with no gap or overlap. The timestamp comes from the server, so
-// the caller's clock is never involved.
+// other version of the SBOM. Each is closed at the start_timestamp of the tag on versionID, a
+// server-issued instant, so in the normal case the intervals meet with no gap or overlap and the
+// caller's clock is never involved. If another version's tag started at or after that instant
+// (possible only when something other than this function created it), it is closed at the current
+// time instead, since the API rejects an end that is not after the start.
 //
 // The operation is idempotent: rerunning it after a partial failure skips the create if the target
-// already carries the tag and closes whatever is still open. On error the returned result is
-// non-nil and describes what was completed before the failure.
+// already carries the tag and closes whatever is still open. When an error occurs while closing
+// tags, the returned result is non-nil and lists what was completed before the failure; errors
+// before that point return a nil result.
 func (c *Client) MoveSbomVersionTag(ctx context.Context, sbomID, versionID int, label, value string) (*MoveTagResult, error) {
 	if label == "" || value == "" {
 		return nil, fmt.Errorf("label and value must not be empty")
@@ -117,7 +126,7 @@ func (c *Client) MoveSbomVersionTag(ctx context.Context, sbomID, versionID int, 
 	if anchor == nil {
 		anchor = res.Existing
 	}
-	res.EndTimestamp = anchor.StartTimestamp
+	res.Anchor = anchor.StartTimestamp
 
 	// 3. Close the tag on every other version, in a stable order.
 	otherVersions := make([]int, 0, len(holders))
@@ -130,17 +139,31 @@ func (c *Client) MoveSbomVersionTag(ctx context.Context, sbomID, versionID int, 
 
 	for _, vid := range otherVersions {
 		for _, t := range holders[vid] {
-			body := map[string]any{"end_timestamp": res.EndTimestamp}
+			end := endTimestampFor(res.Anchor, t)
+			body := map[string]any{"end_timestamp": end}
 			if _, err := c.UpdateSbomVersionTag(ctx, sbomID, vid, t.ID, body); err != nil {
 				return res, fmt.Errorf("ending tag #%d (%s=%s) on version #%d: %w", t.ID, t.TagLabel, t.TagValue, vid, err)
 			}
-			end := res.EndTimestamp
 			t.EndTimestamp = &end
 			res.Ended = append(res.Ended, t)
 		}
 	}
 
 	return res, nil
+}
+
+// endTimestampFor picks the instant to close an old tag at. It prefers anchor, the server-issued
+// start of the tag on the target version, so intervals meet exactly and no local clock is involved.
+// The API rejects an end_timestamp that is not after the tag's start_timestamp, so when the old tag
+// started at or after anchor the current time is used instead. If either timestamp cannot be
+// parsed the anchor is returned unchanged and the server has the final say.
+func endTimestampFor(anchor string, old SbomVersionTag) string {
+	anchorAt, err1 := time.Parse(time.RFC3339, anchor)
+	startAt, err2 := time.Parse(time.RFC3339, old.StartTimestamp)
+	if err1 != nil || err2 != nil || anchorAt.After(startAt) {
+		return anchor
+	}
+	return timeNow().UTC().Format(time.RFC3339)
 }
 
 // createOrFindSbomVersionTag creates label=value on the version and reports created=true. If the API

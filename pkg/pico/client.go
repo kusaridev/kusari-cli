@@ -199,7 +199,7 @@ func (c *Client) GetSoftwareVulnerabilityByID(ctx context.Context, softwareID, v
 
 // GetPackagesWithLifecycle retrieves packages filtered by lifecycle status.
 func (c *Client) GetPackagesWithLifecycle(ctx context.Context, params map[string]string) (json.RawMessage, error) {
-	return c.requestJSON(ctx, "GET", "/pico/v1/packages/lifecycle", params, nil)
+	return c.requestJSON(ctx, "GET", "/pico/v1/packages/with-lifecycle", params, nil)
 }
 
 // ListComponents retrieves a list of components with optional filters.

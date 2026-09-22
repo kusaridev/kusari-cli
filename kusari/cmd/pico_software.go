@@ -54,7 +54,7 @@ func picoSoftwareList() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&search, "search", "", "Search term to filter software by name")
-	addPaginationFlags(cmd, &page, &size, 20, 100)
+	addPaginationFlags(cmd, &page, &size, 20, 1000)
 
 	return cmd
 }

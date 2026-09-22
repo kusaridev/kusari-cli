@@ -190,9 +190,6 @@ func picoComponentsUpdate() *cobra.Command {
 
 			displayNameSet := cmd.Flags().Changed("display-name")
 			metaSet := cmd.Flags().Changed("meta")
-			if !displayNameSet && !metaSet {
-				return fmt.Errorf("at least one of --display-name or --meta must be provided")
-			}
 
 			var displayNamePtr *string
 			if displayNameSet {
@@ -221,6 +218,7 @@ func picoComponentsUpdate() *cobra.Command {
 
 	cmd.Flags().StringVar(&displayName, "display-name", "", "New display name")
 	cmd.Flags().StringVar(&metaJSON, "meta", "", "Replacement metadata as a JSON object string")
+	cmd.MarkFlagsOneRequired("display-name", "meta")
 
 	return cmd
 }
@@ -348,15 +346,15 @@ func parseMetaFlag(set bool, metaJSON string) (map[string]any, error) {
 
 func picoComponentsSboms() *cobra.Command {
 	var (
-		search       string
-		sort         string
-		visibility   string
-		statusFilter string
-		tagLabel     string
-		tagValue     string
-		asOf         string
-		page         int
-		size         int
+		search          string
+		sort            string
+		visibility      string
+		lifecycleFilter string
+		tagLabel        string
+		tagValue        string
+		asOf            string
+		page            int
+		size            int
 	)
 
 	cmd := &cobra.Command{
@@ -375,10 +373,6 @@ By default each SBOM is described by its most recently ingested version. Supply 
 				return err
 			}
 
-			if err := validateSbomTagPair(tagLabel, tagValue); err != nil {
-				return err
-			}
-
 			params := make(map[string]string)
 			if search != "" {
 				params["search"] = search
@@ -389,8 +383,8 @@ By default each SBOM is described by its most recently ingested version. Supply 
 			if visibility != "" {
 				params["visibility"] = visibility
 			}
-			if statusFilter != "" {
-				params["status_filter"] = statusFilter
+			if lifecycleFilter != "" {
+				params["lifecycle_filter"] = lifecycleFilter
 			}
 			if tagLabel != "" {
 				params["sbom_tag_label"] = tagLabel
@@ -399,7 +393,11 @@ By default each SBOM is described by its most recently ingested version. Supply 
 				params["sbom_tag_value"] = tagValue
 			}
 			if asOf != "" {
-				params["as_of"] = asOf
+				ts, err := parseTimestampFlag("as-of", asOf)
+				if err != nil {
+					return err
+				}
+				params["as_of"] = ts
 			}
 			pico.AddPaginationParams(params, page, size)
 
@@ -421,10 +419,11 @@ By default each SBOM is described by its most recently ingested version. Supply 
 	cmd.Flags().StringVar(&search, "search", "", "Search glob for the SBOM's name or its newest version string")
 	cmd.Flags().StringVar(&sort, "sort", "", "Sort order. One of: display_name_desc, display_name_asc, vuln_count_desc, vuln_count_asc, last_recorded_desc, last_recorded_asc, first_ingested_desc, first_ingested_asc, license_category_desc, license_category_asc")
 	cmd.Flags().StringVar(&visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
-	cmd.Flags().StringVar(&statusFilter, "status-filter", "", "Filter by EOL/deprecated status (all|eol|deprecated)")
+	cmd.Flags().StringVar(&lifecycleFilter, "lifecycle-filter", "", "Filter by EOL/deprecated status (all|eol|deprecated)")
 	cmd.Flags().StringVar(&tagLabel, "sbom-tag-label", "", "Describe each SBOM by versions carrying this tag label (ex: 'environment'); requires --sbom-tag-value")
 	cmd.Flags().StringVar(&tagValue, "sbom-tag-value", "", "Tag value required for --sbom-tag-label (ex: 'prod')")
-	cmd.Flags().StringVar(&asOf, "as-of", "", "Report what the answer would have been at this RFC3339 instant (ex: '2025-01-01T00:00:00Z')")
+	cmd.MarkFlagsRequiredTogether("sbom-tag-label", "sbom-tag-value")
+	cmd.Flags().StringVar(&asOf, "as-of", "", "Report what the answer would have been at this RFC3339 instant, or 'now' (ex: '2025-01-01T00:00:00Z')")
 	addPaginationFlags(cmd, &page, &size, 1000, 1000)
 
 	return cmd

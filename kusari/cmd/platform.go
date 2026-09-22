@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,17 +41,14 @@ func newPicoClient() (*pico.Client, error) {
 
 // printJSON pretty-prints a raw JSON API response to stdout.
 func printJSON(raw json.RawMessage) error {
-	var formatted any
-	if err := json.Unmarshal(raw, &formatted); err != nil {
+	// json.Indent re-formats the bytes as sent, keeping the server's key order and full integer
+	// precision, unlike a round trip through map[string]any.
+	var out bytes.Buffer
+	if err := json.Indent(&out, raw, "", "  "); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	output, err := json.MarshalIndent(formatted, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to format output: %w", err)
-	}
-
-	fmt.Println(string(output))
+	fmt.Println(out.String())
 	return nil
 }
 
@@ -64,18 +62,15 @@ func parseIDArg(arg, name string) (int, error) {
 }
 
 // addPaginationFlags registers the --page and --size flags shared by paginated list commands.
-// maxSize is the API's upper bound for this endpoint and is only used in the help text.
+// maxSize is the API's upper bound for this endpoint and is only used in the help text; pass 0 when
+// the spec declares no maximum.
 func addPaginationFlags(cmd *cobra.Command, page, size *int, defaultSize, maxSize int) {
 	cmd.Flags().IntVar(page, "page", 0, "Page number, starting at 0")
-	cmd.Flags().IntVar(size, "size", defaultSize, fmt.Sprintf("Number of results per page (max %d)", maxSize))
-}
-
-// validateSbomTagPair enforces the API rule that sbom_tag_label and sbom_tag_value are supplied together.
-func validateSbomTagPair(label, value string) error {
-	if (label == "") != (value == "") {
-		return fmt.Errorf("--sbom-tag-label and --sbom-tag-value must be supplied together")
+	sizeHelp := "Number of results per page"
+	if maxSize > 0 {
+		sizeHelp = fmt.Sprintf("%s (max %d)", sizeHelp, maxSize)
 	}
-	return nil
+	cmd.Flags().IntVar(size, "size", defaultSize, sizeHelp)
 }
 
 func Platform() *cobra.Command {

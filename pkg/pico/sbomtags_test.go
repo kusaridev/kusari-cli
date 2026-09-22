@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -209,7 +210,7 @@ func TestClient_MoveSbomVersionTag_MovesFromAllHolders(t *testing.T) {
 	require.NotNil(t, res.Created)
 	assert.Nil(t, res.Existing)
 	assert.Equal(t, 99, res.Created.VersionID)
-	assert.Equal(t, fakeCreatedStart, res.EndTimestamp, "old tags end when the new one starts")
+	assert.Equal(t, fakeCreatedStart, res.Anchor, "old tags end when the new one starts")
 
 	require.Len(t, res.Ended, 2)
 	assert.Equal(t, []int{11, 12}, []int{res.Ended[0].ID, res.Ended[1].ID}, "ended in version order")
@@ -243,7 +244,9 @@ func TestClient_MoveSbomVersionTag_IdempotentWhenTargetAlreadyTagged(t *testing.
 	assert.Nil(t, res.Created)
 	require.NotNil(t, res.Existing)
 	assert.Equal(t, 15, res.Existing.ID)
-	assert.Equal(t, "2026-09-10T00:00:00Z", res.EndTimestamp, "old tag ends when the existing target tag started")
+	assert.Equal(t, "2026-09-10T00:00:00Z", res.Anchor, "old tag ends when the existing target tag started")
+	require.NotNil(t, res.Ended[0].EndTimestamp)
+	assert.Equal(t, "2026-09-10T00:00:00Z", *res.Ended[0].EndTimestamp)
 	require.Len(t, res.Ended, 1)
 	assert.Equal(t, 12, res.Ended[0].ID)
 
@@ -301,7 +304,7 @@ func TestClient_MoveSbomVersionTag_ConflictOnCreateFallsBackToExisting(t *testin
 	assert.Nil(t, res.Created)
 	require.NotNil(t, res.Existing)
 	assert.Equal(t, 15, res.Existing.ID)
-	assert.Equal(t, "2026-09-15T00:00:00Z", res.EndTimestamp)
+	assert.Equal(t, "2026-09-15T00:00:00Z", res.Anchor)
 	require.Len(t, res.Ended, 1)
 	assert.Equal(t, 12, res.Ended[0].ID)
 
@@ -397,4 +400,62 @@ func TestAPIError_ErrorsAs(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, apiErr.StatusCode)
 	assert.Contains(t, apiErr.Body, "dup")
 	assert.Equal(t, "API request failed with status 409: "+apiErr.Body, err.Error(), "error text unchanged for existing callers")
+}
+
+func TestClient_MoveSbomVersionTag_OlderTargetTagEndsNewerHoldersAtNow(t *testing.T) {
+	setupTestAuth(t)
+	// Degenerate case: the target already carries the tag from T1, and someone later tagged another
+	// version at T2 > T1 outside move-tag. Ending that tag at T1 would put its end before its start,
+	// which the API rejects with a 400, so it must be ended at the current time instead.
+	existing := tag(15, 99, "environment", "prod")
+	existing.StartTimestamp = "2026-09-10T00:00:00Z"
+	later := tag(12, 98, "environment", "prod")
+	later.StartTimestamp = "2026-09-12T00:00:00Z"
+	earlier := tag(11, 97, "environment", "prod")
+	earlier.StartTimestamp = "2026-09-01T00:00:00Z"
+	f, srv := newFakeTagServer(t, map[int][]SbomVersionTag{97: {earlier}, 98: {later}, 99: {existing}})
+	client := NewClient(srv.URL)
+
+	fixedNow := time.Date(2026, 9, 22, 15, 4, 5, 999_000_000, time.UTC)
+	prev := timeNow
+	timeNow = func() time.Time { return fixedNow }
+	t.Cleanup(func() { timeNow = prev })
+
+	res, err := client.MoveSbomVersionTag(context.Background(), 42, 99, "environment", "prod")
+	require.NoError(t, err)
+
+	assert.Equal(t, "2026-09-10T00:00:00Z", res.Anchor)
+	require.Len(t, res.Ended, 2)
+	// Version 97 started before the anchor: ended at the anchor, intervals meet.
+	assert.Equal(t, map[string]any{"end_timestamp": "2026-09-10T00:00:00Z"}, f.patch[11])
+	// Version 98 started after the anchor: ended at now, rounded down to whole seconds.
+	assert.Equal(t, map[string]any{"end_timestamp": "2026-09-22T15:04:05Z"}, f.patch[12])
+}
+
+func TestEndTimestampFor(t *testing.T) {
+	fixedNow := time.Date(2026, 9, 22, 15, 4, 5, 0, time.UTC)
+	prev := timeNow
+	timeNow = func() time.Time { return fixedNow }
+	t.Cleanup(func() { timeNow = prev })
+	now := "2026-09-22T15:04:05Z"
+
+	tests := []struct {
+		name   string
+		anchor string
+		start  string
+		want   string
+	}{
+		{"anchor after start uses anchor", "2026-09-10T00:00:00Z", "2026-09-01T00:00:00Z", "2026-09-10T00:00:00Z"},
+		{"anchor equal to start uses now", "2026-09-10T00:00:00Z", "2026-09-10T00:00:00Z", now},
+		{"anchor before start uses now", "2026-09-10T00:00:00Z", "2026-09-12T00:00:00Z", now},
+		{"fractional seconds parse", "2026-09-10T00:00:00.500Z", "2026-09-10T00:00:00.250Z", "2026-09-10T00:00:00.500Z"},
+		{"unparseable start falls back to anchor", "2026-09-10T00:00:00Z", "yesterday", "2026-09-10T00:00:00Z"},
+		{"unparseable anchor falls back to anchor", "soon", "2026-09-10T00:00:00Z", "soon"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := endTimestampFor(tt.anchor, SbomVersionTag{StartTimestamp: tt.start})
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

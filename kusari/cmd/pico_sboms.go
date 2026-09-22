@@ -15,8 +15,8 @@ import (
 func sboms() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sboms",
-		Short: "Query SBOMs",
-		Long:  "List and retrieve information about internal SBOMs, and their versions and tags",
+		Short: "Query and tag SBOMs",
+		Long:  "Look up SBOMs and their versions, and create, update, move, and delete the tags on versions",
 	}
 
 	cmd.AddCommand(picoSbomIDsByIdentifier())
@@ -51,6 +51,12 @@ func picoSbomListVersions() *cobra.Command {
 				return err
 			}
 
+			if asOf != "" {
+				if asOf, err = parseTimestampFlag("as-of", asOf); err != nil {
+					return err
+				}
+			}
+
 			client, err := newPicoClient()
 			if err != nil {
 				return err
@@ -67,10 +73,11 @@ func picoSbomListVersions() *cobra.Command {
 	}
 
 	addPaginationFlags(cmd, &page, &size, 1000, 1000)
-	cmd.Flags().StringVar(&sort, "sort", "", "Sort order (default: newest first). One of: sbom_time_desc, sbom_time_asc, sbom_type_desc, sbom_type_asc, first_ingested_desc, first_ingested_asc")
+	cmd.Flags().StringVar(&sort, "sort", "", "Sort order (default: newest first). One of: sbom_time_desc, sbom_time_asc, sbom_type_desc, sbom_type_asc")
 	cmd.Flags().StringVar(&tagLabel, "sbom-tag-label", "", "SBOM tag label (default: none, ex: 'environment')")
 	cmd.Flags().StringVar(&tagValue, "sbom-tag-value", "", "SBOM tag value (default: none, ex: 'prod')")
-	cmd.Flags().StringVar(&asOf, "as-of", "", "As of date-time (default: none, ex: '2025-01-01T00:00:00Z')")
+	cmd.Flags().StringVar(&asOf, "as-of", "", "Report which versions were in that state at this RFC3339 instant, or 'now' (ex: '2025-01-01T00:00:00Z')")
+	cmd.MarkFlagsRequiredTogether("sbom-tag-label", "sbom-tag-value")
 
 	return cmd
 }
@@ -243,12 +250,6 @@ Label and value are lowercased by the server. Fails with 409 if the change would
 			valueSet := cmd.Flags().Changed("value")
 			startSet := cmd.Flags().Changed("start")
 			endSet := cmd.Flags().Changed("end")
-			if !labelSet && !valueSet && !startSet && !endSet && !reopen {
-				return fmt.Errorf("at least one of --label, --value, --start, --end, or --reopen must be provided")
-			}
-			if endSet && reopen {
-				return fmt.Errorf("--end and --reopen are mutually exclusive")
-			}
 
 			body := map[string]any{}
 			if labelSet {
@@ -280,6 +281,11 @@ Label and value are lowercased by the server. Fails with 409 if the change would
 			if reopen {
 				body["end_timestamp"] = nil
 			}
+			// Cobra guarantees at least one flag was passed, but --reopen=false passes that check
+			// while changing nothing; refuse rather than send an empty PATCH.
+			if len(body) == 0 {
+				return fmt.Errorf("no changes requested")
+			}
 
 			client, err := newPicoClient()
 			if err != nil {
@@ -301,6 +307,8 @@ Label and value are lowercased by the server. Fails with 409 if the change would
 	cmd.Flags().StringVar(&start, "start", "", "New start timestamp, RFC3339 or 'now' (ex: '2025-01-01T00:00:00Z')")
 	cmd.Flags().StringVar(&end, "end", "", "End timestamp to close the tag, RFC3339 or 'now' (ex: '2025-01-01T00:00:00Z')")
 	cmd.Flags().BoolVar(&reopen, "reopen", false, "Clear the end timestamp so a closed tag is in effect again")
+	cmd.MarkFlagsOneRequired("label", "value", "start", "end", "reopen")
+	cmd.MarkFlagsMutuallyExclusive("end", "reopen")
 
 	return cmd
 }
@@ -347,10 +355,6 @@ Currently only --commit-sha is supported. This is an exact lookup, so it also re
 Returns a 404 error if no version matches.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if commitSha == "" {
-				return fmt.Errorf("--commit-sha is required")
-			}
-
 			client, err := newPicoClient()
 			if err != nil {
 				return err
@@ -367,6 +371,9 @@ Returns a 404 error if no version matches.`,
 	}
 
 	cmd.Flags().StringVar(&commitSha, "commit-sha", "", "Commit SHA recorded on the SBOM at ingestion time (required)")
+	if err := cmd.MarkFlagRequired("commit-sha"); err != nil {
+		panic(err)
+	}
 
 	return cmd
 }
@@ -389,10 +396,6 @@ One repo can hold many SBOMs, so this returns only visible SBOMs by default; use
 only hidden ones instead. Returns a 404 error if no SBOM matches.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if forge == "" || org == "" || repo == "" {
-				return fmt.Errorf("--forge, --org, and --repo are required")
-			}
-
 			client, err := newPicoClient()
 			if err != nil {
 				return err
@@ -413,6 +416,11 @@ only hidden ones instead. Returns a 404 error if no SBOM matches.`,
 	cmd.Flags().StringVar(&repo, "repo", "", "Repo recorded in the SBOM's upload metadata (required, ex: 'iac')")
 	cmd.Flags().StringVar(&subrepoPath, "subrepo-path", "", "Subrepo path recorded in the SBOM's upload metadata (default: none, ex: 'app-code/frontend-console')")
 	cmd.Flags().StringVar(&visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
+	for _, name := range []string{"forge", "org", "repo"} {
+		if err := cmd.MarkFlagRequired(name); err != nil {
+			panic(err)
+		}
+	}
 
 	return cmd
 }
@@ -427,6 +435,8 @@ environment, move the environment tag to it.
 
 The tags on the other versions are ended at the instant the tag on the given version started, so
 the intervals meet with no gap or overlap. That timestamp comes from the server, not this machine.
+If another version's tag started later than that (only possible if it was created outside this
+command), it is ended at the current time instead.
 
 Safe to rerun: if the given version already carries the tag it is left as is, and any other
 versions still carrying it are ended.`,
@@ -458,7 +468,7 @@ versions still carrying it are ended.`,
 			ctx := context.Background()
 			res, moveErr := client.MoveSbomVersionTag(ctx, sbomID, versionID, tagLabel, tagValue)
 			if res != nil {
-				printMoveTagResult(res, sbomID)
+				printMoveTagResult(res, sbomID, moveErr != nil)
 			}
 			if moveErr != nil {
 				return fmt.Errorf("failed to move tag %s=%s on SBOM #%d: %w", tagLabel, tagValue, sbomID, moveErr)
@@ -470,8 +480,9 @@ versions still carrying it are ended.`,
 	return cmd
 }
 
-// printMoveTagResult reports each step MoveSbomVersionTag completed, one line per tag.
-func printMoveTagResult(res *pico.MoveTagResult, sbomID int) {
+// printMoveTagResult reports each step MoveSbomVersionTag completed, one line per tag. When failed is
+// true the run stopped early, so an empty Ended list means "did not get that far", not "nothing to end".
+func printMoveTagResult(res *pico.MoveTagResult, sbomID int, failed bool) {
 	switch {
 	case res.Created != nil:
 		t := res.Created
@@ -481,9 +492,13 @@ func printMoveTagResult(res *pico.MoveTagResult, sbomID int) {
 		fmt.Printf("SBOM %d version %d already carries tag %d (%s=%s) since %s; left as is\n", sbomID, t.VersionID, t.ID, t.TagLabel, t.TagValue, t.StartTimestamp)
 	}
 	for _, t := range res.Ended {
-		fmt.Printf("Ended tag %d (%s=%s) on SBOM %d version %d at %s\n", t.ID, t.TagLabel, t.TagValue, sbomID, t.VersionID, res.EndTimestamp)
+		end := ""
+		if t.EndTimestamp != nil {
+			end = *t.EndTimestamp
+		}
+		fmt.Printf("Ended tag %d (%s=%s) on SBOM %d version %d at %s\n", t.ID, t.TagLabel, t.TagValue, sbomID, t.VersionID, end)
 	}
-	if len(res.Ended) == 0 && (res.Created != nil || res.Existing != nil) {
+	if !failed && len(res.Ended) == 0 && (res.Created != nil || res.Existing != nil) {
 		fmt.Println("No other versions carried that tag")
 	}
 }
