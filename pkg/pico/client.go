@@ -355,3 +355,46 @@ func (c *Client) GetSbomIDVersions(ctx context.Context, sbomID, page, size int, 
 
 	return json.RawMessage(respBody), nil
 }
+
+// ListSbomVersionTags retrieves the tags on a specific SBOM version.
+// label filters to an exact (case-insensitive) label match; active=true returns only tags with no end_timestamp.
+func (c *Client) ListSbomVersionTags(ctx context.Context, sbomID, versionID, page, size int, label string, active bool) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d/tags", sbomID, versionID)
+	params := make(map[string]string)
+	if page >= 0 {
+		params["page"] = fmt.Sprintf("%d", page)
+	}
+	if size > 0 {
+		params["size"] = fmt.Sprintf("%d", size)
+	}
+	if label != "" {
+		params["label"] = label
+	}
+	if active {
+		params["active"] = "true"
+	}
+
+	respBody, err := c.makeRequest(ctx, "GET", path, params, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(respBody), nil
+}
+
+// CreateSbomVersionTag adds a tag (label/value pair) to a specific SBOM version.
+// The server sets version_id and start_timestamp, and lowercases label and value before storing.
+func (c *Client) CreateSbomVersionTag(ctx context.Context, sbomID, versionID int, tagLabel, tagValue string) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d/tags", sbomID, versionID)
+	body := map[string]any{
+		"tag_label": tagLabel,
+		"tag_value": tagValue,
+	}
+
+	respBody, err := c.makeRequest(ctx, "POST", path, nil, body)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(respBody), nil
+}
