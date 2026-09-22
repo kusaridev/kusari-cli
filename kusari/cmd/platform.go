@@ -70,6 +70,14 @@ func addPaginationFlags(cmd *cobra.Command, page, size *int, defaultSize, maxSiz
 	cmd.Flags().IntVar(size, "size", defaultSize, fmt.Sprintf("Number of results per page (max %d)", maxSize))
 }
 
+// validateSbomTagPair enforces the API rule that sbom_tag_label and sbom_tag_value are supplied together.
+func validateSbomTagPair(label, value string) error {
+	if (label == "") != (value == "") {
+		return fmt.Errorf("--sbom-tag-label and --sbom-tag-value must be supplied together")
+	}
+	return nil
+}
+
 func Platform() *cobra.Command {
 	platformCmd.AddCommand(upload())
 	platformCmd.AddCommand(vulnerabilities())

@@ -22,6 +22,7 @@ func components() *cobra.Command {
 
 	cmd.AddCommand(picoComponentsList())
 	cmd.AddCommand(picoComponentsGet())
+	cmd.AddCommand(picoComponentsSboms())
 	cmd.AddCommand(picoComponentsCreate())
 	cmd.AddCommand(picoComponentsUpdate())
 	cmd.AddCommand(picoComponentsDelete())
@@ -343,4 +344,88 @@ func parseMetaFlag(set bool, metaJSON string) (map[string]any, error) {
 		return nil, fmt.Errorf("invalid --meta JSON: %w", err)
 	}
 	return meta, nil
+}
+
+func picoComponentsSboms() *cobra.Command {
+	var (
+		search       string
+		sort         string
+		visibility   string
+		statusFilter string
+		tagLabel     string
+		tagValue     string
+		asOf         string
+		page         int
+		size         int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "sboms <component-id>",
+		Short: "List SBOMs linked to a component",
+		Long: `List the SBOMs linked to a component. Each row includes sbom_type (source, build, image, or unknown),
+so this can be used to find the source SBOM that shares a component with an image SBOM.
+
+By default each SBOM is described by its most recently ingested version. Supply --sbom-tag-label and
+--sbom-tag-value together to describe each SBOM by the newest version carrying that tag instead, and
+--as-of to ask what either looked like at a past instant.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			compID, err := parseIDArg(args[0], "component")
+			if err != nil {
+				return err
+			}
+
+			if err := validateSbomTagPair(tagLabel, tagValue); err != nil {
+				return err
+			}
+
+			params := make(map[string]string)
+			if search != "" {
+				params["search"] = search
+			}
+			if sort != "" {
+				params["sort"] = sort
+			}
+			if visibility != "" {
+				params["visibility"] = visibility
+			}
+			if statusFilter != "" {
+				params["status_filter"] = statusFilter
+			}
+			if tagLabel != "" {
+				params["sbom_tag_label"] = tagLabel
+			}
+			if tagValue != "" {
+				params["sbom_tag_value"] = tagValue
+			}
+			if asOf != "" {
+				params["as_of"] = asOf
+			}
+			pico.AddPaginationParams(params, page, size)
+
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			result, err := client.ListComponentSboms(ctx, compID, params)
+			if err != nil {
+				return fmt.Errorf("failed to fetch SBOMs for component #%d: %w", compID, err)
+			}
+
+			return printJSON(result)
+		},
+	}
+
+	cmd.Flags().StringVar(&search, "search", "", "Search glob for the SBOM's name or its newest version string")
+	cmd.Flags().StringVar(&sort, "sort", "", "Sort order. One of: display_name_desc, display_name_asc, vuln_count_desc, vuln_count_asc, last_recorded_desc, last_recorded_asc, first_ingested_desc, first_ingested_asc, license_category_desc, license_category_asc")
+	cmd.Flags().StringVar(&visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
+	cmd.Flags().StringVar(&statusFilter, "status-filter", "", "Filter by EOL/deprecated status (all|eol|deprecated)")
+	cmd.Flags().StringVar(&tagLabel, "sbom-tag-label", "", "Describe each SBOM by versions carrying this tag label (ex: 'environment'); requires --sbom-tag-value")
+	cmd.Flags().StringVar(&tagValue, "sbom-tag-value", "", "Tag value required for --sbom-tag-label (ex: 'prod')")
+	cmd.Flags().StringVar(&asOf, "as-of", "", "Report what the answer would have been at this RFC3339 instant (ex: '2025-01-01T00:00:00Z')")
+	addPaginationFlags(cmd, &page, &size, 1000, 1000)
+
+	return cmd
 }

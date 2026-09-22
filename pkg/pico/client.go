@@ -355,3 +355,9 @@ func (c *Client) FindSbomIDsByIdentifier(ctx context.Context, commitSha string) 
 
 	return c.requestJSON(ctx, "POST", "/pico/v2/sboms/id/by-identifier", nil, body)
 }
+
+// ListComponentSboms retrieves the SBOMs linked to a component (v2).
+func (c *Client) ListComponentSboms(ctx context.Context, compID int, params map[string]string) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v2/components/%d/sboms", compID)
+	return c.requestJSON(ctx, "GET", path, params, nil)
+}
