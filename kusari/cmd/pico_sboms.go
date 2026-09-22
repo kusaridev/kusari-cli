@@ -21,6 +21,7 @@ func sboms() *cobra.Command {
 		Long:  "List and retrieve information about internal SBOMs, and their versions and tags",
 	}
 
+	cmd.AddCommand(picoSbomIDsByIdentifier())
 	cmd.AddCommand(picoSbomListVersions())
 	cmd.AddCommand(picoSbomVersionListTags())
 	cmd.AddCommand(picoSbomVersionCreateTag())
@@ -356,6 +357,43 @@ func picoSbomVersionDeleteTag() *cobra.Command {
 			return nil
 		},
 	}
+
+	return cmd
+}
+
+func picoSbomIDsByIdentifier() *cobra.Command {
+	var commitSha string
+
+	cmd := &cobra.Command{
+		Use:   "id-by-identifier",
+		Short: "Find SBOM and version IDs by identifier",
+		Long: `Find the SBOM ID and version ID of every SBOM version matching the given identifier.
+
+Currently only --commit-sha is supported. This is an exact lookup, so it also returns versions of hidden SBOMs.
+Returns a 404 error if no version matches.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if commitSha == "" {
+				return fmt.Errorf("--commit-sha is required")
+			}
+
+			if platformTenantEndpoint == "" {
+				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			}
+
+			client := pico.NewClient(platformTenantEndpoint)
+
+			ctx := context.Background()
+			result, err := client.FindSbomIDsByIdentifier(ctx, commitSha)
+			if err != nil {
+				return fmt.Errorf("failed to find SBOM IDs for commit %s: %w", commitSha, err)
+			}
+
+			return printJSON(result)
+		},
+	}
+
+	cmd.Flags().StringVar(&commitSha, "commit-sha", "", "Commit SHA recorded on the SBOM at ingestion time (required)")
 
 	return cmd
 }

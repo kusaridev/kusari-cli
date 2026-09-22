@@ -430,3 +430,19 @@ func (c *Client) DeleteSbomVersionTag(ctx context.Context, sbomID, versionID, ta
 	_, err := c.makeRequest(ctx, "DELETE", path, nil, nil)
 	return err
 }
+
+// FindSbomIDsByIdentifier returns the SBOM and version IDs for every version matching the given identifiers.
+// Currently only commit_sha is supported by the API. The endpoint is a POST because the identifiers are sent in the body.
+// It is an exact-identifier lookup, so it matches versions of hidden SBOMs as well as visible ones.
+func (c *Client) FindSbomIDsByIdentifier(ctx context.Context, commitSha string) (json.RawMessage, error) {
+	body := map[string]any{
+		"commit_sha": commitSha,
+	}
+
+	respBody, err := c.makeRequest(ctx, "POST", "/pico/v2/sboms/id/by-identifier", nil, body)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(respBody), nil
+}
