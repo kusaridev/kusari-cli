@@ -345,17 +345,7 @@ func parseMetaFlag(set bool, metaJSON string) (map[string]any, error) {
 }
 
 func picoComponentsSboms() *cobra.Command {
-	var (
-		search          string
-		sort            string
-		visibility      string
-		lifecycleFilter string
-		tagLabel        string
-		tagValue        string
-		asOf            string
-		page            int
-		size            int
-	)
+	var opts pico.ListComponentSbomsOptions
 
 	cmd := &cobra.Command{
 		Use:   "sboms <component-id>",
@@ -373,33 +363,11 @@ By default each SBOM is described by its most recently ingested version. Supply 
 				return err
 			}
 
-			params := make(map[string]string)
-			if search != "" {
-				params["search"] = search
-			}
-			if sort != "" {
-				params["sort"] = sort
-			}
-			if visibility != "" {
-				params["visibility"] = visibility
-			}
-			if lifecycleFilter != "" {
-				params["lifecycle_filter"] = lifecycleFilter
-			}
-			if tagLabel != "" {
-				params["sbom_tag_label"] = tagLabel
-			}
-			if tagValue != "" {
-				params["sbom_tag_value"] = tagValue
-			}
-			if asOf != "" {
-				ts, err := parseTimestampFlag("as-of", asOf)
-				if err != nil {
+			if opts.AsOf != "" {
+				if opts.AsOf, err = parseTimestampFlag("as-of", opts.AsOf); err != nil {
 					return err
 				}
-				params["as_of"] = ts
 			}
-			pico.AddPaginationParams(params, page, size)
 
 			client, err := newPicoClient()
 			if err != nil {
@@ -407,7 +375,7 @@ By default each SBOM is described by its most recently ingested version. Supply 
 			}
 
 			ctx := context.Background()
-			result, err := client.ListComponentSboms(ctx, compID, params)
+			result, err := client.ListComponentSboms(ctx, compID, opts)
 			if err != nil {
 				return fmt.Errorf("failed to fetch SBOMs for component #%d: %w", compID, err)
 			}
@@ -416,15 +384,15 @@ By default each SBOM is described by its most recently ingested version. Supply 
 		},
 	}
 
-	cmd.Flags().StringVar(&search, "search", "", "Search glob for the SBOM's name or its newest version string")
-	cmd.Flags().StringVar(&sort, "sort", "", "Sort order. One of: display_name_desc, display_name_asc, vuln_count_desc, vuln_count_asc, last_recorded_desc, last_recorded_asc, first_ingested_desc, first_ingested_asc, license_category_desc, license_category_asc")
-	cmd.Flags().StringVar(&visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
-	cmd.Flags().StringVar(&lifecycleFilter, "lifecycle-filter", "", "Filter by EOL/deprecated status (all|eol|deprecated)")
-	cmd.Flags().StringVar(&tagLabel, "sbom-tag-label", "", "Describe each SBOM by versions carrying this tag label (ex: 'environment'); requires --sbom-tag-value")
-	cmd.Flags().StringVar(&tagValue, "sbom-tag-value", "", "Tag value required for --sbom-tag-label (ex: 'prod')")
+	cmd.Flags().StringVar(&opts.Search, "search", "", "Search glob for the SBOM's name or its newest version string")
+	cmd.Flags().StringVar(&opts.Sort, "sort", "", "Sort order. One of: display_name_desc, display_name_asc, vuln_count_desc, vuln_count_asc, last_recorded_desc, last_recorded_asc, first_ingested_desc, first_ingested_asc, license_category_desc, license_category_asc")
+	cmd.Flags().StringVar(&opts.Visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
+	cmd.Flags().StringVar(&opts.LifecycleFilter, "lifecycle-filter", "", "Filter by EOL/deprecated status (all|eol|deprecated)")
+	cmd.Flags().StringVar(&opts.TagLabel, "sbom-tag-label", "", "Describe each SBOM by versions carrying this tag label (ex: 'environment'); requires --sbom-tag-value")
+	cmd.Flags().StringVar(&opts.TagValue, "sbom-tag-value", "", "Tag value required for --sbom-tag-label (ex: 'prod')")
 	cmd.MarkFlagsRequiredTogether("sbom-tag-label", "sbom-tag-value")
-	cmd.Flags().StringVar(&asOf, "as-of", "", "Report what the answer would have been at this RFC3339 instant, or 'now' (ex: '2025-01-01T00:00:00Z')")
-	addPaginationFlags(cmd, &page, &size, 1000, 1000)
+	cmd.Flags().StringVar(&opts.AsOf, "as-of", "", "Report what the answer would have been at this RFC3339 instant, or 'now' (ex: '2025-01-01T00:00:00Z')")
+	addPaginationFlags(cmd, &opts.Page, &opts.Size, 1000, 1000)
 
 	return cmd
 }

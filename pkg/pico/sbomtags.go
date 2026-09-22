@@ -83,7 +83,7 @@ func (c *Client) MoveSbomVersionTag(ctx context.Context, sbomID, versionID int, 
 	holders := map[int][]SbomVersionTag{}
 	const pageSize = 1000
 	for page := 0; ; page++ {
-		raw, err := c.GetSbomVersions(ctx, sbomID, page, pageSize, "", label, value, "")
+		raw, err := c.GetSbomVersions(ctx, sbomID, GetSbomVersionsOptions{Page: page, Size: pageSize, TagLabel: label, TagValue: value})
 		if err != nil {
 			return nil, fmt.Errorf("listing versions carrying %s=%s: %w", label, value, err)
 		}
@@ -181,7 +181,7 @@ func (c *Client) createOrFindSbomVersionTag(ctx context.Context, sbomID, version
 		// It is a 409, so the version already carries label=value in effect.
 		// Fetch the version's in-effect tags with this label so we can hand back the
 		// existing tag; its start_timestamp is what the caller uses to end the old holders.
-		listed, listErr := c.ListSbomVersionTags(ctx, sbomID, versionID, 0, 1000, label, true)
+		listed, listErr := c.ListSbomVersionTags(ctx, sbomID, versionID, ListSbomVersionTagsOptions{Size: 1000, Label: label, Active: true})
 		if listErr != nil {
 			return nil, false, fmt.Errorf("creating tag %s=%s on version #%d: %w (and listing existing tags failed: %v)", label, value, versionID, err, listErr)
 		}

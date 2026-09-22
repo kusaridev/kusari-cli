@@ -33,12 +33,7 @@ func sboms() *cobra.Command {
 }
 
 func picoSbomListVersions() *cobra.Command {
-	var page int
-	var size int
-	var sort string
-	var tagLabel string
-	var tagValue string
-	var asOf string
+	var opts pico.GetSbomVersionsOptions
 
 	cmd := &cobra.Command{
 		Use:   "versions <sbom-id>",
@@ -51,8 +46,8 @@ func picoSbomListVersions() *cobra.Command {
 				return err
 			}
 
-			if asOf != "" {
-				if asOf, err = parseTimestampFlag("as-of", asOf); err != nil {
+			if opts.AsOf != "" {
+				if opts.AsOf, err = parseTimestampFlag("as-of", opts.AsOf); err != nil {
 					return err
 				}
 			}
@@ -63,7 +58,7 @@ func picoSbomListVersions() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			result, err := client.GetSbomVersions(ctx, sbomID, page, size, sort, tagLabel, tagValue, asOf)
+			result, err := client.GetSbomVersions(ctx, sbomID, opts)
 			if err != nil {
 				return fmt.Errorf("failed to fetch SBOM #%d versions: %w", sbomID, err)
 			}
@@ -72,21 +67,18 @@ func picoSbomListVersions() *cobra.Command {
 		},
 	}
 
-	addPaginationFlags(cmd, &page, &size, 1000, 1000)
-	cmd.Flags().StringVar(&sort, "sort", "", "Sort order (default: newest first). One of: sbom_time_desc, sbom_time_asc, sbom_type_desc, sbom_type_asc")
-	cmd.Flags().StringVar(&tagLabel, "sbom-tag-label", "", "SBOM tag label (default: none, ex: 'environment')")
-	cmd.Flags().StringVar(&tagValue, "sbom-tag-value", "", "SBOM tag value (default: none, ex: 'prod')")
-	cmd.Flags().StringVar(&asOf, "as-of", "", "Report which versions were in that state at this RFC3339 instant, or 'now' (ex: '2025-01-01T00:00:00Z')")
+	addPaginationFlags(cmd, &opts.Page, &opts.Size, 1000, 1000)
+	cmd.Flags().StringVar(&opts.Sort, "sort", "", "Sort order (default: newest first). One of: sbom_time_desc, sbom_time_asc, sbom_type_desc, sbom_type_asc")
+	cmd.Flags().StringVar(&opts.TagLabel, "sbom-tag-label", "", "SBOM tag label (default: none, ex: 'environment')")
+	cmd.Flags().StringVar(&opts.TagValue, "sbom-tag-value", "", "SBOM tag value (default: none, ex: 'prod')")
+	cmd.Flags().StringVar(&opts.AsOf, "as-of", "", "Report which versions were in that state at this RFC3339 instant, or 'now' (ex: '2025-01-01T00:00:00Z')")
 	cmd.MarkFlagsRequiredTogether("sbom-tag-label", "sbom-tag-value")
 
 	return cmd
 }
 
 func picoSbomVersionListTags() *cobra.Command {
-	var page int
-	var size int
-	var label string
-	var active bool
+	var opts pico.ListSbomVersionTagsOptions
 
 	cmd := &cobra.Command{
 		Use:   "tags <sbom-id> <version-id>",
@@ -110,7 +102,7 @@ func picoSbomVersionListTags() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			result, err := client.ListSbomVersionTags(ctx, sbomID, versionID, page, size, label, active)
+			result, err := client.ListSbomVersionTags(ctx, sbomID, versionID, opts)
 			if err != nil {
 				return fmt.Errorf("failed to fetch tags for SBOM #%d version #%d: %w", sbomID, versionID, err)
 			}
@@ -119,9 +111,9 @@ func picoSbomVersionListTags() *cobra.Command {
 		},
 	}
 
-	addPaginationFlags(cmd, &page, &size, 1000, 1000)
-	cmd.Flags().StringVar(&label, "label", "", "Only return tags with this exact label, case-insensitive (default: none, ex: 'environment')")
-	cmd.Flags().BoolVar(&active, "active", false, "Only return tags still in effect (no end_timestamp)")
+	addPaginationFlags(cmd, &opts.Page, &opts.Size, 1000, 1000)
+	cmd.Flags().StringVar(&opts.Label, "label", "", "Only return tags with this exact label, case-insensitive (default: none, ex: 'environment')")
+	cmd.Flags().BoolVar(&opts.Active, "active", false, "Only return tags still in effect (no end_timestamp)")
 
 	return cmd
 }
@@ -379,13 +371,7 @@ Returns a 404 error if no version matches.`,
 }
 
 func picoSbomIDsByRepo() *cobra.Command {
-	var (
-		forge       string
-		org         string
-		repo        string
-		subrepoPath string
-		visibility  string
-	)
+	var opts pico.FindSbomIDsByRepoOptions
 
 	cmd := &cobra.Command{
 		Use:   "id-by-repo",
@@ -402,20 +388,20 @@ only hidden ones instead. Returns a 404 error if no SBOM matches.`,
 			}
 
 			ctx := context.Background()
-			result, err := client.FindSbomIDsByRepo(ctx, forge, org, repo, subrepoPath, visibility)
+			result, err := client.FindSbomIDsByRepo(ctx, opts)
 			if err != nil {
-				return fmt.Errorf("failed to find SBOM IDs for %s/%s/%s: %w", forge, org, repo, err)
+				return fmt.Errorf("failed to find SBOM IDs for %s/%s/%s: %w", opts.Forge, opts.Org, opts.Repo, err)
 			}
 
 			return printJSON(result)
 		},
 	}
 
-	cmd.Flags().StringVar(&forge, "forge", "", "Forge recorded in the SBOM's upload metadata (required, ex: 'github.com')")
-	cmd.Flags().StringVar(&org, "org", "", "Organization recorded in the SBOM's upload metadata (required, ex: 'kusaridev')")
-	cmd.Flags().StringVar(&repo, "repo", "", "Repo recorded in the SBOM's upload metadata (required, ex: 'iac')")
-	cmd.Flags().StringVar(&subrepoPath, "subrepo-path", "", "Subrepo path recorded in the SBOM's upload metadata (default: none, ex: 'app-code/frontend-console')")
-	cmd.Flags().StringVar(&visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
+	cmd.Flags().StringVar(&opts.Forge, "forge", "", "Forge recorded in the SBOM's upload metadata (required, ex: 'github.com')")
+	cmd.Flags().StringVar(&opts.Org, "org", "", "Organization recorded in the SBOM's upload metadata (required, ex: 'kusaridev')")
+	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Repo recorded in the SBOM's upload metadata (required, ex: 'iac')")
+	cmd.Flags().StringVar(&opts.SubrepoPath, "subrepo-path", "", "Subrepo path recorded in the SBOM's upload metadata (default: none, ex: 'app-code/frontend-console')")
+	cmd.Flags().StringVar(&opts.Visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
 	for _, name := range []string{"forge", "org", "repo"} {
 		if err := cmd.MarkFlagRequired(name); err != nil {
 			panic(err)

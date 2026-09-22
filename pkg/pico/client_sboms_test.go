@@ -100,7 +100,14 @@ func TestClient_GetSbomVersions(t *testing.T) {
 	client := NewClient(server.URL)
 
 	t.Run("all params", func(t *testing.T) {
-		result, err := client.GetSbomVersions(context.Background(), 42, 1, 25, "sbom_time_asc", "environment", "prod", "2025-01-01T00:00:00Z")
+		result, err := client.GetSbomVersions(context.Background(), 42, GetSbomVersionsOptions{
+			Page:     1,
+			Size:     25,
+			Sort:     "sbom_time_asc",
+			TagLabel: "environment",
+			TagValue: "prod",
+			AsOf:     "2025-01-01T00:00:00Z",
+		})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"items":[]}`, string(result))
 
@@ -118,7 +125,7 @@ func TestClient_GetSbomVersions(t *testing.T) {
 	})
 
 	t.Run("optional params omitted when empty", func(t *testing.T) {
-		_, err := client.GetSbomVersions(context.Background(), 42, 0, 1000, "", "", "", "")
+		_, err := client.GetSbomVersions(context.Background(), 42, GetSbomVersionsOptions{Size: 1000})
 		require.NoError(t, err)
 
 		assert.Equal(t, url.Values{"page": {"0"}, "size": {"1000"}}, rec.Query)
@@ -131,7 +138,7 @@ func TestClient_ListSbomVersionTags(t *testing.T) {
 	client := NewClient(server.URL)
 
 	t.Run("with filters", func(t *testing.T) {
-		_, err := client.ListSbomVersionTags(context.Background(), 7, 99, 0, 100, "environment", true)
+		_, err := client.ListSbomVersionTags(context.Background(), 7, 99, ListSbomVersionTagsOptions{Size: 100, Label: "environment", Active: true})
 		require.NoError(t, err)
 
 		assert.Equal(t, http.MethodGet, rec.Method)
@@ -145,7 +152,7 @@ func TestClient_ListSbomVersionTags(t *testing.T) {
 	})
 
 	t.Run("active false and empty label omitted", func(t *testing.T) {
-		_, err := client.ListSbomVersionTags(context.Background(), 7, 99, 0, 100, "", false)
+		_, err := client.ListSbomVersionTags(context.Background(), 7, 99, ListSbomVersionTagsOptions{Size: 100})
 		require.NoError(t, err)
 
 		assert.Equal(t, url.Values{"page": {"0"}, "size": {"100"}}, rec.Query)
@@ -253,7 +260,13 @@ func TestClient_FindSbomIDsByRepo(t *testing.T) {
 	client := NewClient(server.URL)
 
 	t.Run("all params", func(t *testing.T) {
-		result, err := client.FindSbomIDsByRepo(context.Background(), "github.com", "kusaridev", "iac", "app-code/frontend-console", "hidden")
+		result, err := client.FindSbomIDsByRepo(context.Background(), FindSbomIDsByRepoOptions{
+			Forge:       "github.com",
+			Org:         "kusaridev",
+			Repo:        "iac",
+			SubrepoPath: "app-code/frontend-console",
+			Visibility:  "hidden",
+		})
 		require.NoError(t, err)
 		assert.JSONEq(t, `[{"sbom_id":13,"name":"frontend-console"}]`, string(result))
 
@@ -270,7 +283,7 @@ func TestClient_FindSbomIDsByRepo(t *testing.T) {
 	})
 
 	t.Run("optional params omitted", func(t *testing.T) {
-		_, err := client.FindSbomIDsByRepo(context.Background(), "github.com", "kusaridev", "iac", "", "")
+		_, err := client.FindSbomIDsByRepo(context.Background(), FindSbomIDsByRepoOptions{Forge: "github.com", Org: "kusaridev", Repo: "iac"})
 		require.NoError(t, err)
 		assert.Equal(t, url.Values{
 			"forge": {"github.com"},
@@ -289,7 +302,7 @@ func TestClient_SbomMethods_ErrorResponses(t *testing.T) {
 		call       func(c *Client) error
 	}{
 		{"versions 404", http.StatusNotFound, func(c *Client) error {
-			_, err := c.GetSbomVersions(context.Background(), 1, 0, 10, "", "", "", "")
+			_, err := c.GetSbomVersions(context.Background(), 1, GetSbomVersionsOptions{})
 			return err
 		}},
 		{"create tag 409 conflict", http.StatusConflict, func(c *Client) error {
@@ -308,11 +321,11 @@ func TestClient_SbomMethods_ErrorResponses(t *testing.T) {
 			return err
 		}},
 		{"by-repo 404", http.StatusNotFound, func(c *Client) error {
-			_, err := c.FindSbomIDsByRepo(context.Background(), "github.com", "nope", "nope", "", "")
+			_, err := c.FindSbomIDsByRepo(context.Background(), FindSbomIDsByRepoOptions{Forge: "github.com", Org: "nope", Repo: "nope"})
 			return err
 		}},
 		{"by-repo 400", http.StatusBadRequest, func(c *Client) error {
-			_, err := c.FindSbomIDsByRepo(context.Background(), "github.com", "kusaridev", "iac", "", "bogus")
+			_, err := c.FindSbomIDsByRepo(context.Background(), FindSbomIDsByRepoOptions{Forge: "github.com", Org: "kusaridev", Repo: "iac", Visibility: "bogus"})
 			return err
 		}},
 	}
@@ -335,39 +348,47 @@ func TestClient_ListComponentSboms(t *testing.T) {
 	server, rec := recordingServer(t, http.StatusOK, map[string]any{"items": []any{}})
 	client := NewClient(server.URL)
 
-	t.Run("with params", func(t *testing.T) {
-		params := map[string]string{
-			"sort":           "first_ingested_desc",
-			"sbom_tag_label": "environment",
-			"sbom_tag_value": "prod",
-		}
-		AddPaginationParams(params, 0, 50)
-		result, err := client.ListComponentSboms(context.Background(), 12, params)
+	t.Run("all params", func(t *testing.T) {
+		result, err := client.ListComponentSboms(context.Background(), 12, ListComponentSbomsOptions{
+			Page:            2,
+			Size:            50,
+			Search:          "frontend*",
+			Sort:            "first_ingested_desc",
+			Visibility:      "hidden",
+			LifecycleFilter: "eol",
+			TagLabel:        "environment",
+			TagValue:        "prod",
+			AsOf:            "2025-01-01T00:00:00Z",
+		})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"items":[]}`, string(result))
 
 		assert.Equal(t, http.MethodGet, rec.Method)
 		assert.Equal(t, "/pico/v2/components/12/sboms", rec.Path)
 		assert.Equal(t, url.Values{
-			"sort":           {"first_ingested_desc"},
-			"sbom_tag_label": {"environment"},
-			"sbom_tag_value": {"prod"},
-			"page":           {"0"},
-			"size":           {"50"},
+			"page":             {"2"},
+			"size":             {"50"},
+			"search":           {"frontend*"},
+			"sort":             {"first_ingested_desc"},
+			"visibility":       {"hidden"},
+			"lifecycle_filter": {"eol"},
+			"sbom_tag_label":   {"environment"},
+			"sbom_tag_value":   {"prod"},
+			"as_of":            {"2025-01-01T00:00:00Z"},
 		}, rec.Query)
 	})
 
-	t.Run("no params", func(t *testing.T) {
-		_, err := client.ListComponentSboms(context.Background(), 12, nil)
+	t.Run("zero options send only page", func(t *testing.T) {
+		_, err := client.ListComponentSboms(context.Background(), 12, ListComponentSbomsOptions{})
 		require.NoError(t, err)
 
 		assert.Equal(t, "/pico/v2/components/12/sboms", rec.Path)
-		assert.Empty(t, rec.Query)
+		assert.Equal(t, url.Values{"page": {"0"}}, rec.Query)
 	})
 
 	t.Run("404 component not found", func(t *testing.T) {
 		notFound, _ := recordingServer(t, http.StatusNotFound, map[string]string{"error": "no such component"})
-		_, err := NewClient(notFound.URL).ListComponentSboms(context.Background(), 999, nil)
+		_, err := NewClient(notFound.URL).ListComponentSboms(context.Background(), 999, ListComponentSbomsOptions{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "status 404")
 	})

@@ -46,6 +46,7 @@ func NewClient(baseURL string) *Client {
 }
 
 // makeRequest makes an HTTP request to the Pico API with authentication.
+// Params with empty values are omitted from the query string.
 func (c *Client) makeRequest(ctx context.Context, method, path string, params map[string]string, body interface{}) ([]byte, error) {
 	// Load access token
 	token, err := auth.LoadToken("kusari")
@@ -285,39 +286,46 @@ func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, sub
 }
 
 // v2
+// GetSbomVersionsOptions holds the query parameters for GetSbomVersions. Empty fields are omitted.
+type GetSbomVersionsOptions struct {
+	Page     int
+	Size     int
+	Sort     string
+	TagLabel string // sbom_tag_label; must be paired with TagValue
+	TagValue string // sbom_tag_value
+	AsOf     string // as_of, RFC3339
+}
+
 // GetSbomVersions retrieves versions of a specific SBOM by ID.
-func (c *Client) GetSbomVersions(ctx context.Context, sbomID, page, size int, sort, tagLabel, tagValue, asOf string) (json.RawMessage, error) {
+func (c *Client) GetSbomVersions(ctx context.Context, sbomID int, opts GetSbomVersionsOptions) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/sboms/%d/versions", sbomID)
-	params := make(map[string]string)
-	AddPaginationParams(params, page, size)
-	if sort != "" {
-		params["sort"] = sort
+	params := map[string]string{
+		"sort":           opts.Sort,
+		"sbom_tag_label": opts.TagLabel,
+		"sbom_tag_value": opts.TagValue,
+		"as_of":          opts.AsOf,
 	}
-	if tagLabel != "" {
-		params["sbom_tag_label"] = tagLabel
-	}
-	if tagValue != "" {
-		params["sbom_tag_value"] = tagValue
-	}
-	if asOf != "" {
-		params["as_of"] = asOf
-	}
+	AddPaginationParams(params, opts.Page, opts.Size)
 
 	return c.requestJSON(ctx, "GET", path, params, nil)
 }
 
+// ListSbomVersionTagsOptions holds the query parameters for ListSbomVersionTags. Empty fields are omitted.
+type ListSbomVersionTagsOptions struct {
+	Page   int
+	Size   int
+	Label  string // exact (case-insensitive) label match
+	Active bool   // only tags with no end_timestamp
+}
+
 // ListSbomVersionTags retrieves the tags on a specific SBOM version.
-// label filters to an exact (case-insensitive) label match; active=true returns only tags with no end_timestamp.
-func (c *Client) ListSbomVersionTags(ctx context.Context, sbomID, versionID, page, size int, label string, active bool) (json.RawMessage, error) {
+func (c *Client) ListSbomVersionTags(ctx context.Context, sbomID, versionID int, opts ListSbomVersionTagsOptions) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d/tags", sbomID, versionID)
-	params := make(map[string]string)
-	AddPaginationParams(params, page, size)
-	if label != "" {
-		params["label"] = label
-	}
-	if active {
+	params := map[string]string{"label": opts.Label}
+	if opts.Active {
 		params["active"] = "true"
 	}
+	AddPaginationParams(params, opts.Page, opts.Size)
 
 	return c.requestJSON(ctx, "GET", path, params, nil)
 }
@@ -367,27 +375,55 @@ func (c *Client) FindSbomIDsByIdentifier(ctx context.Context, commitSha string) 
 	return c.requestJSON(ctx, "POST", "/pico/v2/sboms/id/by-identifier", nil, body)
 }
 
-// FindSbomIDsByRepo returns every SBOM matching the given repository metadata (forge, org, repo, subrepo_path).
-// subrepoPath and visibility are optional - pass empty strings to omit them. visibility is "active" (server default,
-// visible SBOMs only) or "hidden" (hidden SBOMs only).
-func (c *Client) FindSbomIDsByRepo(ctx context.Context, forge, org, repo, subrepoPath, visibility string) (json.RawMessage, error) {
+// FindSbomIDsByRepoOptions holds the query parameters for FindSbomIDsByRepo, matched against the SBOM's
+// upload metadata. Forge, Org, and Repo are required; empty optional fields are omitted.
+type FindSbomIDsByRepoOptions struct {
+	Forge       string
+	Org         string
+	Repo        string
+	SubrepoPath string
+	Visibility  string // "active" (server default, visible SBOMs only) or "hidden" (hidden SBOMs only)
+}
+
+// FindSbomIDsByRepo returns every SBOM matching the given repository metadata.
+func (c *Client) FindSbomIDsByRepo(ctx context.Context, opts FindSbomIDsByRepoOptions) (json.RawMessage, error) {
 	params := map[string]string{
-		"forge": forge,
-		"org":   org,
-		"repo":  repo,
-	}
-	if subrepoPath != "" {
-		params["subrepo_path"] = subrepoPath
-	}
-	if visibility != "" {
-		params["visibility"] = visibility
+		"forge":        opts.Forge,
+		"org":          opts.Org,
+		"repo":         opts.Repo,
+		"subrepo_path": opts.SubrepoPath,
+		"visibility":   opts.Visibility,
 	}
 
 	return c.requestJSON(ctx, "GET", "/pico/v2/sboms/id/by-repo", params, nil)
 }
 
+// ListComponentSbomsOptions holds the query parameters for ListComponentSboms. Empty fields are omitted.
+type ListComponentSbomsOptions struct {
+	Page            int
+	Size            int
+	Search          string
+	Sort            string
+	Visibility      string
+	LifecycleFilter string
+	TagLabel        string // sbom_tag_label; must be paired with TagValue
+	TagValue        string // sbom_tag_value
+	AsOf            string // as_of, RFC3339
+}
+
 // ListComponentSboms retrieves the SBOMs linked to a component (v2).
-func (c *Client) ListComponentSboms(ctx context.Context, compID int, params map[string]string) (json.RawMessage, error) {
+func (c *Client) ListComponentSboms(ctx context.Context, compID int, opts ListComponentSbomsOptions) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/components/%d/sboms", compID)
+	params := map[string]string{
+		"search":           opts.Search,
+		"sort":             opts.Sort,
+		"visibility":       opts.Visibility,
+		"lifecycle_filter": opts.LifecycleFilter,
+		"sbom_tag_label":   opts.TagLabel,
+		"sbom_tag_value":   opts.TagValue,
+		"as_of":            opts.AsOf,
+	}
+	AddPaginationParams(params, opts.Page, opts.Size)
+
 	return c.requestJSON(ctx, "GET", path, params, nil)
 }
