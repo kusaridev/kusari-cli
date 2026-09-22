@@ -142,7 +142,12 @@ func (f *fakeTagServer) serveCreate(w http.ResponseWriter, _ *http.Request, vidS
 		TagLabel string `json:"tag_label"`
 		TagValue string `json:"tag_value"`
 	}
-	require.NoError(f.t, json.Unmarshal(body, &req))
+	// Server goroutine: report with Errorf and answer 400, never FailNow.
+	if err := json.Unmarshal(body, &req); err != nil {
+		f.t.Errorf("create body: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	tag := SbomVersionTag{ID: f.nextTagID, VersionID: vid, TagLabel: strings.ToLower(req.TagLabel), TagValue: strings.ToLower(req.TagValue), StartTimestamp: fakeCreatedStart}
 	f.nextTagID++
 	f.versions[vid] = append(f.versions[vid], tag)
@@ -175,17 +180,42 @@ func (f *fakeTagServer) servePatch(w http.ResponseWriter, tagIDStr string, body 
 		return
 	}
 	var req map[string]any
-	require.NoError(f.t, json.Unmarshal(body, &req))
+	// Server goroutine: report with Errorf and answer 400, never FailNow.
+	if err := json.Unmarshal(body, &req); err != nil {
+		f.t.Errorf("patch body: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	f.patch[tagID] = req
 	for vid, tags := range f.versions {
 		for i := range tags {
-			if tags[i].ID == tagID {
-				if end, ok := req["end_timestamp"].(string); ok {
-					f.versions[vid][i].EndTimestamp = &end
-				}
-				_ = json.NewEncoder(w).Encode(f.versions[vid][i])
-				return
+			if tags[i].ID != tagID {
+				continue
 			}
+			if end, ok := req["end_timestamp"].(string); ok {
+				// Enforce the spec's two rules on end_timestamp so a bad choice of end instant
+				// fails here the way it would against the real API.
+				endAt, err := time.Parse(time.RFC3339, end)
+				if err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = fmt.Fprintf(w, `{"error":"end_timestamp not RFC3339: %s"}`, end)
+					return
+				}
+				startAt, err := time.Parse(time.RFC3339, tags[i].StartTimestamp)
+				if err == nil && !endAt.After(startAt) {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = fmt.Fprintf(w, `{"error":"end_timestamp %s is not after start_timestamp %s"}`, end, tags[i].StartTimestamp)
+					return
+				}
+				if endAt.After(timeNow()) {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = fmt.Fprintf(w, `{"error":"end_timestamp %s is in the future"}`, end)
+					return
+				}
+				f.versions[vid][i].EndTimestamp = &end
+			}
+			_ = json.NewEncoder(w).Encode(f.versions[vid][i])
+			return
 		}
 	}
 	w.WriteHeader(http.StatusNotFound)
@@ -290,9 +320,12 @@ func TestClient_MoveSbomVersionTag_ConflictOnCreateFallsBackToExisting(t *testin
 	// 99 as a holder, the create answers 409, and the existing tag must be found and used as the anchor.
 	raced := tag(15, 99, "environment", "prod")
 	raced.StartTimestamp = "2026-09-15T00:00:00Z"
+	// A same-label, different-value tag listed first: the fallback must match on value too,
+	// not return the first tag the label filter yields.
+	decoy := tag(14, 99, "environment", "dev")
 	f, srv := newFakeTagServer(t, map[int][]SbomVersionTag{
 		98: {tag(12, 98, "environment", "prod")},
-		99: {raced},
+		99: {decoy, raced},
 	})
 	f.hideFromVersions = map[int]bool{99: true}
 	f.createStatus = http.StatusConflict
@@ -303,7 +336,7 @@ func TestClient_MoveSbomVersionTag_ConflictOnCreateFallsBackToExisting(t *testin
 
 	assert.Nil(t, res.Created)
 	require.NotNil(t, res.Existing)
-	assert.Equal(t, 15, res.Existing.ID)
+	assert.Equal(t, 15, res.Existing.ID, "must pick environment=prod, not the environment=dev decoy")
 	assert.Equal(t, "2026-09-15T00:00:00Z", res.Anchor)
 	require.Len(t, res.Ended, 1)
 	assert.Equal(t, 12, res.Ended[0].ID)
@@ -458,4 +491,26 @@ func TestEndTimestampFor(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestClient_MoveSbomVersionTag_ConflictButTagNotListedSurfaces409(t *testing.T) {
+	setupTestAuth(t)
+	// The API says 409 (tag exists) but the follow-up listing does not show it. The original
+	// 409 must be returned and nothing may be ended.
+	f, srv := newFakeTagServer(t, map[int][]SbomVersionTag{
+		98: {tag(12, 98, "environment", "prod")},
+		99: {},
+	})
+	f.hideFromVersions = map[int]bool{99: true}
+	f.createStatus = http.StatusConflict
+	client := NewClient(srv.URL)
+
+	res, err := client.MoveSbomVersionTag(context.Background(), 42, 99, "environment", "prod")
+	require.Error(t, err)
+	assert.Nil(t, res)
+	assert.Contains(t, err.Error(), "status 409")
+	assert.Empty(t, f.patch, "nothing may be ended when the target's tag cannot be confirmed")
+
+	require.Len(t, f.calls, 3, "versions scan, failed create, tag listing")
+	assert.Contains(t, f.calls[2], "GET /pico/v2/sboms/42/versions/99/tags?")
 }

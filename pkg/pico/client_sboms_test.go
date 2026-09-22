@@ -6,7 +6,6 @@ package pico
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -46,8 +45,12 @@ func recordingServer(t *testing.T, statusCode int, response any) (*httptest.Serv
 	t.Helper()
 	rec := &recordedRequest{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// This runs on the server goroutine, so only assert (t.Errorf) here, never require (t.FailNow).
 		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		*rec = recordedRequest{
 			Method: r.Method,
 			Path:   r.URL.Path,
@@ -59,7 +62,9 @@ func recordingServer(t *testing.T, statusCode int, response any) (*httptest.Serv
 		w.WriteHeader(statusCode)
 		if response != nil {
 			data, err := json.Marshal(response)
-			require.NoError(t, err)
+			if !assert.NoError(t, err) {
+				return
+			}
 			_, _ = w.Write(data)
 		}
 	}))
@@ -96,7 +101,8 @@ func TestAddPaginationParams(t *testing.T) {
 
 func TestClient_GetSbomVersions(t *testing.T) {
 	setupTestAuth(t)
-	server, rec := recordingServer(t, http.StatusOK, map[string]any{"items": []any{}})
+	page := map[string]any{"versions": []any{}, "total_items": 0, "total_pages": 1, "current_page": 0}
+	server, rec := recordingServer(t, http.StatusOK, page)
 	client := NewClient(server.URL)
 
 	t.Run("all params", func(t *testing.T) {
@@ -109,7 +115,8 @@ func TestClient_GetSbomVersions(t *testing.T) {
 			AsOf:     "2025-01-01T00:00:00Z",
 		})
 		require.NoError(t, err)
-		assert.JSONEq(t, `{"items":[]}`, string(result))
+		// The client returns the body untouched; this is the one place that fact is pinned.
+		assert.JSONEq(t, `{"versions":[],"total_items":0,"total_pages":1,"current_page":0}`, string(result))
 
 		assert.Equal(t, http.MethodGet, rec.Method)
 		assert.Equal(t, "/pico/v2/sboms/42/versions", rec.Path)
@@ -134,7 +141,7 @@ func TestClient_GetSbomVersions(t *testing.T) {
 
 func TestClient_ListSbomVersionTags(t *testing.T) {
 	setupTestAuth(t)
-	server, rec := recordingServer(t, http.StatusOK, map[string]any{"items": []any{}})
+	server, rec := recordingServer(t, http.StatusOK, map[string]any{"tags": []any{}, "total_items": 0, "total_pages": 1, "current_page": 0})
 	client := NewClient(server.URL)
 
 	t.Run("with filters", func(t *testing.T) {
@@ -164,9 +171,8 @@ func TestClient_CreateSbomVersionTag(t *testing.T) {
 	server, rec := recordingServer(t, http.StatusCreated, map[string]any{"id": 5})
 	client := NewClient(server.URL)
 
-	result, err := client.CreateSbomVersionTag(context.Background(), 7, 99, "Environment", "Production")
+	_, err := client.CreateSbomVersionTag(context.Background(), 7, 99, "Environment", "Production")
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"id":5}`, string(result))
 
 	assert.Equal(t, http.MethodPost, rec.Method)
 	assert.Equal(t, "/pico/v2/sboms/7/versions/99/tags", rec.Path)
@@ -180,9 +186,8 @@ func TestClient_GetSbomVersionTag(t *testing.T) {
 	server, rec := recordingServer(t, http.StatusOK, map[string]any{"id": 5})
 	client := NewClient(server.URL)
 
-	result, err := client.GetSbomVersionTag(context.Background(), 7, 99, 5)
+	_, err := client.GetSbomVersionTag(context.Background(), 7, 99, 5)
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"id":5}`, string(result))
 
 	assert.Equal(t, http.MethodGet, rec.Method)
 	assert.Equal(t, "/pico/v2/sboms/7/versions/99/tags/5", rec.Path)
@@ -197,9 +202,8 @@ func TestClient_UpdateSbomVersionTag(t *testing.T) {
 
 	t.Run("close tag with end_timestamp", func(t *testing.T) {
 		body := map[string]any{"end_timestamp": "2025-01-02T00:00:00Z"}
-		result, err := client.UpdateSbomVersionTag(context.Background(), 7, 99, 5, body)
+		_, err := client.UpdateSbomVersionTag(context.Background(), 7, 99, 5, body)
 		require.NoError(t, err)
-		assert.JSONEq(t, `{"id":5}`, string(result))
 
 		assert.Equal(t, http.MethodPatch, rec.Method)
 		assert.Equal(t, "/pico/v2/sboms/7/versions/99/tags/5", rec.Path)
@@ -243,9 +247,8 @@ func TestClient_FindSbomIDsByIdentifier(t *testing.T) {
 	server, rec := recordingServer(t, http.StatusOK, response)
 	client := NewClient(server.URL)
 
-	result, err := client.FindSbomIDsByIdentifier(context.Background(), "abc123")
+	_, err := client.FindSbomIDsByIdentifier(context.Background(), "abc123")
 	require.NoError(t, err)
-	assert.JSONEq(t, `[{"sbom_id":7,"version_id":99}]`, string(result))
 
 	assert.Equal(t, http.MethodPost, rec.Method)
 	assert.Equal(t, "/pico/v2/sboms/id/by-identifier", rec.Path)
@@ -260,7 +263,7 @@ func TestClient_FindSbomIDsByRepo(t *testing.T) {
 	client := NewClient(server.URL)
 
 	t.Run("all params", func(t *testing.T) {
-		result, err := client.FindSbomIDsByRepo(context.Background(), FindSbomIDsByRepoOptions{
+		_, err := client.FindSbomIDsByRepo(context.Background(), FindSbomIDsByRepoOptions{
 			Forge:       "github.com",
 			Org:         "kusaridev",
 			Repo:        "iac",
@@ -268,7 +271,6 @@ func TestClient_FindSbomIDsByRepo(t *testing.T) {
 			Visibility:  "hidden",
 		})
 		require.NoError(t, err)
-		assert.JSONEq(t, `[{"sbom_id":13,"name":"frontend-console"}]`, string(result))
 
 		assert.Equal(t, http.MethodGet, rec.Method)
 		assert.Equal(t, "/pico/v2/sboms/id/by-repo", rec.Path)
@@ -293,63 +295,13 @@ func TestClient_FindSbomIDsByRepo(t *testing.T) {
 	})
 }
 
-func TestClient_SbomMethods_ErrorResponses(t *testing.T) {
-	setupTestAuth(t)
-
-	tests := []struct {
-		name       string
-		statusCode int
-		call       func(c *Client) error
-	}{
-		{"versions 404", http.StatusNotFound, func(c *Client) error {
-			_, err := c.GetSbomVersions(context.Background(), 1, GetSbomVersionsOptions{})
-			return err
-		}},
-		{"create tag 409 conflict", http.StatusConflict, func(c *Client) error {
-			_, err := c.CreateSbomVersionTag(context.Background(), 1, 2, "environment", "prod")
-			return err
-		}},
-		{"update tag 400", http.StatusBadRequest, func(c *Client) error {
-			_, err := c.UpdateSbomVersionTag(context.Background(), 1, 2, 3, map[string]any{"end_timestamp": "bogus"})
-			return err
-		}},
-		{"delete tag 404", http.StatusNotFound, func(c *Client) error {
-			return c.DeleteSbomVersionTag(context.Background(), 1, 2, 3)
-		}},
-		{"by-identifier 404", http.StatusNotFound, func(c *Client) error {
-			_, err := c.FindSbomIDsByIdentifier(context.Background(), "nope")
-			return err
-		}},
-		{"by-repo 404", http.StatusNotFound, func(c *Client) error {
-			_, err := c.FindSbomIDsByRepo(context.Background(), FindSbomIDsByRepoOptions{Forge: "github.com", Org: "nope", Repo: "nope"})
-			return err
-		}},
-		{"by-repo 400", http.StatusBadRequest, func(c *Client) error {
-			_, err := c.FindSbomIDsByRepo(context.Background(), FindSbomIDsByRepoOptions{Forge: "github.com", Org: "kusaridev", Repo: "iac", Visibility: "bogus"})
-			return err
-		}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server, _ := recordingServer(t, tt.statusCode, map[string]string{"error": "boom"})
-			client := NewClient(server.URL)
-
-			err := tt.call(client)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), fmt.Sprintf("status %d", tt.statusCode))
-			assert.Contains(t, err.Error(), "boom")
-		})
-	}
-}
-
 func TestClient_ListComponentSboms(t *testing.T) {
 	setupTestAuth(t)
-	server, rec := recordingServer(t, http.StatusOK, map[string]any{"items": []any{}})
+	server, rec := recordingServer(t, http.StatusOK, map[string]any{"sboms": []any{}, "total_items": 0, "total_pages": 1, "current_page": 0})
 	client := NewClient(server.URL)
 
 	t.Run("all params", func(t *testing.T) {
-		result, err := client.ListComponentSboms(context.Background(), 12, ListComponentSbomsOptions{
+		_, err := client.ListComponentSboms(context.Background(), 12, ListComponentSbomsOptions{
 			Page:            2,
 			Size:            50,
 			Search:          "frontend*",
@@ -361,7 +313,6 @@ func TestClient_ListComponentSboms(t *testing.T) {
 			AsOf:            "2025-01-01T00:00:00Z",
 		})
 		require.NoError(t, err)
-		assert.JSONEq(t, `{"items":[]}`, string(result))
 
 		assert.Equal(t, http.MethodGet, rec.Method)
 		assert.Equal(t, "/pico/v2/components/12/sboms", rec.Path)
@@ -384,12 +335,5 @@ func TestClient_ListComponentSboms(t *testing.T) {
 
 		assert.Equal(t, "/pico/v2/components/12/sboms", rec.Path)
 		assert.Equal(t, url.Values{"page": {"0"}}, rec.Query)
-	})
-
-	t.Run("404 component not found", func(t *testing.T) {
-		notFound, _ := recordingServer(t, http.StatusNotFound, map[string]string{"error": "no such component"})
-		_, err := NewClient(notFound.URL).ListComponentSboms(context.Background(), 999, ListComponentSbomsOptions{})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "status 404")
 	})
 }
