@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
 	"github.com/spf13/cobra"
 )
 
@@ -51,11 +50,10 @@ func picoSbomListVersions() *cobra.Command {
 				return fmt.Errorf("invalid SBOM ID: %w", err)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSbomVersions(ctx, sbomID, page, size, sort, tagLabel, tagValue, asOf)
@@ -111,11 +109,10 @@ func picoSbomVersionListTags() *cobra.Command {
 				return fmt.Errorf("invalid version ID: %w", err)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.ListSbomVersionTags(ctx, sbomID, versionID, page, size, label, active)
@@ -158,11 +155,10 @@ func picoSbomVersionCreateTag() *cobra.Command {
 				return fmt.Errorf("label and value must not be empty")
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.CreateSbomVersionTag(ctx, sbomID, versionID, tagLabel, tagValue)
@@ -220,11 +216,10 @@ func picoSbomVersionGetTag() *cobra.Command {
 				return err
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSbomVersionTag(ctx, sbomID, versionID, tagID)
@@ -305,11 +300,10 @@ Label and value are lowercased by the server. Fails with 409 if the change would
 				body["end_timestamp"] = nil
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.UpdateSbomVersionTag(ctx, sbomID, versionID, tagID, body)
@@ -342,11 +336,10 @@ func picoSbomVersionDeleteTag() *cobra.Command {
 				return err
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			if err := client.DeleteSbomVersionTag(ctx, sbomID, versionID, tagID); err != nil {
@@ -377,11 +370,10 @@ Returns a 404 error if no version matches.`,
 				return fmt.Errorf("--commit-sha is required")
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.FindSbomIDsByIdentifier(ctx, commitSha)

@@ -40,11 +40,10 @@ func picoSoftwareList() *cobra.Command {
 		Short: "List software/applications",
 		Long:  "List internal software/applications being tracked",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSoftwareList(ctx, search, page, size)
@@ -87,11 +86,10 @@ func picoSoftwareGet() *cobra.Command {
 				return fmt.Errorf("invalid software ID: %w", err)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSoftwareByID(ctx, softwareID)
@@ -126,10 +124,6 @@ func picoSoftwareCurrent() *cobra.Command {
 		Short: "Find software IDs for the current repository",
 		Long:  "Find software IDs by extracting repository information from git remote (forge, org, repo, subrepo_path)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if platformTenant == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
-			}
-
 			// Extract git remote info
 			repoInfo, err := pico.ExtractGitRemoteInfo(repoPath)
 			if err != nil {
@@ -144,7 +138,10 @@ func picoSoftwareCurrent() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "  Subrepo Path: %s\n", repoInfo.SubrepoPath)
 			}
 
-			client := pico.NewClient(platformTenant)
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
 
 			ctx := context.Background()
 			result, err := client.GetSoftwareIDsByRepo(ctx, repoInfo.Forge, repoInfo.Org, repoInfo.Repo, repoInfo.SubrepoPath)
@@ -188,11 +185,10 @@ func picoSoftwareVulnerabilities() *cobra.Command {
 				return fmt.Errorf("invalid software ID: %w", err)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSoftwareVulnerabilities(ctx, softwareID, page, size)
@@ -239,11 +235,10 @@ func picoSoftwareVulnerabilityByID() *cobra.Command {
 				return fmt.Errorf("invalid vulnerability ID: %w", err)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetSoftwareVulnerabilityByID(ctx, softwareID, vulnID)

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
 	"github.com/spf13/cobra"
 )
 
@@ -49,10 +48,6 @@ func picoComponentsList() *cobra.Command {
 		Short: "List components",
 		Long:  "List components with optional filters",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
-			}
-
 			params := make(map[string]string)
 			if search != "" {
 				params["search"] = search
@@ -82,7 +77,10 @@ func picoComponentsList() *cobra.Command {
 				params["size"] = strconv.Itoa(size)
 			}
 
-			client := pico.NewClient(platformTenantEndpoint)
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
 
 			ctx := context.Background()
 			result, err := client.ListComponents(ctx, params)
@@ -119,11 +117,10 @@ func picoComponentsGet() *cobra.Command {
 				return fmt.Errorf("invalid component ID: %w", err)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetComponentByID(ctx, compID)
@@ -152,16 +149,15 @@ func picoComponentsCreate() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
-			}
-
 			meta, err := parseMetaFlag(cmd.Flags().Changed("meta"), metaJSON)
 			if err != nil {
 				return err
 			}
 
-			client := pico.NewClient(platformTenantEndpoint)
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
 
 			ctx := context.Background()
 			result, err := client.CreateComponent(ctx, name, displayName, meta)
@@ -202,10 +198,6 @@ func picoComponentsUpdate() *cobra.Command {
 				return fmt.Errorf("at least one of --display-name or --meta must be provided")
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
-			}
-
 			var displayNamePtr *string
 			if displayNameSet {
 				displayNamePtr = &displayName
@@ -216,7 +208,10 @@ func picoComponentsUpdate() *cobra.Command {
 				return err
 			}
 
-			client := pico.NewClient(platformTenantEndpoint)
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
 
 			ctx := context.Background()
 			if err := client.UpdateComponent(ctx, compID, displayNamePtr, meta); err != nil {
@@ -246,11 +241,10 @@ func picoComponentsDelete() *cobra.Command {
 				return fmt.Errorf("invalid component ID: %w", err)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			if err := client.DeleteComponent(ctx, compID); err != nil {
@@ -286,11 +280,10 @@ func picoComponentsAssignSoftware() *cobra.Command {
 				softwareIDs = append(softwareIDs, id)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			if err := client.AssignSoftwareToComponent(ctx, compID, softwareIDs); err != nil {
@@ -322,11 +315,10 @@ func picoComponentsRemoveSoftware() *cobra.Command {
 				return fmt.Errorf("invalid software ID: %w", err)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			if err := client.RemoveSoftwareFromComponent(ctx, compID, softwareID); err != nil {

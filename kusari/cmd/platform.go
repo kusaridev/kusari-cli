@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
+	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -24,6 +25,15 @@ func init() {
 	// Bind flags to viper
 	mustBindPFlag("tenant-endpoint", platformCmd.PersistentFlags().Lookup("tenant-endpoint"))
 	mustBindPFlag("tenant", platformCmd.PersistentFlags().Lookup("tenant"))
+}
+
+// newPicoClient returns a Pico API client for the configured tenant endpoint.
+// It returns an error if no tenant was resolved from --tenant-endpoint, --tenant, or the workspace config.
+func newPicoClient() (*pico.Client, error) {
+	if platformTenantEndpoint == "" {
+		return nil, fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+	}
+	return pico.NewClient(platformTenantEndpoint), nil
 }
 
 func Platform() *cobra.Command {
