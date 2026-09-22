@@ -287,3 +287,46 @@ func TestClient_SbomMethods_ErrorResponses(t *testing.T) {
 		})
 	}
 }
+
+func TestClient_ListComponentSboms(t *testing.T) {
+	setupTestAuth(t)
+	server, rec := recordingServer(t, http.StatusOK, map[string]any{"items": []any{}})
+	client := NewClient(server.URL)
+
+	t.Run("with params", func(t *testing.T) {
+		params := map[string]string{
+			"sort":           "first_ingested_desc",
+			"sbom_tag_label": "environment",
+			"sbom_tag_value": "prod",
+		}
+		AddPaginationParams(params, 0, 50)
+		result, err := client.ListComponentSboms(context.Background(), 12, params)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"items":[]}`, string(result))
+
+		assert.Equal(t, http.MethodGet, rec.Method)
+		assert.Equal(t, "/pico/v2/components/12/sboms", rec.Path)
+		assert.Equal(t, url.Values{
+			"sort":           {"first_ingested_desc"},
+			"sbom_tag_label": {"environment"},
+			"sbom_tag_value": {"prod"},
+			"page":           {"0"},
+			"size":           {"50"},
+		}, rec.Query)
+	})
+
+	t.Run("no params", func(t *testing.T) {
+		_, err := client.ListComponentSboms(context.Background(), 12, nil)
+		require.NoError(t, err)
+
+		assert.Equal(t, "/pico/v2/components/12/sboms", rec.Path)
+		assert.Empty(t, rec.Query)
+	})
+
+	t.Run("404 component not found", func(t *testing.T) {
+		notFound, _ := recordingServer(t, http.StatusNotFound, map[string]string{"error": "no such component"})
+		_, err := NewClient(notFound.URL).ListComponentSboms(context.Background(), 999, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "status 404")
+	})
+}
