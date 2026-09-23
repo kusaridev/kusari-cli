@@ -22,6 +22,7 @@ func components() *cobra.Command {
 
 	cmd.AddCommand(picoComponentsList())
 	cmd.AddCommand(picoComponentsGet())
+	cmd.AddCommand(picoComponentsSboms())
 	cmd.AddCommand(picoComponentsCreate())
 	cmd.AddCommand(picoComponentsUpdate())
 	cmd.AddCommand(picoComponentsDelete())
@@ -49,10 +50,6 @@ func picoComponentsList() *cobra.Command {
 		Short: "List components",
 		Long:  "List components with optional filters",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
-			}
-
 			params := make(map[string]string)
 			if search != "" {
 				params["search"] = search
@@ -75,14 +72,12 @@ func picoComponentsList() *cobra.Command {
 			if cmd.Flags().Changed("has-tags") {
 				params["has_tags"] = strconv.FormatBool(hasTags)
 			}
-			if page >= 0 {
-				params["page"] = strconv.Itoa(page)
-			}
-			if size > 0 {
-				params["size"] = strconv.Itoa(size)
-			}
+			pico.AddPaginationParams(params, page, size)
 
-			client := pico.NewClient(platformTenantEndpoint)
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
 
 			ctx := context.Background()
 			result, err := client.ListComponents(ctx, params)
@@ -101,8 +96,7 @@ func picoComponentsList() *cobra.Command {
 	cmd.Flags().StringVar(&tags, "tags", "", "Comma-separated tag IDs to include (OR semantics)")
 	cmd.Flags().StringVar(&excludeTags, "exclude-tags", "", "Comma-separated tag IDs to exclude")
 	cmd.Flags().BoolVar(&hasTags, "has-tags", false, "Only tagged (true) or only untagged (false) components; omit the flag to disable filter")
-	cmd.Flags().IntVar(&page, "page", 0, "Page number for pagination")
-	cmd.Flags().IntVar(&size, "size", 1000, "Number of results per page (max 1000)")
+	addPaginationFlags(cmd, &page, &size, 1000, 1000)
 
 	return cmd
 }
@@ -114,16 +108,15 @@ func picoComponentsGet() *cobra.Command {
 		Long:  "Get detailed information about a specific component",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetComponentByID(ctx, compID)
@@ -152,16 +145,15 @@ func picoComponentsCreate() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
-			}
-
 			meta, err := parseMetaFlag(cmd.Flags().Changed("meta"), metaJSON)
 			if err != nil {
 				return err
 			}
 
-			client := pico.NewClient(platformTenantEndpoint)
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
 
 			ctx := context.Background()
 			result, err := client.CreateComponent(ctx, name, displayName, meta)
@@ -191,20 +183,13 @@ func picoComponentsUpdate() *cobra.Command {
 		Long:  "Update the display_name and/or meta fields of a component",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
 			displayNameSet := cmd.Flags().Changed("display-name")
 			metaSet := cmd.Flags().Changed("meta")
-			if !displayNameSet && !metaSet {
-				return fmt.Errorf("at least one of --display-name or --meta must be provided")
-			}
-
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
-			}
 
 			var displayNamePtr *string
 			if displayNameSet {
@@ -216,7 +201,10 @@ func picoComponentsUpdate() *cobra.Command {
 				return err
 			}
 
-			client := pico.NewClient(platformTenantEndpoint)
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
 
 			ctx := context.Background()
 			if err := client.UpdateComponent(ctx, compID, displayNamePtr, meta); err != nil {
@@ -230,6 +218,7 @@ func picoComponentsUpdate() *cobra.Command {
 
 	cmd.Flags().StringVar(&displayName, "display-name", "", "New display name")
 	cmd.Flags().StringVar(&metaJSON, "meta", "", "Replacement metadata as a JSON object string")
+	cmd.MarkFlagsOneRequired("display-name", "meta")
 
 	return cmd
 }
@@ -241,16 +230,15 @@ func picoComponentsDelete() *cobra.Command {
 		Long:  "Unassign all software from the component and delete it",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			if err := client.DeleteComponent(ctx, compID); err != nil {
@@ -272,9 +260,9 @@ func picoComponentsAssignSoftware() *cobra.Command {
 		Long:  "Bulk-assign one or more software entries to a component. Each software is moved from any prior component into the target component. Atomic — if any software ID does not exist, no changes are made. Maximum 100 software IDs per call.",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
 			softwareIDs := make([]int, 0, len(args)-1)
@@ -286,11 +274,10 @@ func picoComponentsAssignSoftware() *cobra.Command {
 				softwareIDs = append(softwareIDs, id)
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			if err := client.AssignSoftwareToComponent(ctx, compID, softwareIDs); err != nil {
@@ -312,21 +299,20 @@ func picoComponentsRemoveSoftware() *cobra.Command {
 		Long:  "Remove the link between a component and a single software entry. Returns an error if no such link exists.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compID, err := strconv.Atoi(args[0])
+			compID, err := parseIDArg(args[0], "component")
 			if err != nil {
-				return fmt.Errorf("invalid component ID: %w", err)
+				return err
 			}
 
-			softwareID, err := strconv.Atoi(args[1])
+			softwareID, err := parseIDArg(args[1], "software")
 			if err != nil {
-				return fmt.Errorf("invalid software ID: %w", err)
+				return err
 			}
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			if err := client.RemoveSoftwareFromComponent(ctx, compID, softwareID); err != nil {
@@ -358,17 +344,55 @@ func parseMetaFlag(set bool, metaJSON string) (map[string]any, error) {
 	return meta, nil
 }
 
-func printJSON(raw json.RawMessage) error {
-	var formatted any
-	if err := json.Unmarshal(raw, &formatted); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+func picoComponentsSboms() *cobra.Command {
+	var opts pico.ListComponentSbomsOptions
+
+	cmd := &cobra.Command{
+		Use:   "sboms <component-id>",
+		Short: "List SBOMs linked to a component",
+		Long: `List the SBOMs linked to a component. Each row includes sbom_type (source, build, image, or unknown),
+so this can be used to find the source SBOM that shares a component with an image SBOM.
+
+By default each SBOM is described by its most recently ingested version. Supply --sbom-tag-label and
+--sbom-tag-value together to describe each SBOM by the newest version carrying that tag instead, and
+--as-of to ask what either looked like at a past instant.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			compID, err := parseIDArg(args[0], "component")
+			if err != nil {
+				return err
+			}
+
+			if opts.AsOf != "" {
+				if opts.AsOf, err = parseTimestampFlag("as-of", opts.AsOf); err != nil {
+					return err
+				}
+			}
+
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
+
+			ctx := context.Background()
+			result, err := client.ListComponentSboms(ctx, compID, opts)
+			if err != nil {
+				return fmt.Errorf("failed to fetch SBOMs for component #%d: %w", compID, err)
+			}
+
+			return printJSON(result)
+		},
 	}
 
-	output, err := json.MarshalIndent(formatted, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to format output: %w", err)
-	}
+	cmd.Flags().StringVar(&opts.Search, "search", "", "Search glob for the SBOM's name or its newest version string")
+	cmd.Flags().StringVar(&opts.Sort, "sort", "", "Sort order. One of: display_name_desc, display_name_asc, vuln_count_desc, vuln_count_asc, last_recorded_desc, last_recorded_asc, first_ingested_desc, first_ingested_asc, license_category_desc, license_category_asc")
+	cmd.Flags().StringVar(&opts.Visibility, "visibility", "", "Visibility filter (active|hidden, default: active)")
+	cmd.Flags().StringVar(&opts.LifecycleFilter, "lifecycle-filter", "", "Filter by EOL/deprecated status (all|eol|deprecated)")
+	cmd.Flags().StringVar(&opts.TagLabel, "sbom-tag-label", "", "Describe each SBOM by versions carrying this tag label (ex: 'environment'); requires --sbom-tag-value")
+	cmd.Flags().StringVar(&opts.TagValue, "sbom-tag-value", "", "Tag value required for --sbom-tag-label (ex: 'prod')")
+	cmd.MarkFlagsRequiredTogether("sbom-tag-label", "sbom-tag-value")
+	cmd.Flags().StringVar(&opts.AsOf, "as-of", "", "Report what the answer would have been at this RFC3339 instant, or 'now' (ex: '2025-01-01T00:00:00Z')")
+	addPaginationFlags(cmd, &opts.Page, &opts.Size, 1000, 1000)
 
-	fmt.Println(string(output))
-	return nil
+	return cmd
 }

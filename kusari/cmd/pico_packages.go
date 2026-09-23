@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -37,11 +36,10 @@ func picoPackagesSearch() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.SearchPackages(ctx, name, version)
@@ -49,19 +47,7 @@ func picoPackagesSearch() *cobra.Command {
 				return fmt.Errorf("failed to search packages: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
@@ -87,11 +73,10 @@ func picoPackagesLifecycle() *cobra.Command {
 		Short: "Get packages filtered by lifecycle status",
 		Long:  "Get packages that are EOL, deprecated, or have lifecycle risks",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			// Build query parameters
 			params := make(map[string]string)
@@ -119,8 +104,7 @@ func picoPackagesLifecycle() *cobra.Command {
 			if sortBy != "" {
 				params["sort"] = sortBy
 			}
-			params["page"] = strconv.Itoa(page)
-			params["size"] = strconv.Itoa(size)
+			pico.AddPaginationParams(params, page, size)
 
 			ctx := context.Background()
 			result, err := client.GetPackagesWithLifecycle(ctx, params)
@@ -128,19 +112,7 @@ func picoPackagesLifecycle() *cobra.Command {
 				return fmt.Errorf("failed to fetch lifecycle packages: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
@@ -152,8 +124,7 @@ func picoPackagesLifecycle() *cobra.Command {
 	cmd.Flags().StringVar(&ecosystem, "ecosystem", "", "Filter by package ecosystem (npm, pypi, golang, maven, cargo)")
 	cmd.Flags().IntVar(&softwareID, "software-id", 0, "Filter to packages used by this software ID")
 	cmd.Flags().StringVar(&sortBy, "sort", "", "Sort order (eol_date_asc, eol_date_desc, name_asc, name_desc, impact_desc, impact_asc)")
-	cmd.Flags().IntVar(&page, "page", 0, "Page number for pagination")
-	cmd.Flags().IntVar(&size, "size", 100, "Number of results per page (max 1000)")
+	addPaginationFlags(cmd, &page, &size, 100, 1000)
 
 	return cmd
 }

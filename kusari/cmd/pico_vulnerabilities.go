@@ -5,10 +5,8 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
-	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
 	"github.com/spf13/cobra"
 )
 
@@ -36,11 +34,10 @@ func picoVulnerabilitiesList() *cobra.Command {
 		Short: "List vulnerabilities",
 		Long:  "List vulnerabilities with optional filters for search and severity",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetVulnerabilities(ctx, search, kusariScore, page, size)
@@ -48,26 +45,13 @@ func picoVulnerabilitiesList() *cobra.Command {
 				return fmt.Errorf("failed to fetch vulnerabilities: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
 	cmd.Flags().StringVar(&search, "search", "", "Search glob for affected/vulnerable package name")
 	cmd.Flags().StringVar(&kusariScore, "kusari-score", "", "Minimum Kusari score (0-10)")
-	cmd.Flags().IntVar(&page, "page", 0, "Page number for pagination")
-	cmd.Flags().IntVar(&size, "size", 20, "Number of results per page (max 100)")
+	addPaginationFlags(cmd, &page, &size, 20, 1000)
 
 	return cmd
 }
@@ -81,11 +65,10 @@ func picoVulnerabilitiesGet() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			externalID := args[0]
 
-			if platformTenantEndpoint == "" {
-				return fmt.Errorf("no tenant configured. Use --tenant flag or run `kusari auth login` to select a tenant")
+			client, err := newPicoClient()
+			if err != nil {
+				return err
 			}
-
-			client := pico.NewClient(platformTenantEndpoint)
 
 			ctx := context.Background()
 			result, err := client.GetVulnerabilityByExternalID(ctx, externalID)
@@ -93,19 +76,7 @@ func picoVulnerabilitiesGet() *cobra.Command {
 				return fmt.Errorf("failed to fetch vulnerability: %w", err)
 			}
 
-			// Pretty print JSON
-			var formatted interface{}
-			if err := json.Unmarshal(result, &formatted); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
-			}
-
-			output, err := json.MarshalIndent(formatted, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
-
-			fmt.Println(string(output))
-			return nil
+			return printJSON(result)
 		},
 	}
 
