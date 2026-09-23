@@ -90,6 +90,11 @@ func getBuildDate() string {
 func init() {
 	cobra.OnInitialize(initConfig)
 
+	// Run every ancestor's PersistentPreRun, not just the nearest one. Subcommands like `auth login`,
+	// `platform`, and `repo scan` define their own, which would otherwise skip rootCmd's and leave
+	// KUSARI_CONSOLE_URL, KUSARI_PLATFORM_URL, and KUSARI_VERBOSE unread.
+	cobra.EnableTraverseRunHooks = true
+
 	// Set version information for the root command
 	// This enables the --version flag automatically
 	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built at: %s)", getVersion(), getCommit(), getBuildDate())
