@@ -275,7 +275,12 @@ func (s *Server) getPicoClient() (*pico.Client, error) {
 		fmt.Fprintf(os.Stderr, "[kusari-ai] Initializing Pico client with tenant: %s\n", workspace.Tenant)
 	}
 
-	s.picoClient = pico.NewClient(fmt.Sprintf("https://%s.api.us.kusari.cloud", workspace.Tenant))
+	endpoint, err := pico.TenantEndpoint(s.config.PlatformURL, workspace.Tenant)
+	if err != nil {
+		return nil, err
+	}
+
+	s.picoClient = pico.NewClient(endpoint)
 	return s.picoClient, nil
 }
 

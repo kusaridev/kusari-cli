@@ -5,27 +5,38 @@ package pico
 
 import (
 	"fmt"
-
-	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
+	"net"
+	"net/url"
+	"regexp"
+	"strings"
 )
 
-const (
-	defaultAuthEndpoint = "https://auth.us.kusari.cloud/"
-	defaultPlatformURL  = "https://platform.api.us.kusari.cloud/"
-)
+// tenantLabel is a single DNS label: letters, digits, and inner hyphens.
+var tenantLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$`)
 
-// NewClientFromWorkspace creates a Pico client using the stored workspace configuration.
-// It loads the workspace and extracts the tenant to initialize the client.
-func NewClientFromWorkspace() (*Client, error) {
-	// Load workspace to get tenant
-	workspace, err := auth.LoadWorkspace(defaultPlatformURL, defaultAuthEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load workspace: %w. Run `kusari auth login` to authenticate", err)
+// TenantEndpoint builds a tenant's Pico API endpoint from the platform URL by swapping the leading
+// "platform" host label for the tenant name, so every environment gets its own tenant host:
+// https://platform.api.dev.kusari.cloud/ with tenant "demo" gives https://demo.api.dev.kusari.cloud.
+// It keeps the scheme and port, drops any path, and errors when the platform host doesn't start
+// with "platform." rather than guessing.
+func TenantEndpoint(platformURL, tenant string) (string, error) {
+	if !tenantLabel.MatchString(tenant) {
+		return "", fmt.Errorf("invalid tenant name %q: must be a single DNS label (letters, digits, hyphens)", tenant)
 	}
 
-	if workspace.Tenant == "" {
-		return nil, fmt.Errorf("no tenant configured. Run `kusari auth login` to select a tenant")
+	u, err := url.Parse(platformURL)
+	if err != nil || u.Scheme == "" || u.Hostname() == "" {
+		return "", fmt.Errorf("cannot build tenant endpoint from platform URL %q: expected a URL like https://platform.api.us.kusari.cloud/", platformURL)
 	}
 
-	return NewClient(workspace.Tenant), nil
+	rest, ok := strings.CutPrefix(u.Hostname(), "platform.")
+	if !ok || rest == "" {
+		return "", fmt.Errorf("cannot build tenant endpoint from platform URL %q: host must start with \"platform.\"; use --tenant-endpoint instead", platformURL)
+	}
+
+	host := strings.ToLower(tenant) + "." + rest
+	if port := u.Port(); port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+	return u.Scheme + "://" + host, nil
 }

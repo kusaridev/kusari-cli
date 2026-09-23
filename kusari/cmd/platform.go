@@ -23,7 +23,7 @@ var (
 
 func init() {
 	platformCmd.PersistentFlags().StringVarP(&platformTenantEndpoint, "tenant-endpoint", "t", "", "Kusari Tenant endpoint URL (for dev/testing, overrides --tenant)")
-	platformCmd.PersistentFlags().StringVar(&platformTenant, "tenant", "", "Tenant name (e.g., 'demo' for https://demo.api.us.kusari.cloud)")
+	platformCmd.PersistentFlags().StringVar(&platformTenant, "tenant", "", "Tenant name (e.g., 'demo' for https://demo.api.us.kusari.cloud; the host follows --platform-url)")
 
 	// Bind flags to viper
 	mustBindPFlag("tenant-endpoint", platformCmd.PersistentFlags().Lookup("tenant-endpoint"))
@@ -89,20 +89,25 @@ var platformCmd = &cobra.Command{
 	Use:   "platform",
 	Short: "Kusari platform operations",
 	Long:  "Handle interactions with the Kusari platform operations ",
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Update from viper (this gets env vars + config + flags)
 		platformTenantEndpoint = viper.GetString("tenant-endpoint")
 		platformTenant = viper.GetString("tenant")
 
 		// If tenant-endpoint is provided, use it directly (for dev/testing)
 		if platformTenantEndpoint != "" {
-			return
+			return nil
 		}
 
-		// If tenant is provided via flag, construct the endpoint
+		// If tenant is provided via flag, build the endpoint from the platform URL
 		if platformTenant != "" {
-			platformTenantEndpoint = fmt.Sprintf("https://%s.api.us.kusari.cloud", platformTenant)
-			return
+			endpoint, err := pico.TenantEndpoint(platformUrl, platformTenant)
+			if err != nil {
+				cmd.SilenceUsage = true
+				return err
+			}
+			platformTenantEndpoint = endpoint
+			return nil
 		}
 
 		// Neither flag provided - try to load from workspace config
@@ -112,14 +117,25 @@ var platformCmd = &cobra.Command{
 			if verbose {
 				fmt.Fprintf(os.Stderr, "Warning: Could not load workspace configuration: %v\n", err)
 			}
-			return
+			return nil
 		}
 
-		if workspace.Tenant != "" {
-			platformTenant = workspace.Tenant
-			platformTenantEndpoint = fmt.Sprintf("https://%s.api.us.kusari.cloud", platformTenant)
-		} else if verbose {
-			fmt.Fprintf(os.Stderr, "Warning: Workspace loaded but no tenant configured\n")
+		if workspace.Tenant == "" {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "Warning: Workspace loaded but no tenant configured\n")
+			}
+			return nil
 		}
+
+		// Not every platform subcommand needs a tenant, so a platform URL we can't build from
+		// is a warning here; commands that do need one fail later with "no tenant configured".
+		platformTenant = workspace.Tenant
+		endpoint, err := pico.TenantEndpoint(platformUrl, platformTenant)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+			return nil
+		}
+		platformTenantEndpoint = endpoint
+		return nil
 	},
 }
