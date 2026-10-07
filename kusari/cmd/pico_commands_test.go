@@ -282,7 +282,7 @@ func TestPicoCommands_InvalidFlagsSendNoRequest(t *testing.T) {
 			name:    "sboms find-source-version commit-time now",
 			cmd:     sboms,
 			args:    []string{"find-source-version", "22", "902", "--commit-time", "now"},
-			wantErr: "not 'now'",
+			wantErr: "must be the commit's committer date",
 		},
 	}
 
@@ -440,6 +440,9 @@ func TestPicoCommands_MoveTagOutput(t *testing.T) {
 // version by the commit time is 4790. Any other request fails the test.
 func findSourceResponder(t *testing.T) picoResponder {
 	return func(r *http.Request) (int, string) {
+		if strings.HasPrefix(r.URL.Path, "/pico/v2/components/") && r.URL.Query().Get("page") != "0" {
+			return http.StatusOK, `{"sboms":[],"total_items":0,"total_pages":1,"current_page":1}`
+		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/22":
 			return http.StatusOK, `{"id":22,"name":"image","component_id":9}`
@@ -495,6 +498,8 @@ func TestPicoCommands_FindSourceVersion(t *testing.T) {
 		assert.Equal(t, "/pico/v2/components/9/sboms", got[1].Path)
 		assert.Equal(t, "active", got[1].Query.Get("visibility"))
 		assert.Equal(t, "/pico/v2/sboms/22/versions/902", got[2].Path)
+		assert.Equal(t, http.MethodPost, got[3].Method)
+		assert.Equal(t, "/pico/v2/sboms/id/by-identifier", got[3].Path)
 		assert.JSONEq(t, `{"commit_sha":"aaa"}`, got[3].Body, "the commit comes from the image version")
 		assert.Equal(t, "/pico/v2/sboms/14/versions", got[4].Path)
 		assert.Equal(t, "2026-10-01T14:34:56+02:00", got[4].Query.Get("as_of"))

@@ -18,8 +18,8 @@ const (
 	VersionFoundByNewestBeforeCommit = "newest_before_commit"
 )
 
-// FindSourceSbomVersionsOptions describes a deployed version of an image SBOM.
-type FindSourceSbomVersionsOptions struct {
+// FindSourceSbomVersionOptions describes a deployed version of an image SBOM.
+type FindSourceSbomVersionOptions struct {
 	ImageSbomID    int
 	ImageVersionID int
 	// CommitTime, if set, is when the image's commit landed on the branch (its committer date),
@@ -39,27 +39,27 @@ type SourceVersionMatch struct {
 	CommitSha      string `json:"commit_sha,omitempty"`
 }
 
-// SourceSbom is a source SBOM that had no version by the time used.
+// SourceSbom identifies a source SBOM.
 type SourceSbom struct {
 	SbomID int    `json:"sbom_id"`
 	Name   string `json:"name"`
 }
 
-// SourceVersionResult is what FindSourceSbomVersions found. A component holds at most one visible
+// SourceVersionResult is what FindSourceSbomVersion found. A component holds at most one visible
 // source SBOM, so each list has at most one entry. Both are non-nil, so they encode as [] rather than null.
 type SourceVersionResult struct {
 	Matches   []SourceVersionMatch `json:"matches"`
 	Unmatched []SourceSbom         `json:"unmatched"`
 }
 
-// sbomVersionRef is the subset of V2SBOMVersion FindSourceSbomVersions needs.
+// sbomVersionRef is the subset of V2SBOMVersion FindSourceSbomVersion needs.
 type sbomVersionRef struct {
 	ID            int    `json:"id"`
 	CommitSha     string `json:"commit_sha"`
 	FirstIngested string `json:"first_ingested"`
 }
 
-// FindSourceSbomVersions finds the version of the source SBOM that was deployed with a version of an
+// FindSourceSbomVersion finds the version of the source SBOM that was deployed with a version of an
 // image SBOM.
 //
 // The source SBOM is the one in the image SBOM's component. If the image SBOM is in no component, or
@@ -69,7 +69,7 @@ type sbomVersionRef struct {
 //
 // A 404 from any lookup means that lookup found nothing; finding nothing at all is not an error.
 // Any other API error is returned.
-func (c *Client) FindSourceSbomVersions(ctx context.Context, opts FindSourceSbomVersionsOptions) (*SourceVersionResult, error) {
+func (c *Client) FindSourceSbomVersion(ctx context.Context, opts FindSourceSbomVersionOptions) (*SourceVersionResult, error) {
 	if opts.ImageSbomID <= 0 || opts.ImageVersionID <= 0 {
 		return nil, fmt.Errorf("image SBOM ID and version ID must be set")
 	}
@@ -126,12 +126,12 @@ func (c *Client) FindSourceSbomVersions(ctx context.Context, opts FindSourceSbom
 	v, err := c.newestVersionAsOf(ctx, src.SbomID, asOf)
 	switch {
 	case isNotFound(err):
-		_, _ = fmt.Fprintf(log, "SBOM %d (%s) not found\n", src.SbomID, src.Name)
+		_, _ = fmt.Fprintf(log, "SBOM %d (%s): %sthe SBOM was not found\n", src.SbomID, src.Name, noVersionAtCommit)
 		res.Unmatched = append(res.Unmatched, *src)
 	case err != nil:
 		return nil, err
 	case v == nil:
-		_, _ = fmt.Fprintf(log, "SBOM %d (%s): no version at or before %s\n", src.SbomID, src.Name, asOf)
+		_, _ = fmt.Fprintf(log, "SBOM %d (%s): %sno version at or before %s\n", src.SbomID, src.Name, noVersionAtCommit, asOf)
 		res.Unmatched = append(res.Unmatched, *src)
 	default:
 		_, _ = fmt.Fprintf(log, "SBOM %d (%s): %susing version %d, the newest as of %s\n", src.SbomID, src.Name, noVersionAtCommit, v.ID, asOf)

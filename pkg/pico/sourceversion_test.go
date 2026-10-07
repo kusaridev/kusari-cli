@@ -28,18 +28,17 @@ const (
 )
 
 type sourceFakeRequest struct {
-	Method string
-	Path   string
-	Query  url.Values
+	Path  string
+	Query url.Values
 }
 
-// fakeSourceServer stands in for the lookups FindSourceSbomVersions makes:
+// fakeSourceServer stands in for the lookups FindSourceSbomVersion makes:
 //
 //   - Image SBOMs 20, 21, 22, 23 and 24 are in components 7, 8, 9, 10 and 11. Image SBOM 25 is in no
 //     component, image SBOM 26 is in component 99, which does not exist, and SBOM 27 does not exist.
 //   - Image SBOM N has version 880+N (so SBOM 20 has version 900), recorded at commit aaa and
-//     uploaded at testUploadTime. Any other version is 404.
-//   - Component 7 has SBOM 20 (image) and, on page 2, SBOM 13 (source).
+//     uploaded at imageUploadTime (testUploadTime by default). Any other version is 404.
+//   - Component 7 has SBOMs 20 (image) and 19 (build) and, on page 2, SBOM 13 (source).
 //   - Component 8 has only SBOM 21 (image).
 //   - Components 9, 10 and 11 have source SBOMs 14, 15 and 16. The API allows one visible source
 //     SBOM per component.
@@ -54,6 +53,7 @@ type fakeSourceServer struct {
 	mu                 sync.Mutex
 	imageComponent     map[int]any // component_id of each image SBOM; nil means none
 	imageCommitSha     string      // commit recorded on the image versions
+	imageUploadTime    string      // first_ingested of the image versions
 	componentPages     map[int][][]map[string]any
 	byIdentifier       []map[string]any
 	byIdentifierStatus int    // overrides the by-identifier status when non-zero
@@ -68,12 +68,13 @@ func newFakeSourceServer(t *testing.T) (*fakeSourceServer, *Client) {
 		return map[string]any{"id": id, "name": name, "sbom_type": typ}
 	}
 	f := &fakeSourceServer{
-		t:              t,
-		imageComponent: map[int]any{20: 7, 21: 8, 22: 9, 23: 10, 24: 11, 25: nil, 26: 99},
-		imageCommitSha: "aaa",
+		t:               t,
+		imageComponent:  map[int]any{20: 7, 21: 8, 22: 9, 23: 10, 24: 11, 25: nil, 26: 99},
+		imageCommitSha:  "aaa",
+		imageUploadTime: testUploadTime,
 		componentPages: map[int][][]map[string]any{
 			7: {
-				{sbom(20, "web-app-image", "image")},
+				{sbom(20, "web-app-image", "image"), sbom(19, "web-app-build", "build")},
 				{sbom(13, "example-org/web-app", "source")},
 			},
 			8:  {{sbom(21, "other-image", "image")}},
@@ -97,7 +98,7 @@ func (f *fakeSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 
 	body, _ := io.ReadAll(r.Body)
-	f.requests = append(f.requests, sourceFakeRequest{Method: r.Method, Path: r.URL.Path, Query: r.URL.Query()})
+	f.requests = append(f.requests, sourceFakeRequest{Path: r.URL.Path, Query: r.URL.Query()})
 	w.Header().Set("Content-Type", "application/json")
 	q := r.URL.Query()
 
@@ -169,7 +170,7 @@ func (f *fakeSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			notFound()
 			return
 		}
-		reply(http.StatusOK, map[string]any{"id": vid, "sbom_id": sbomID, "commit_sha": f.imageCommitSha, "first_ingested": testUploadTime})
+		reply(http.StatusOK, map[string]any{"id": vid, "sbom_id": sbomID, "commit_sha": f.imageCommitSha, "first_ingested": f.imageUploadTime})
 
 	case r.Method == http.MethodGet && len(sbomPath) == 2 && sbomPath[1] == "versions":
 		version := func(vid int, sha string) map[string]any {
@@ -213,18 +214,18 @@ func (f *fakeSourceServer) requestsTo(path string) []sourceFakeRequest {
 	return out
 }
 
-// findSource runs FindSourceSbomVersions for the fake's version of image SBOM imageID with
+// findSource runs FindSourceSbomVersion for the fake's version of image SBOM imageID with
 // testCommitTime, and returns the result and what was logged.
 func findSource(t *testing.T, c *Client, imageID int) (*SourceVersionResult, string, error) {
 	t.Helper()
-	return findSourceWith(t, c, FindSourceSbomVersionsOptions{ImageSbomID: imageID, ImageVersionID: 880 + imageID, CommitTime: testCommitTime})
+	return findSourceWith(t, c, FindSourceSbomVersionOptions{ImageSbomID: imageID, ImageVersionID: 880 + imageID, CommitTime: testCommitTime})
 }
 
-func findSourceWith(t *testing.T, c *Client, opts FindSourceSbomVersionsOptions) (*SourceVersionResult, string, error) {
+func findSourceWith(t *testing.T, c *Client, opts FindSourceSbomVersionOptions) (*SourceVersionResult, string, error) {
 	t.Helper()
 	var log bytes.Buffer
 	opts.Log = &log
-	res, err := c.FindSourceSbomVersions(context.Background(), opts)
+	res, err := c.FindSourceSbomVersion(context.Background(), opts)
 	return res, log.String(), err
 }
 
@@ -239,13 +240,13 @@ var (
 	}
 )
 
-func TestFindSourceSbomVersions_VersionAtCommit(t *testing.T) {
+func TestFindSourceSbomVersion_VersionAtCommit(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 
 	res, _, err := findSource(t, c, 20)
 	require.NoError(t, err)
 
-	assert.Equal(t, []SourceVersionMatch{match13ByCommit}, res.Matches, "SBOM 20 is the image itself; SBOM 13 is on page 2")
+	assert.Equal(t, []SourceVersionMatch{match13ByCommit}, res.Matches, "SBOM 20 is the image and SBOM 19 a build SBOM; SBOM 13 is on page 2")
 	assert.Empty(t, res.Unmatched)
 	pages := f.requestsTo("/pico/v2/components/7/sboms")
 	require.Len(t, pages, 2)
@@ -256,7 +257,7 @@ func TestFindSourceSbomVersions_VersionAtCommit(t *testing.T) {
 	assert.Empty(t, f.requestsTo("/pico/v2/sboms/13/versions"), "SBOM 13 has a version at the commit, so no as_of lookup")
 }
 
-func TestFindSourceSbomVersions_NewestVersionBeforeCommit(t *testing.T) {
+func TestFindSourceSbomVersion_NewestVersionBeforeCommit(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 
 	res, log, err := findSource(t, c, 22)
@@ -272,10 +273,10 @@ func TestFindSourceSbomVersions_NewestVersionBeforeCommit(t *testing.T) {
 	assert.Contains(t, log, "no version at commit aaa; using version 4790")
 }
 
-func TestFindSourceSbomVersions_WithoutCommitTimeUsesImageUploadTime(t *testing.T) {
+func TestFindSourceSbomVersion_WithoutCommitTimeUsesImageUploadTime(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 
-	res, _, err := findSourceWith(t, c, FindSourceSbomVersionsOptions{ImageSbomID: 22, ImageVersionID: 902})
+	res, _, err := findSourceWith(t, c, FindSourceSbomVersionOptions{ImageSbomID: 22, ImageVersionID: 902})
 	require.NoError(t, err)
 
 	want := match14BeforeCommit
@@ -286,7 +287,18 @@ func TestFindSourceSbomVersions_WithoutCommitTimeUsesImageUploadTime(t *testing.
 	assert.Equal(t, testUploadTime, got[0].Query.Get("as_of"))
 }
 
-func TestFindSourceSbomVersions_ImageVersionWithoutCommitUsesTimeOnly(t *testing.T) {
+func TestFindSourceSbomVersion_NoCommitTimeAndNoUploadTimeFails(t *testing.T) {
+	f, c := newFakeSourceServer(t)
+	f.imageUploadTime = ""
+
+	res, _, err := findSourceWith(t, c, FindSourceSbomVersionOptions{ImageSbomID: 22, ImageVersionID: 902})
+	require.Error(t, err)
+	assert.Nil(t, res)
+	assert.Contains(t, err.Error(), "no upload time")
+	assert.Empty(t, f.requestsTo("/pico/v2/sboms/14/versions"), "an empty as_of would be dropped and return the newest version ever")
+}
+
+func TestFindSourceSbomVersion_ImageVersionWithoutCommitUsesTimeOnly(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 	f.imageCommitSha = ""
 
@@ -298,7 +310,7 @@ func TestFindSourceSbomVersions_ImageVersionWithoutCommitUsesTimeOnly(t *testing
 	assert.Contains(t, log, "Version 902 of SBOM 22 has no commit recorded")
 }
 
-func TestFindSourceSbomVersions_NoSourceSbomFindsNothing(t *testing.T) {
+func TestFindSourceSbomVersion_NoSourceSbomFindsNothing(t *testing.T) {
 	tests := []struct {
 		name    string
 		imageID int
@@ -325,10 +337,10 @@ func TestFindSourceSbomVersions_NoSourceSbomFindsNothing(t *testing.T) {
 	}
 }
 
-func TestFindSourceSbomVersions_ImageVersionNotFoundFindsNothing(t *testing.T) {
+func TestFindSourceSbomVersion_ImageVersionNotFoundFindsNothing(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 
-	res, log, err := findSourceWith(t, c, FindSourceSbomVersionsOptions{ImageSbomID: 22, ImageVersionID: 999, CommitTime: testCommitTime})
+	res, log, err := findSourceWith(t, c, FindSourceSbomVersionOptions{ImageSbomID: 22, ImageVersionID: 999, CommitTime: testCommitTime})
 	require.NoError(t, err)
 
 	assert.Equal(t, &SourceVersionResult{Matches: []SourceVersionMatch{}, Unmatched: []SourceSbom{}}, res)
@@ -336,15 +348,15 @@ func TestFindSourceSbomVersions_ImageVersionNotFoundFindsNothing(t *testing.T) {
 	assert.Empty(t, f.requestsTo("/pico/v2/sboms/14/versions"))
 }
 
-func TestFindSourceSbomVersions_NoVersionBeforeCommitIsUnmatched(t *testing.T) {
+func TestFindSourceSbomVersion_NoVersionBeforeCommitIsUnmatched(t *testing.T) {
 	tests := []struct {
 		name    string
 		imageID int
 		want    SourceSbom
 		wantLog string
 	}{
-		{"empty versions list", 23, SourceSbom{SbomID: 15, Name: "example-org/new-service"}, "no version at or before"},
-		{"versions 404", 24, SourceSbom{SbomID: 16, Name: "example-org/newer-service"}, "SBOM 16 (example-org/newer-service) not found"},
+		{"empty versions list", 23, SourceSbom{SbomID: 15, Name: "example-org/new-service"}, "no version at commit aaa; no version at or before"},
+		{"versions 404", 24, SourceSbom{SbomID: 16, Name: "example-org/newer-service"}, "SBOM 16 (example-org/newer-service): no version at commit aaa; the SBOM was not found"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -360,7 +372,7 @@ func TestFindSourceSbomVersions_NoVersionBeforeCommitIsUnmatched(t *testing.T) {
 	}
 }
 
-func TestFindSourceSbomVersions_VersionWithoutCommitOmitsKey(t *testing.T) {
+func TestFindSourceSbomVersion_VersionWithoutCommitOmitsKey(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 	f.sbom14CommitSha = ""
 
@@ -376,7 +388,7 @@ func TestFindSourceSbomVersions_VersionWithoutCommitOmitsKey(t *testing.T) {
 	assert.Contains(t, fields, "version_id")
 }
 
-func TestFindSourceSbomVersions_ByIdentifier404UsesAsOf(t *testing.T) {
+func TestFindSourceSbomVersion_ByIdentifier404UsesAsOf(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 	f.byIdentifierStatus = http.StatusNotFound
 
@@ -388,7 +400,7 @@ func TestFindSourceSbomVersions_ByIdentifier404UsesAsOf(t *testing.T) {
 	assert.Equal(t, []SourceVersionMatch{want}, res.Matches)
 }
 
-func TestFindSourceSbomVersions_PicksNewestOfSeveralVersionsAtCommit(t *testing.T) {
+func TestFindSourceSbomVersion_PicksNewestOfSeveralVersionsAtCommit(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 	// The same commit uploaded twice gives SBOM 13 two versions at it; the newer one is what is deployed.
 	f.byIdentifier = []map[string]any{
@@ -403,7 +415,7 @@ func TestFindSourceSbomVersions_PicksNewestOfSeveralVersionsAtCommit(t *testing.
 	assert.Equal(t, []SourceVersionMatch{match13ByCommit}, res.Matches)
 }
 
-func TestFindSourceSbomVersions_OtherAPIErrorFails(t *testing.T) {
+func TestFindSourceSbomVersion_OtherAPIErrorFails(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 	f.byIdentifierStatus = http.StatusInternalServerError
 
@@ -414,14 +426,14 @@ func TestFindSourceSbomVersions_OtherAPIErrorFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "status 500")
 }
 
-func TestFindSourceSbomVersions_ValidatesOptions(t *testing.T) {
+func TestFindSourceSbomVersion_ValidatesOptions(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 
-	for name, opts := range map[string]FindSourceSbomVersionsOptions{
+	for name, opts := range map[string]FindSourceSbomVersionOptions{
 		"no image SBOM ID":    {ImageVersionID: 900},
 		"no image version ID": {ImageSbomID: 20},
 	} {
-		_, err := c.FindSourceSbomVersions(context.Background(), opts)
+		_, err := c.FindSourceSbomVersion(context.Background(), opts)
 		assert.Error(t, err, name)
 	}
 	assert.Empty(t, f.requests)

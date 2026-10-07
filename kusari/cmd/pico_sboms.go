@@ -492,7 +492,7 @@ func printMoveTagResult(res *pico.MoveTagResult, sbomID int, failed bool) {
 }
 
 func picoSbomFindSourceVersion() *cobra.Command {
-	var opts pico.FindSourceSbomVersionsOptions
+	var opts pico.FindSourceSbomVersionOptions
 
 	cmd := &cobra.Command{
 		Use:   "find-source-version <image-sbom-id> <image-version-id>",
@@ -521,13 +521,10 @@ Finding nothing is not an error: both lists are printed empty. Each decision is 
 			if opts.ImageVersionID, err = parseIDArg(args[1], "version"); err != nil {
 				return err
 			}
+			// Not parseTimestampFlag: "now" would let a redeploy of an old commit pick up versions uploaded after it.
 			if cmd.Flags().Changed("commit-time") {
-				// "now" would let a redeploy of an old commit pick up versions uploaded after it.
-				if opts.CommitTime == "now" {
-					return fmt.Errorf("invalid --commit-time: must be the commit's committer date, not 'now'")
-				}
-				if opts.CommitTime, err = parseTimestampFlag("commit-time", opts.CommitTime); err != nil {
-					return err
+				if _, err := time.Parse(time.RFC3339, opts.CommitTime); err != nil {
+					return fmt.Errorf("invalid --commit-time: must be the commit's committer date, RFC3339 (ex: '2026-10-01T12:00:00Z'): %w", err)
 				}
 			}
 
@@ -538,7 +535,7 @@ Finding nothing is not an error: both lists are printed empty. Each decision is 
 
 			opts.Log = cmd.ErrOrStderr()
 			ctx := context.Background()
-			res, err := client.FindSourceSbomVersions(ctx, opts)
+			res, err := client.FindSourceSbomVersion(ctx, opts)
 			if err != nil {
 				return fmt.Errorf("failed to find the source SBOM version for SBOM #%d version #%d: %w", opts.ImageSbomID, opts.ImageVersionID, err)
 			}

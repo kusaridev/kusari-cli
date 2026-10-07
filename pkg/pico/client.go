@@ -286,6 +286,7 @@ func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, sub
 }
 
 // v2
+
 // GetSbom retrieves a specific SBOM by ID, including the component it belongs to.
 func (c *Client) GetSbom(ctx context.Context, sbomID int) (json.RawMessage, error) {
 	path := fmt.Sprintf("/pico/v2/sboms/%d", sbomID)
