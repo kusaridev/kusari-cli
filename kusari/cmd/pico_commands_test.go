@@ -448,7 +448,7 @@ func findSourceResponder(t *testing.T) picoResponder {
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/22/versions/902":
 			return http.StatusOK, `{"id":902,"sbom_id":22,"commit_sha":"aaa","first_ingested":"2026-10-01T12:40:00Z"}`
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/components/9/sboms":
-			return http.StatusOK, `{"sboms":[{"id":22,"name":"image","sbom_type":"image"},{"id":14,"name":"frontend-console","sbom_type":"source"}],"total_items":2,"total_pages":1,"current_page":0}`
+			return http.StatusOK, `{"sboms":[{"id":22,"name":"image","sbom_type":"image"},{"id":14,"name":"web-app","sbom_type":"source"}],"total_items":2,"total_pages":1,"current_page":0}`
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/components/8/sboms":
 			return http.StatusOK, `{"sboms":[{"id":21,"name":"other-image","sbom_type":"image"}],"total_items":1,"total_pages":1,"current_page":0}`
 		case r.Method == http.MethodPost && r.URL.Path == "/pico/v2/sboms/id/by-identifier":
@@ -483,7 +483,7 @@ func TestPicoCommands_FindSourceVersion(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.JSONEq(t, `{
-			"matches": [{"sbom_id": 14, "version_id": 4790, "name": "frontend-console",
+			"matches": [{"sbom_id": 14, "version_id": 4790, "name": "web-app",
 				"version_found_by": "newest_before_commit", "commit_sha": "bbb"}],
 			"unmatched": []
 		}`, out)
@@ -493,6 +493,7 @@ func TestPicoCommands_FindSourceVersion(t *testing.T) {
 		require.Len(t, got, 5)
 		assert.Equal(t, "/pico/v2/sboms/22", got[0].Path)
 		assert.Equal(t, "/pico/v2/components/9/sboms", got[1].Path)
+		assert.Equal(t, "active", got[1].Query.Get("visibility"))
 		assert.Equal(t, "/pico/v2/sboms/22/versions/902", got[2].Path)
 		assert.JSONEq(t, `{"commit_sha":"aaa"}`, got[3].Body, "the commit comes from the image version")
 		assert.Equal(t, "/pico/v2/sboms/14/versions", got[4].Path)

@@ -73,13 +73,13 @@ func newFakeSourceServer(t *testing.T) (*fakeSourceServer, *Client) {
 		imageCommitSha: "aaa",
 		componentPages: map[int][][]map[string]any{
 			7: {
-				{sbom(20, "frontend-console-image", "image")},
-				{sbom(13, "kusaridev/iac/app-code/frontend-console", "source")},
+				{sbom(20, "web-app-image", "image")},
+				{sbom(13, "example-org/web-app", "source")},
 			},
 			8:  {{sbom(21, "other-image", "image")}},
-			9:  {{sbom(14, "kusaridev/iac/app-code/shared", "source"), sbom(22, "shared-image", "image")}},
-			10: {{sbom(15, "kusaridev/iac/app-code/new", "source"), sbom(23, "new-image", "image")}},
-			11: {{sbom(16, "kusaridev/iac/app-code/newer", "source"), sbom(24, "newer-image", "image")}},
+			9:  {{sbom(14, "example-org/api-service", "source"), sbom(22, "api-service-image", "image")}},
+			10: {{sbom(15, "example-org/new-service", "source"), sbom(23, "new-service-image", "image")}},
+			11: {{sbom(16, "example-org/newer-service", "source"), sbom(24, "newer-service-image", "image")}},
 		},
 		byIdentifier: []map[string]any{
 			{"sbom_id": 20, "version_id": 900},
@@ -230,11 +230,11 @@ func findSourceWith(t *testing.T, c *Client, opts FindSourceSbomVersionsOptions)
 
 var (
 	match13ByCommit = SourceVersionMatch{
-		SbomID: 13, VersionID: 4821, Name: "kusaridev/iac/app-code/frontend-console",
+		SbomID: 13, VersionID: 4821, Name: "example-org/web-app",
 		VersionFoundBy: VersionFoundByCommit, CommitSha: "aaa",
 	}
 	match14BeforeCommit = SourceVersionMatch{
-		SbomID: 14, VersionID: 4790, Name: "kusaridev/iac/app-code/shared",
+		SbomID: 14, VersionID: 4790, Name: "example-org/api-service",
 		VersionFoundBy: VersionFoundByNewestBeforeCommit, CommitSha: "bbb",
 	}
 )
@@ -247,7 +247,11 @@ func TestFindSourceSbomVersions_VersionAtCommit(t *testing.T) {
 
 	assert.Equal(t, []SourceVersionMatch{match13ByCommit}, res.Matches, "SBOM 20 is the image itself; SBOM 13 is on page 2")
 	assert.Empty(t, res.Unmatched)
-	assert.Len(t, f.requestsTo("/pico/v2/components/7/sboms"), 2)
+	pages := f.requestsTo("/pico/v2/components/7/sboms")
+	require.Len(t, pages, 2)
+	for _, p := range pages {
+		assert.Equal(t, "active", p.Query.Get("visibility"), "hidden source SBOMs must never be picked")
+	}
 	assert.Len(t, f.requestsTo("/pico/v2/sboms/20/versions/900"), 1, "the commit comes from the image version")
 	assert.Empty(t, f.requestsTo("/pico/v2/sboms/13/versions"), "SBOM 13 has a version at the commit, so no as_of lookup")
 }
@@ -339,8 +343,8 @@ func TestFindSourceSbomVersions_NoVersionBeforeCommitIsUnmatched(t *testing.T) {
 		want    SourceSbom
 		wantLog string
 	}{
-		{"empty versions list", 23, SourceSbom{SbomID: 15, Name: "kusaridev/iac/app-code/new"}, "no version at or before"},
-		{"versions 404", 24, SourceSbom{SbomID: 16, Name: "kusaridev/iac/app-code/newer"}, "SBOM 16 (kusaridev/iac/app-code/newer) not found"},
+		{"empty versions list", 23, SourceSbom{SbomID: 15, Name: "example-org/new-service"}, "no version at or before"},
+		{"versions 404", 24, SourceSbom{SbomID: 16, Name: "example-org/newer-service"}, "SBOM 16 (example-org/newer-service) not found"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

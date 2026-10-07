@@ -178,7 +178,8 @@ func (c *Client) imageSourceSbom(ctx context.Context, imageID int, log io.Writer
 	compID := *image.ComponentID
 
 	for page := 0; ; page++ {
-		raw, err := c.ListComponentSboms(ctx, compID, ListComponentSbomsOptions{Page: page, Size: 1000})
+		// Visible SBOMs only, even if the API's default changes: a hidden source SBOM is out of use.
+		raw, err := c.ListComponentSboms(ctx, compID, ListComponentSbomsOptions{Page: page, Size: 1000, Visibility: "active"})
 		if isNotFound(err) {
 			_, _ = fmt.Fprintf(log, "Component %d not found\n", compID)
 			return nil, nil
