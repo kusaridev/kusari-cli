@@ -247,6 +247,44 @@ func TestPicoCommands_InvalidFlagsSendNoRequest(t *testing.T) {
 			args:    []string{"move-tag", "7", "99", "environment", ""},
 			wantErr: "label and value must not be empty",
 		},
+		{
+			name:    "sboms find-source-version missing commit-sha",
+			cmd:     sboms,
+			args:    []string{"find-source-version", "--commit-time", "2026-10-01T12:00:00Z", "--component-id", "7"},
+			wantErr: `required flag(s) "commit-sha" not set`,
+		},
+		{
+			name:    "sboms find-source-version neither component nor repo",
+			cmd:     sboms,
+			args:    []string{"find-source-version", "--commit-sha", "aaa", "--commit-time", "2026-10-01T12:00:00Z"},
+			wantErr: "at least one of the flags in the group [component-id repo] is required",
+		},
+		{
+			name: "sboms find-source-version forge without org",
+			cmd:  sboms,
+			args: []string{"find-source-version", "--commit-sha", "aaa", "--commit-time", "2026-10-01T12:00:00Z",
+				"--forge", "github.com", "--repo", "iac"},
+			wantErr: "missing [org]",
+		},
+		{
+			name: "sboms find-source-version subrepo-path without repo",
+			cmd:  sboms,
+			args: []string{"find-source-version", "--commit-sha", "aaa", "--commit-time", "2026-10-01T12:00:00Z",
+				"--component-id", "7", "--subrepo-path", "app-code/frontend-console"},
+			wantErr: "--subrepo-path needs --forge, --org and --repo",
+		},
+		{
+			name:    "sboms find-source-version bad commit-time",
+			cmd:     sboms,
+			args:    []string{"find-source-version", "--commit-sha", "aaa", "--commit-time", "yesterday", "--component-id", "7"},
+			wantErr: "invalid --commit-time",
+		},
+		{
+			name:    "sboms find-source-version non-positive component-id",
+			cmd:     sboms,
+			args:    []string{"find-source-version", "--commit-sha", "aaa", "--commit-time", "2026-10-01T12:00:00Z", "--component-id", "0"},
+			wantErr: "invalid --component-id",
+		},
 	}
 
 	for _, tt := range tests {
@@ -394,5 +432,60 @@ func TestPicoCommands_MoveTagOutput(t *testing.T) {
 		assert.Contains(t, out, "Created tag 15", "the completed step is still reported")
 		assert.NotContains(t, out, "Ended tag", "nothing was ended")
 		assert.NotContains(t, out, "No other versions carried that tag", "must not claim success on failure")
+	})
+}
+
+// findSourceResponder fakes the lookups find-source-version makes: component 8 holds only an image
+// SBOM, the repo has source SBOM 13 at app-code/frontend-console, nothing was uploaded at the commit,
+// and SBOM 13's newest version by the commit time is 4790. Any other request fails the test.
+func findSourceResponder(t *testing.T) picoResponder {
+	return func(r *http.Request) (int, string) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/components/8/sboms":
+			return http.StatusOK, `{"sboms":[{"id":21,"name":"image","sbom_type":"image"}],"total_items":1,"total_pages":1,"current_page":0}`
+		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/id/by-repo":
+			return http.StatusOK, `[{"sbom_id":13,"name":"frontend-console","subrepo_path":"app-code/frontend-console","type":"source"}]`
+		case r.Method == http.MethodPost && r.URL.Path == "/pico/v2/sboms/id/by-identifier":
+			return http.StatusNotFound, `{"error":"not found"}`
+		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/13/versions":
+			return http.StatusOK, `{"versions":[{"id":4790,"sbom_id":13,"commit_sha":"bbb"}],"total_items":1,"total_pages":1,"current_page":0}`
+		}
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.RequestURI())
+		return http.StatusInternalServerError, `{}`
+	}
+}
+
+func TestPicoCommands_FindSourceVersion(t *testing.T) {
+	t.Run("flags reach each lookup and the result is printed", func(t *testing.T) {
+		requests := fakePico(t, findSourceResponder(t))
+
+		out, err := runPicoCmdOutput(t, sboms(), "find-source-version",
+			"--commit-sha", "aaa", "--commit-time", "2026-10-01T14:34:56+02:00", "--component-id", "8",
+			"--forge", "github.com", "--org", "kusaridev", "--repo", "iac", "--subrepo-path", "app-code/frontend-console/server")
+		require.NoError(t, err)
+
+		assert.JSONEq(t, `{
+			"matches": [{"sbom_id": 13, "version_id": 4790, "name": "frontend-console", "matched_by": "folder",
+				"version_found_by": "newest_before_commit", "commit_sha": "bbb"}],
+			"unmatched": []
+		}`, out)
+
+		got := requests()
+		require.Len(t, got, 4)
+		assert.Equal(t, "/pico/v2/components/8/sboms", got[0].Path)
+		assert.Equal(t, url.Values{"forge": {"github.com"}, "org": {"kusaridev"}, "repo": {"iac"}}, got[1].Query,
+			"the folder is picked locally, not filtered by the API")
+		assert.JSONEq(t, `{"commit_sha":"aaa"}`, got[2].Body)
+		assert.Equal(t, "/pico/v2/sboms/13/versions", got[3].Path)
+		assert.Equal(t, "2026-10-01T14:34:56+02:00", got[3].Query.Get("as_of"))
+	})
+
+	t.Run("nothing found prints both empty arrays and succeeds", func(t *testing.T) {
+		fakePico(t, findSourceResponder(t))
+
+		out, err := runPicoCmdOutput(t, sboms(), "find-source-version",
+			"--commit-sha", "aaa", "--commit-time", "2026-10-01T12:00:00Z", "--component-id", "8")
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"matches":[],"unmatched":[]}`, out)
 	})
 }
