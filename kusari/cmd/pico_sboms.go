@@ -495,33 +495,40 @@ func picoSbomFindSourceVersion() *cobra.Command {
 	var opts pico.FindSourceSbomVersionsOptions
 
 	cmd := &cobra.Command{
-		Use:   "find-source-version",
-		Short: "Find the source SBOM versions that belong to a deploy",
-		Long: `Print, as JSON, which source SBOM versions were deployed with a commit, so a CI pipeline can tag each one.
+		Use:   "find-source-version <image-sbom-id> <image-version-id>",
+		Short: "Find the source SBOM version that was deployed with an image SBOM version",
+		Long: `Print, as JSON, which version of a source SBOM was deployed with a version of an image SBOM, so a
+CI pipeline can tag it.
 
-The source SBOMs are the component's source SBOMs (--component-id). Only when the component has none,
-or no component is given, is the repo's source SBOM for --subrepo-path used. --subrepo-path picks the
-scan folder that is that folder or, failing that, the closest folder above it (default: the repo root).
-This is unlike id-by-repo --subrepo-path, which needs an exact match.
+The source SBOM is the one in the image SBOM's component. If the image SBOM is in no component, or its
+component has no source SBOM, nothing is printed to tag: put the image SBOM and its source SBOM in one component.
 
-Each source SBOM gets its version at --commit-sha if there is one, otherwise the newest version
-uploaded at or before --commit-time, the commit's committer date (for a GitHub merge or squash commit,
-when it landed on the branch). "matches" lists the versions to tag. "unmatched" lists source SBOMs with
-no version by then. Finding nothing is not an error: both lists are printed empty. Each decision is
-logged to stderr.`,
-		Example: `  kusari platform sboms find-source-version --commit-sha 4b2d7a9 --commit-time 2026-10-01T12:00:00Z \
-    --component-id 7 --forge github.com --org kusaridev --repo iac --subrepo-path app-code/frontend-console`,
-		Args: cobra.NoArgs,
+The source SBOM gets its version at the commit recorded on the image version, if there is one. Otherwise
+it gets the newest version uploaded at or before --commit-time, the commit's committer date (for a GitHub
+merge or squash commit, when it landed on the branch). Without --commit-time, the image version's upload
+time is used instead, which is usually a few minutes later.
+
+"matches" lists the version to tag. "unmatched" lists the source SBOM if it had no version by then.
+Finding nothing is not an error: both lists are printed empty. Each decision is logged to stderr.`,
+		Example: `  # After deploying version 99 of image SBOM 42:
+  kusari platform sboms find-source-version 42 99 --commit-time 2026-10-01T12:00:00Z`,
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("subrepo-path") && !cmd.Flags().Changed("repo") {
-				return fmt.Errorf("--subrepo-path needs --forge, --org and --repo")
-			}
-			if cmd.Flags().Changed("component-id") && opts.ComponentID <= 0 {
-				return fmt.Errorf("invalid --component-id: must be a positive ID")
-			}
 			var err error
-			if opts.CommitTime, err = parseTimestampFlag("commit-time", opts.CommitTime); err != nil {
+			if opts.ImageSbomID, err = parseIDArg(args[0], "SBOM"); err != nil {
 				return err
+			}
+			if opts.ImageVersionID, err = parseIDArg(args[1], "version"); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("commit-time") {
+				// "now" would let a redeploy of an old commit pick up versions uploaded after it.
+				if opts.CommitTime == "now" {
+					return fmt.Errorf("invalid --commit-time: must be the commit's committer date, not 'now'")
+				}
+				if opts.CommitTime, err = parseTimestampFlag("commit-time", opts.CommitTime); err != nil {
+					return err
+				}
 			}
 
 			client, err := newPicoClient()
@@ -533,7 +540,7 @@ logged to stderr.`,
 			ctx := context.Background()
 			res, err := client.FindSourceSbomVersions(ctx, opts)
 			if err != nil {
-				return fmt.Errorf("failed to find source SBOM versions for commit %s: %w", opts.CommitSha, err)
+				return fmt.Errorf("failed to find the source SBOM version for SBOM #%d version #%d: %w", opts.ImageSbomID, opts.ImageVersionID, err)
 			}
 
 			out, err := json.MarshalIndent(res, "", "  ")
@@ -545,20 +552,7 @@ logged to stderr.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.CommitSha, "commit-sha", "", "Commit that was deployed (required)")
-	cmd.Flags().StringVar(&opts.CommitTime, "commit-time", "", "Committer date of --commit-sha, RFC3339 (required, ex: '2026-10-01T12:00:00Z')")
-	cmd.Flags().IntVar(&opts.ComponentID, "component-id", 0, "Component of the deployed image; its source SBOMs are used first")
-	cmd.Flags().StringVar(&opts.Forge, "forge", "", "Forge of the deployed repo (ex: 'github.com')")
-	cmd.Flags().StringVar(&opts.Org, "org", "", "Organization of the deployed repo (ex: 'kusaridev')")
-	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Deployed repo (ex: 'iac')")
-	cmd.Flags().StringVar(&opts.SubrepoPath, "subrepo-path", ".", "Folder the deployed code is built from; the closest scan folder at or above it is used (ex: 'app-code/frontend-console')")
-	for _, name := range []string{"commit-sha", "commit-time"} {
-		if err := cmd.MarkFlagRequired(name); err != nil {
-			panic(err)
-		}
-	}
-	cmd.MarkFlagsOneRequired("component-id", "repo")
-	cmd.MarkFlagsRequiredTogether("forge", "org", "repo")
+	cmd.Flags().StringVar(&opts.CommitTime, "commit-time", "", "Committer date of the image's commit, RFC3339 (default: the image version's upload time, ex: '2026-10-01T12:00:00Z')")
 
 	return cmd
 }
