@@ -12,7 +12,7 @@ import (
 	"net/http"
 )
 
-// Values of SourceVersionMatch.VersionFoundBy.
+// Values of SourceSbomVersion.VersionFoundBy.
 const (
 	VersionFoundByCommit             = "commit"
 	VersionFoundByNewestBeforeCommit = "newest_before_commit"
@@ -30,26 +30,16 @@ type FindSourceSbomVersionOptions struct {
 	Log io.Writer
 }
 
-// SourceVersionMatch is the source SBOM version to tag.
-type SourceVersionMatch struct {
+// SourceSbomVersion is the source SBOM deployed with an image SBOM version and, if it had one by
+// then, the version of it to tag. Without a version, VersionID is 0 and the version fields are left
+// out of the JSON. Message says how the version was found, or why there is none.
+type SourceSbomVersion struct {
 	SbomID         int    `json:"sbom_id"`
-	VersionID      int    `json:"version_id"`
 	Name           string `json:"name"`
-	VersionFoundBy string `json:"version_found_by"`
+	VersionID      int    `json:"version_id,omitempty"`
+	VersionFoundBy string `json:"version_found_by,omitempty"`
 	CommitSha      string `json:"commit_sha,omitempty"`
-}
-
-// SourceSbom identifies a source SBOM.
-type SourceSbom struct {
-	SbomID int    `json:"sbom_id"`
-	Name   string `json:"name"`
-}
-
-// SourceVersionResult is what FindSourceSbomVersion found. A component holds at most one visible
-// source SBOM, so each list has at most one entry. Both are non-nil, so they encode as [] rather than null.
-type SourceVersionResult struct {
-	Matches   []SourceVersionMatch `json:"matches"`
-	Unmatched []SourceSbom         `json:"unmatched"`
+	Message        string `json:"message"`
 }
 
 // sbomVersionRef is the subset of V2SBOMVersion FindSourceSbomVersion needs.
@@ -63,13 +53,13 @@ type sbomVersionRef struct {
 // image SBOM.
 //
 // The source SBOM is the one in the image SBOM's component. If the image SBOM is in no component, or
-// its component has no source SBOM, the result is empty. Otherwise the source SBOM gets its version at
-// the image version's commit if there is one, else the newest version ingested at or before CommitTime
-// (or the image version's upload time); with neither, it is reported in Unmatched.
+// its component has no source SBOM, it returns nil. Otherwise the source SBOM gets its version at the
+// image version's commit if there is one, else the newest version ingested at or before CommitTime (or
+// the image version's upload time); with neither, it is returned without a version.
 //
 // A 404 from any lookup means that lookup found nothing; finding nothing at all is not an error.
 // Any other API error is returned.
-func (c *Client) FindSourceSbomVersion(ctx context.Context, opts FindSourceSbomVersionOptions) (*SourceVersionResult, error) {
+func (c *Client) FindSourceSbomVersion(ctx context.Context, opts FindSourceSbomVersionOptions) (*SourceSbomVersion, error) {
 	if opts.ImageSbomID <= 0 || opts.ImageVersionID <= 0 {
 		return nil, fmt.Errorf("image SBOM ID and version ID must be set")
 	}
@@ -78,41 +68,35 @@ func (c *Client) FindSourceSbomVersion(ctx context.Context, opts FindSourceSbomV
 		log = io.Discard
 	}
 
-	res := &SourceVersionResult{Matches: []SourceVersionMatch{}, Unmatched: []SourceSbom{}}
-
 	src, err := c.imageSourceSbom(ctx, opts.ImageSbomID, log)
-	if err != nil {
+	if err != nil || src == nil {
 		return nil, err
-	}
-	if src == nil {
-		return res, nil
 	}
 
 	image, err := c.imageVersion(ctx, opts.ImageSbomID, opts.ImageVersionID)
 	if isNotFound(err) {
 		_, _ = fmt.Fprintf(log, "Version %d of SBOM %d not found\n", opts.ImageVersionID, opts.ImageSbomID)
-		return res, nil
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	noVersionAtCommit := ""
+	var prefix string
 	if image.CommitSha == "" {
-		_, _ = fmt.Fprintf(log, "Version %d of SBOM %d has no commit recorded, so the source version is found by time only\n", opts.ImageVersionID, opts.ImageSbomID)
+		prefix = "the image version has no commit recorded; "
 	} else {
 		vid, err := c.versionAtCommit(ctx, src.SbomID, image.CommitSha)
 		if err != nil {
 			return nil, err
 		}
 		if vid > 0 {
-			_, _ = fmt.Fprintf(log, "SBOM %d (%s): version %d is at commit %s\n", src.SbomID, src.Name, vid, image.CommitSha)
-			res.Matches = append(res.Matches, SourceVersionMatch{
-				SbomID: src.SbomID, VersionID: vid, Name: src.Name, VersionFoundBy: VersionFoundByCommit, CommitSha: image.CommitSha,
-			})
-			return res, nil
+			src.VersionID, src.VersionFoundBy, src.CommitSha = vid, VersionFoundByCommit, image.CommitSha
+			src.Message = fmt.Sprintf("version %d is at commit %s", vid, image.CommitSha)
+			_, _ = fmt.Fprintf(log, "SBOM %d (%s): %s\n", src.SbomID, src.Name, src.Message)
+			return src, nil
 		}
-		noVersionAtCommit = fmt.Sprintf("no version at commit %s; ", image.CommitSha)
+		prefix = fmt.Sprintf("no version at commit %s; ", image.CommitSha)
 	}
 
 	asOf := opts.CommitTime
@@ -126,20 +110,17 @@ func (c *Client) FindSourceSbomVersion(ctx context.Context, opts FindSourceSbomV
 	v, err := c.newestVersionAsOf(ctx, src.SbomID, asOf)
 	switch {
 	case isNotFound(err):
-		_, _ = fmt.Fprintf(log, "SBOM %d (%s): %sthe SBOM was not found\n", src.SbomID, src.Name, noVersionAtCommit)
-		res.Unmatched = append(res.Unmatched, *src)
+		src.Message = prefix + "the SBOM was not found, so there is no version to tag"
 	case err != nil:
 		return nil, err
 	case v == nil:
-		_, _ = fmt.Fprintf(log, "SBOM %d (%s): %sno version at or before %s\n", src.SbomID, src.Name, noVersionAtCommit, asOf)
-		res.Unmatched = append(res.Unmatched, *src)
+		src.Message = prefix + fmt.Sprintf("no version at or before %s, so there is no version to tag", asOf)
 	default:
-		_, _ = fmt.Fprintf(log, "SBOM %d (%s): %susing version %d, the newest as of %s\n", src.SbomID, src.Name, noVersionAtCommit, v.ID, asOf)
-		res.Matches = append(res.Matches, SourceVersionMatch{
-			SbomID: src.SbomID, VersionID: v.ID, Name: src.Name, VersionFoundBy: VersionFoundByNewestBeforeCommit, CommitSha: v.CommitSha,
-		})
+		src.VersionID, src.VersionFoundBy, src.CommitSha = v.ID, VersionFoundByNewestBeforeCommit, v.CommitSha
+		src.Message = prefix + fmt.Sprintf("using version %d, the newest as of %s", v.ID, asOf)
 	}
-	return res, nil
+	_, _ = fmt.Fprintf(log, "SBOM %d (%s): %s\n", src.SbomID, src.Name, src.Message)
+	return src, nil
 }
 
 // imageVersion returns the commit and upload time recorded on a version of the image SBOM.
@@ -156,7 +137,7 @@ func (c *Client) imageVersion(ctx context.Context, sbomID, versionID int) (*sbom
 }
 
 // imageSourceSbom returns the source SBOM in the image SBOM's component, or nil if there is none.
-func (c *Client) imageSourceSbom(ctx context.Context, imageID int, log io.Writer) (*SourceSbom, error) {
+func (c *Client) imageSourceSbom(ctx context.Context, imageID int, log io.Writer) (*SourceSbomVersion, error) {
 	raw, err := c.GetSbom(ctx, imageID)
 	if isNotFound(err) {
 		_, _ = fmt.Fprintf(log, "SBOM %d not found\n", imageID)
@@ -201,7 +182,7 @@ func (c *Client) imageSourceSbom(ctx context.Context, imageID int, log io.Writer
 		for _, s := range pg.Sboms {
 			if s.SbomType == "source" {
 				_, _ = fmt.Fprintf(log, "SBOM %d is in component %d, whose source SBOM is %d (%s)\n", imageID, compID, s.ID, s.Name)
-				return &SourceSbom{SbomID: s.ID, Name: s.Name}, nil
+				return &SourceSbomVersion{SbomID: s.ID, Name: s.Name}, nil
 			}
 		}
 		if page+1 >= pg.TotalPages || len(pg.Sboms) == 0 {

@@ -412,7 +412,8 @@ func TestPicoCommands_MoveTagOutput(t *testing.T) {
 
 // findSourceResponder fakes the lookups find-source-version makes: image SBOM 22 is in component 9,
 // whose source SBOM is 14, and its version 902 was built from commit aaa. Nothing was uploaded at the
-// commit, and SBOM 14's newest version by the commit time is 4790. Any other request fails the test.
+// commit, and SBOM 14's newest version by the commit time is 4790. Image SBOM 21 is in no component.
+// Any other request fails the test.
 func findSourceResponder(t *testing.T) picoResponder {
 	return func(r *http.Request) (int, string) {
 		if strings.HasPrefix(r.URL.Path, "/pico/v2/components/") && r.URL.Query().Get("page") != "0" {
@@ -421,6 +422,8 @@ func findSourceResponder(t *testing.T) picoResponder {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/22":
 			return http.StatusOK, `{"id":22,"name":"image","component_id":9}`
+		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/21":
+			return http.StatusOK, `{"id":21,"name":"other-image","component_id":null}`
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/22/versions/902":
 			return http.StatusOK, `{"id":902,"sbom_id":22,"commit_sha":"aaa","first_ingested":"2026-10-01T12:40:00Z"}`
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/components/9/sboms":
@@ -455,12 +458,11 @@ func TestPicoCommands_FindSourceVersion(t *testing.T) {
 	out, log, err := runFindSource(t, "22", "902", "--commit-time", "2026-10-01T14:34:56+02:00")
 	require.NoError(t, err)
 
-	assert.JSONEq(t, `{
-		"matches": [{"sbom_id": 14, "version_id": 4790, "name": "web-app",
-			"version_found_by": "newest_before_commit", "commit_sha": "bbb"}],
-		"unmatched": []
-	}`, out)
+	assert.JSONEq(t, `{"sbom_id": 14, "name": "web-app", "version_id": 4790,
+		"version_found_by": "newest_before_commit", "commit_sha": "bbb",
+		"message": "no version at commit aaa; using version 4790, the newest as of 2026-10-01T14:34:56+02:00"}`, out)
 	assert.Contains(t, log, "SBOM 22 is in component 9, whose source SBOM is 14")
+	assert.Contains(t, log, "SBOM 14 (web-app): no version at commit aaa; using version 4790", "the message is also logged")
 
 	got := requests()
 	require.Len(t, got, 5)
@@ -474,4 +476,13 @@ func TestPicoCommands_FindSourceVersion(t *testing.T) {
 	assert.Equal(t, "/pico/v2/sboms/14/versions", got[4].Path)
 	assert.Equal(t, "2026-10-01T14:34:56+02:00", got[4].Query.Get("as_of"))
 	assert.Equal(t, "first_ingested_desc", got[4].Query.Get("sort"))
+}
+
+func TestPicoCommands_FindSourceVersionNothingToTagPrintsNull(t *testing.T) {
+	fakePico(t, findSourceResponder(t))
+
+	out, log, err := runFindSource(t, "21", "901")
+	require.NoError(t, err)
+	assert.Equal(t, "null\n", out, "pipelines check for a literal null")
+	assert.Contains(t, log, "SBOM 21 is not in a component")
 }
