@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -28,6 +29,7 @@ func sboms() *cobra.Command {
 	cmd.AddCommand(picoSbomVersionUpdateTag())
 	cmd.AddCommand(picoSbomVersionDeleteTag())
 	cmd.AddCommand(picoSbomVersionMoveTag())
+	cmd.AddCommand(picoSbomFindSourceVersion())
 
 	return cmd
 }
@@ -487,4 +489,63 @@ func printMoveTagResult(res *pico.MoveTagResult, sbomID int, failed bool) {
 	if !failed && len(res.Ended) == 0 && (res.Created != nil || res.Existing != nil) {
 		fmt.Println("No other versions carried that tag")
 	}
+}
+
+func picoSbomFindSourceVersion() *cobra.Command {
+	var opts pico.FindSourceSbomVersionOptions
+
+	cmd := &cobra.Command{
+		Use:   "find-source-version <image-sbom-id> <image-version-id>",
+		Short: "Find the source SBOM version that was deployed with an image SBOM version",
+		Long: `Print, as JSON, which version of a source SBOM pairs with the version of an image SBOM, so a
+CI pipeline can tag it.
+
+The source SBOM is the one in the image SBOM's component. If the image SBOM is in no component, or its
+component has no source SBOM, nothing is printed to tag: put the image SBOM and its source SBOM in one component.
+
+The source SBOM gets its version at the commit recorded on the image version, if there is one. Otherwise
+it gets the newest version uploaded at or before --commit-time, the commit's committer date. Without --commit-time, the image version's upload
+time is used instead, which is usually a few minutes later.`,
+		Example: `  # After deploying version 99 of image SBOM 42:
+  kusari platform sboms find-source-version 42 99 --commit-time 2026-10-01T12:00:00Z`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			if opts.ImageSbomID, err = parseIDArg(args[0], "SBOM"); err != nil {
+				return err
+			}
+			if opts.ImageVersionID, err = parseIDArg(args[1], "version"); err != nil {
+				return err
+			}
+			// Not parseTimestampFlag: "now" would let a redeploy of an old commit pick up versions uploaded after it.
+			if cmd.Flags().Changed("commit-time") {
+				if _, err := time.Parse(time.RFC3339, opts.CommitTime); err != nil {
+					return fmt.Errorf("invalid --commit-time: must be the commit's committer date, RFC3339 (ex: '2026-10-01T12:00:00Z'): %w", err)
+				}
+			}
+
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
+
+			opts.Log = cmd.ErrOrStderr()
+			ctx := context.Background()
+			res, err := client.FindSourceSbomVersion(ctx, opts)
+			if err != nil {
+				return fmt.Errorf("failed to find the source SBOM version for SBOM #%d version #%d: %w", opts.ImageSbomID, opts.ImageVersionID, err)
+			}
+
+			out, err := json.MarshalIndent(res, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(out))
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&opts.CommitTime, "commit-time", "", "Committer date of the image's commit, RFC3339 (default: the image version's upload time, ex: '2026-10-01T12:00:00Z')")
+
+	return cmd
 }

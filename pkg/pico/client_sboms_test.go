@@ -99,6 +99,34 @@ func TestAddPaginationParams(t *testing.T) {
 	}
 }
 
+func TestClient_GetSbom(t *testing.T) {
+	setupTestAuth(t)
+	server, rec := recordingServer(t, http.StatusOK, map[string]any{"id": 7, "component_id": 3})
+	client := NewClient(server.URL)
+
+	_, err := client.GetSbom(context.Background(), 7)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.MethodGet, rec.Method)
+	assert.Equal(t, "/pico/v2/sboms/7", rec.Path)
+	assert.Empty(t, rec.Query)
+	assert.Empty(t, rec.Body)
+}
+
+func TestClient_GetSbomVersion(t *testing.T) {
+	setupTestAuth(t)
+	server, rec := recordingServer(t, http.StatusOK, map[string]any{"id": 99})
+	client := NewClient(server.URL)
+
+	_, err := client.GetSbomVersion(context.Background(), 7, 99)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.MethodGet, rec.Method)
+	assert.Equal(t, "/pico/v2/sboms/7/versions/99", rec.Path)
+	assert.Empty(t, rec.Query)
+	assert.Empty(t, rec.Body)
+}
+
 func TestClient_GetSbomVersions(t *testing.T) {
 	setupTestAuth(t)
 	page := map[string]any{"versions": []any{}, "total_items": 0, "total_pages": 1, "current_page": 0}

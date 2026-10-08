@@ -23,3 +23,20 @@ When enabled in a CI/CD environment, Kusari Inspector via the `repo scan` comman
 **CI/CD Setup Instructions:**
 
 For complete setup instructions, templates, and reusable workflows for both GitLab and GitHub, see the [Kusari CI Templates repository](https://github.com/kusaridev/kusari-ci-templates).
+
+## Development
+
+Build the binary locally
+
+```bash
+go build -o kusari/kusari ./kusari      # kusari/kusari is gitignored
+```
+
+Run the local binary as `./kusari/kusari` from this directory.
+
+```bash
+./kusari/kusari --help
+
+# Log in with the local binary:
+./kusari/kusari auth login
+``

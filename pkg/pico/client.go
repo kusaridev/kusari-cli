@@ -286,6 +286,19 @@ func (c *Client) GetSoftwareIDsByRepo(ctx context.Context, forge, org, repo, sub
 }
 
 // v2
+
+// GetSbom retrieves a specific SBOM by ID, including the component it belongs to.
+func (c *Client) GetSbom(ctx context.Context, sbomID int) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v2/sboms/%d", sbomID)
+	return c.requestJSON(ctx, "GET", path, nil, nil)
+}
+
+// GetSbomVersion retrieves a specific version of an SBOM.
+func (c *Client) GetSbomVersion(ctx context.Context, sbomID, versionID int) (json.RawMessage, error) {
+	path := fmt.Sprintf("/pico/v2/sboms/%d/versions/%d", sbomID, versionID)
+	return c.requestJSON(ctx, "GET", path, nil, nil)
+}
+
 // GetSbomVersionsOptions holds the query parameters for GetSbomVersions. Empty fields are omitted.
 type GetSbomVersionsOptions struct {
 	Page     int
