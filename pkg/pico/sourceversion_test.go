@@ -20,11 +20,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testCommitTime has a non-UTC offset so that any reformatting before it reaches as_of shows up.
+// testCommitTime has a non-UTC offset, which testCommitCutoff, 5 minutes later, keeps.
 // testUploadTime is when the fake's image versions were uploaded, a few minutes after the commit.
 const (
-	testCommitTime = "2026-10-01T14:34:56+02:00"
-	testUploadTime = "2026-10-01T12:40:00Z"
+	testCommitTime        = "2026-10-01T14:34:56+02:00"
+	testCommitCutoff      = "2026-10-01T14:39:56+02:00"
+	testCommitCutoffInLog = testCommitCutoff + " (5 minutes after the commit time)"
+	testUploadTime        = "2026-10-01T12:40:00Z"
 )
 
 type sourceFakeRequest struct {
@@ -43,7 +45,7 @@ type sourceFakeRequest struct {
 //   - Components 9, 10 and 11 have source SBOMs 14, 15 and 16. The API allows one visible source
 //     SBOM per component.
 //   - by-identifier for commit aaa returns SBOM 20 version 900 and SBOM 13 version 4821.
-//   - versions as_of: SBOM 13 -> 4821; SBOM 14 -> 4790 at testCommitTime, 4795 at testUploadTime,
+//   - versions as_of: SBOM 13 -> 4821; SBOM 14 -> 4790 at testCommitCutoff, 4795 at testUploadTime,
 //     4800 at any other time; SBOM 15 -> empty list; SBOM 16 -> 404.
 //
 // Any other request fails the test, which is how "no request was made" is checked.
@@ -181,7 +183,7 @@ func (f *fakeSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reply(http.StatusOK, version(4821, "aaa"))
 		case 14:
 			switch q.Get("as_of") {
-			case testCommitTime:
+			case testCommitCutoff:
 				reply(http.StatusOK, version(4790, f.sbom14CommitSha))
 			case testUploadTime:
 				reply(http.StatusOK, version(4795, "ddd"))
@@ -230,7 +232,7 @@ func findSourceWith(t *testing.T, c *Client, opts FindSourceSbomVersionOptions) 
 }
 
 // match13ByCommit is SBOM 13's version at commit aaa. match14BeforeCommit is SBOM 14's newest
-// version as of testCommitTime.
+// version as of testCommitCutoff.
 func match13ByCommit() *SourceSbomVersion {
 	return &SourceSbomVersion{
 		SbomID: 13, Name: "example-org/web-app", VersionID: 4821, VersionFoundBy: VersionFoundByCommit, CommitSha: "aaa",
@@ -241,7 +243,7 @@ func match13ByCommit() *SourceSbomVersion {
 func match14BeforeCommit() *SourceSbomVersion {
 	return &SourceSbomVersion{
 		SbomID: 14, Name: "example-org/api-service", VersionID: 4790, VersionFoundBy: VersionFoundByNewestBeforeCommit, CommitSha: "bbb",
-		Message: "no version at commit aaa; using version 4790, the newest as of " + testCommitTime,
+		Message: "no version at commit aaa; using version 4790, the newest as of " + testCommitCutoffInLog,
 	}
 }
 
@@ -268,10 +270,10 @@ func TestFindSourceSbomVersion_NewestVersionBeforeCommit(t *testing.T) {
 	res, _, err := findSource(t, c, 22)
 	require.NoError(t, err)
 
-	assert.Equal(t, match14BeforeCommit(), res, "4795 and 4800 are newer than the commit time")
+	assert.Equal(t, match14BeforeCommit(), res, "4795 and 4800 are newer than the cutoff")
 	got := f.requestsTo("/pico/v2/sboms/14/versions")
 	require.Len(t, got, 1)
-	assert.Equal(t, testCommitTime, got[0].Query.Get("as_of"), "commit time passed unchanged")
+	assert.Equal(t, testCommitCutoff, got[0].Query.Get("as_of"), "5 minutes after the commit time, in its offset")
 	assert.Equal(t, "1", got[0].Query.Get("size"))
 	assert.Equal(t, "first_ingested_desc", got[0].Query.Get("sort"), "size=1 must return the newest, not the oldest")
 }
@@ -288,7 +290,7 @@ func TestFindSourceSbomVersion_WithoutCommitTimeUsesImageUploadTime(t *testing.T
 	assert.Equal(t, want, res)
 	got := f.requestsTo("/pico/v2/sboms/14/versions")
 	require.Len(t, got, 1)
-	assert.Equal(t, testUploadTime, got[0].Query.Get("as_of"))
+	assert.Equal(t, testUploadTime, got[0].Query.Get("as_of"), "the upload time is already after the commit, so no grace is added")
 }
 
 func TestFindSourceSbomVersion_NoCommitTimeAndNoUploadTimeFails(t *testing.T) {
@@ -310,7 +312,7 @@ func TestFindSourceSbomVersion_ImageVersionWithoutCommitUsesTimeOnly(t *testing.
 	require.NoError(t, err)
 
 	want := match14BeforeCommit()
-	want.Message = "the image version has no commit recorded; using version 4790, the newest as of " + testCommitTime
+	want.Message = "the image version has no commit recorded; using version 4790, the newest as of " + testCommitCutoffInLog
 	assert.Equal(t, want, res)
 	assert.Empty(t, f.requestsTo("/pico/v2/sboms/id/by-identifier"), "no commit to look up")
 }
@@ -358,7 +360,7 @@ func TestFindSourceSbomVersion_NoVersionBeforeCommitHasNoVersionFields(t *testin
 		wantJSON string
 	}{
 		{"empty versions list", 23, `{"sbom_id": 15, "name": "example-org/new-service",
-			"message": "no version at commit aaa; no version at or before ` + testCommitTime + `, so there is no version to tag"}`},
+			"message": "no version at commit aaa; no version at or before ` + testCommitCutoffInLog + `, so there is no version to tag"}`},
 		{"versions 404", 24, `{"sbom_id": 16, "name": "example-org/newer-service",
 			"message": "no version at commit aaa; the SBOM was not found, so there is no version to tag"}`},
 	}
@@ -400,7 +402,7 @@ func TestFindSourceSbomVersion_ByIdentifier404UsesAsOf(t *testing.T) {
 
 	want := match13ByCommit()
 	want.VersionFoundBy = VersionFoundByNewestBeforeCommit
-	want.Message = "no version at commit aaa; using version 4821, the newest as of " + testCommitTime
+	want.Message = "no version at commit aaa; using version 4821, the newest as of " + testCommitCutoffInLog
 	assert.Equal(t, want, res)
 }
 
@@ -434,8 +436,9 @@ func TestFindSourceSbomVersion_ValidatesOptions(t *testing.T) {
 	f, c := newFakeSourceServer(t)
 
 	for name, opts := range map[string]FindSourceSbomVersionOptions{
-		"no image SBOM ID":    {ImageVersionID: 900},
-		"no image version ID": {ImageSbomID: 20},
+		"no image SBOM ID":        {ImageVersionID: 900},
+		"no image version ID":     {ImageSbomID: 20},
+		"commit time not RFC3339": {ImageSbomID: 22, ImageVersionID: 902, CommitTime: "2026-10-01 14:34:56"},
 	} {
 		_, err := c.FindSourceSbomVersion(context.Background(), opts)
 		assert.Error(t, err, name)

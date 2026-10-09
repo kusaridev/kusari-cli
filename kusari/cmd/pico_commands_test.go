@@ -460,7 +460,7 @@ func TestPicoCommands_FindSourceVersion(t *testing.T) {
 
 	assert.JSONEq(t, `{"sbom_id": 14, "name": "web-app", "version_id": 4790,
 		"version_found_by": "newest_before_commit", "commit_sha": "bbb",
-		"message": "no version at commit aaa; using version 4790, the newest as of 2026-10-01T14:34:56+02:00"}`, out)
+		"message": "no version at commit aaa; using version 4790, the newest as of 2026-10-01T14:39:56+02:00 (5 minutes after the commit time)"}`, out)
 	assert.Contains(t, log, "SBOM 22 is in component 9, whose source SBOM is 14")
 	assert.Contains(t, log, "SBOM 14 (web-app): no version at commit aaa; using version 4790", "the message is also logged")
 
@@ -474,7 +474,7 @@ func TestPicoCommands_FindSourceVersion(t *testing.T) {
 	assert.Equal(t, "/pico/v2/sboms/id/by-identifier", got[3].Path)
 	assert.JSONEq(t, `{"commit_sha":"aaa"}`, got[3].Body, "the commit comes from the image version")
 	assert.Equal(t, "/pico/v2/sboms/14/versions", got[4].Path)
-	assert.Equal(t, "2026-10-01T14:34:56+02:00", got[4].Query.Get("as_of"))
+	assert.Equal(t, "2026-10-01T14:39:56+02:00", got[4].Query.Get("as_of"), "5 minutes after the commit time")
 	assert.Equal(t, "first_ingested_desc", got[4].Query.Get("sort"))
 }
 
