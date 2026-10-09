@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // Values of SourceSbomVersion.VersionFoundBy.
@@ -18,13 +19,16 @@ const (
 	VersionFoundByNewestBeforeCommit = "newest_before_commit"
 )
 
+// commitTimeGrace lets the source SBOM of a merge count although it is uploaded a minute or two after the commit
+const commitTimeGrace = 5 * time.Minute
+
 // FindSourceSbomVersionOptions describes a deployed version of an image SBOM.
 type FindSourceSbomVersionOptions struct {
 	ImageSbomID    int
 	ImageVersionID int
 	// CommitTime, if set, is when the image's commit landed on the branch (its committer date),
-	// RFC3339, passed to the API as is. Without it, the image version's upload time is used, which
-	// is usually a few minutes later.
+	// RFC3339. Versions uploaded up to commitTimeGrace after it count. Without it, the image
+	// version's upload time is used, which is usually a few minutes later.
 	CommitTime string
 	// Log receives one line per decision. nil discards them.
 	Log io.Writer
@@ -54,14 +58,22 @@ type sbomVersionRef struct {
 //
 // The source SBOM is the one in the image SBOM's component. If the image SBOM is in no component, or
 // its component has no source SBOM, it returns nil. Otherwise the source SBOM gets its version at the
-// image version's commit if there is one, else the newest version ingested at or before CommitTime (or
-// the image version's upload time); with neither, it is returned without a version.
+// image version's commit if there is one, else the newest version ingested at or before
+// commitTimeGrace after CommitTime (or at or before the image version's upload time); with neither, it
+// is returned without a version.
 //
 // A 404 from any lookup means that lookup found nothing; finding nothing at all is not an error.
 // Any other API error is returned.
 func (c *Client) FindSourceSbomVersion(ctx context.Context, opts FindSourceSbomVersionOptions) (*SourceSbomVersion, error) {
 	if opts.ImageSbomID <= 0 || opts.ImageVersionID <= 0 {
 		return nil, fmt.Errorf("image SBOM ID and version ID must be set")
+	}
+	var commitTime time.Time
+	if opts.CommitTime != "" {
+		var err error
+		if commitTime, err = time.Parse(time.RFC3339, opts.CommitTime); err != nil {
+			return nil, fmt.Errorf("commit time must be RFC3339: %w", err)
+		}
 	}
 	log := opts.Log
 	if log == nil {
@@ -99,12 +111,16 @@ func (c *Client) FindSourceSbomVersion(ctx context.Context, opts FindSourceSbomV
 		prefix = fmt.Sprintf("no version at commit %s; ", image.CommitSha)
 	}
 
-	asOf := opts.CommitTime
-	if asOf == "" {
-		if image.FirstIngested == "" {
-			return nil, fmt.Errorf("version %d of SBOM %d has no upload time; give the commit time instead", opts.ImageVersionID, opts.ImageSbomID)
-		}
+	var asOf, asOfDescription string
+	switch {
+	case opts.CommitTime != "":
+		asOf = commitTime.Add(commitTimeGrace).Format(time.RFC3339)
+		asOfDescription = fmt.Sprintf("%s (%d minutes after the commit time)", asOf, int(commitTimeGrace.Minutes()))
+	case image.FirstIngested != "":
 		asOf = image.FirstIngested
+		asOfDescription = asOf
+	default:
+		return nil, fmt.Errorf("version %d of SBOM %d has no upload time; give the commit time instead", opts.ImageVersionID, opts.ImageSbomID)
 	}
 
 	v, err := c.newestVersionAsOf(ctx, src.SbomID, asOf)
@@ -114,10 +130,10 @@ func (c *Client) FindSourceSbomVersion(ctx context.Context, opts FindSourceSbomV
 	case err != nil:
 		return nil, err
 	case v == nil:
-		src.Message = prefix + fmt.Sprintf("no version at or before %s, so there is no version to tag", asOf)
+		src.Message = prefix + fmt.Sprintf("no version at or before %s, so there is no version to tag", asOfDescription)
 	default:
 		src.VersionID, src.VersionFoundBy, src.CommitSha = v.ID, VersionFoundByNewestBeforeCommit, v.CommitSha
-		src.Message = prefix + fmt.Sprintf("using version %d, the newest as of %s", v.ID, asOf)
+		src.Message = prefix + fmt.Sprintf("using version %d, the newest as of %s", v.ID, asOfDescription)
 	}
 	_, _ = fmt.Fprintf(log, "SBOM %d (%s): %s\n", src.SbomID, src.Name, src.Message)
 	return src, nil

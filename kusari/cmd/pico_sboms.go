@@ -498,14 +498,11 @@ func picoSbomFindSourceVersion() *cobra.Command {
 		Use:   "find-source-version <image-sbom-id> <image-version-id>",
 		Short: "Find the source SBOM version that was deployed with an image SBOM version",
 		Long: `Print, as JSON, which version of a source SBOM pairs with the version of an image SBOM, so a
-CI pipeline can tag it.
+CI pipeline can tag it. A source SBOM can only be found if it shares a component with the image SBOM.
 
-The source SBOM is the one in the image SBOM's component. If the image SBOM is in no component, or its
-component has no source SBOM, nothing is printed to tag: put the image SBOM and its source SBOM in one component.
-
-The source SBOM gets its version at the commit recorded on the image version, if there is one. Otherwise
-it gets the newest version uploaded at or before --commit-time, the commit's committer date. Without --commit-time, the image version's upload
-time is used instead, which is usually a few minutes later.`,
+The source SBOM version is chosen by the commit recorded on the image version, if there is one. Otherwise
+it gets the newest version uploaded at most 5 minutes after --commit-time, the commit's committer date. Without --commit-time, it gets the newest
+version uploaded at or before the image version's upload time.`,
 		Example: `  # After deploying version 99 of image SBOM 42:
   kusari platform sboms find-source-version 42 99 --commit-time 2026-10-01T12:00:00Z`,
 		Args: cobra.ExactArgs(2),
@@ -545,7 +542,7 @@ time is used instead, which is usually a few minutes later.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.CommitTime, "commit-time", "", "Committer date of the image's commit, RFC3339 (default: the image version's upload time, ex: '2026-10-01T12:00:00Z')")
+	cmd.Flags().StringVar(&opts.CommitTime, "commit-time", "", "Committer date of the image's commit, RFC3339. High recommended in case commit sha doesn't find a match. (default: the image version's upload time, ex: '2026-10-01T12:00:00Z')")
 
 	return cmd
 }
