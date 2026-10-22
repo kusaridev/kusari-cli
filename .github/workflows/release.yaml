@@ -105,7 +105,7 @@ jobs:
       - name: Run GoReleaser Snapshot
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         id: run-goreleaser-snapshot
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: '~> v2'
@@ -117,7 +117,7 @@ jobs:
       - name: Run GoReleaser Release
         if: startsWith(github.ref, 'refs/tags/')
         id: run-goreleaser-release
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: '~> v2'
@@ -133,7 +133,7 @@ jobs:
       # prior Syft image rows) so this updates the existing software instead of
       # forking a new `generic` one; root-version uses the release tag, matching
       # the version Syft derived from the image tag.
-      - uses: kusaridev/kusari-ingest@eaa8241517ad629dc3b196245b997db1047e466e #v4.16.0
+      - uses: kusaridev/kusari-ingest@4772dfdd8501570dd4f787388be1445df957c4ee #v4.17.0
         name: Kusari image SBOM (generate + upload)
         if: startsWith(github.ref, 'refs/tags/')
         continue-on-error: true
