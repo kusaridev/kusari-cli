@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/pico"
@@ -30,6 +32,7 @@ func sboms() *cobra.Command {
 	cmd.AddCommand(picoSbomVersionDeleteTag())
 	cmd.AddCommand(picoSbomVersionMoveTag())
 	cmd.AddCommand(picoSbomFindSourceVersion())
+	cmd.AddCommand(picoSbomTagDeployment())
 
 	return cmd
 }
@@ -456,7 +459,7 @@ versions still carrying it are ended.`,
 			ctx := context.Background()
 			res, moveErr := client.MoveSbomVersionTag(ctx, sbomID, versionID, tagLabel, tagValue)
 			if res != nil {
-				printMoveTagResult(res, sbomID, moveErr != nil)
+				printMoveTagResult(os.Stdout, res, sbomID, moveErr != nil)
 			}
 			if moveErr != nil {
 				return fmt.Errorf("failed to move tag %s=%s on SBOM #%d: %w", tagLabel, tagValue, sbomID, moveErr)
@@ -470,24 +473,24 @@ versions still carrying it are ended.`,
 
 // printMoveTagResult reports each step MoveSbomVersionTag completed, one line per tag. When failed is
 // true the run stopped early, so an empty Ended list means "did not get that far", not "nothing to end".
-func printMoveTagResult(res *pico.MoveTagResult, sbomID int, failed bool) {
+func printMoveTagResult(w io.Writer, res *pico.MoveTagResult, sbomID int, failed bool) {
 	switch {
 	case res.Created != nil:
 		t := res.Created
-		fmt.Printf("Created tag %d (%s=%s) on SBOM %d version %d, in effect from %s\n", t.ID, t.TagLabel, t.TagValue, sbomID, t.VersionID, t.StartTimestamp)
+		_, _ = fmt.Fprintf(w, "Created tag %d (%s=%s) on SBOM %d version %d, in effect from %s\n", t.ID, t.TagLabel, t.TagValue, sbomID, t.VersionID, t.StartTimestamp)
 	case res.Existing != nil:
 		t := res.Existing
-		fmt.Printf("SBOM %d version %d already carries tag %d (%s=%s) since %s; left as is\n", sbomID, t.VersionID, t.ID, t.TagLabel, t.TagValue, t.StartTimestamp)
+		_, _ = fmt.Fprintf(w, "SBOM %d version %d already carries tag %d (%s=%s) since %s; left as is\n", sbomID, t.VersionID, t.ID, t.TagLabel, t.TagValue, t.StartTimestamp)
 	}
 	for _, t := range res.Ended {
 		end := ""
 		if t.EndTimestamp != nil {
 			end = *t.EndTimestamp
 		}
-		fmt.Printf("Ended tag %d (%s=%s) on SBOM %d version %d at %s\n", t.ID, t.TagLabel, t.TagValue, sbomID, t.VersionID, end)
+		_, _ = fmt.Fprintf(w, "Ended tag %d (%s=%s) on SBOM %d version %d at %s\n", t.ID, t.TagLabel, t.TagValue, sbomID, t.VersionID, end)
 	}
 	if !failed && len(res.Ended) == 0 && (res.Created != nil || res.Existing != nil) {
-		fmt.Println("No other versions carried that tag")
+		_, _ = fmt.Fprintln(w, "No other versions carried that tag")
 	}
 }
 
@@ -514,11 +517,8 @@ version uploaded at or before the image version's upload time.`,
 			if opts.ImageVersionID, err = parseIDArg(args[1], "version"); err != nil {
 				return err
 			}
-			// Not parseTimestampFlag: "now" would let a redeploy of an old commit pick up versions uploaded after it.
-			if cmd.Flags().Changed("commit-time") {
-				if _, err := time.Parse(time.RFC3339, opts.CommitTime); err != nil {
-					return fmt.Errorf("invalid --commit-time: must be the commit's committer date, RFC3339 (ex: '2026-10-01T12:00:00Z'): %w", err)
-				}
+			if err := validateCommitTime(cmd, opts.CommitTime); err != nil {
+				return err
 			}
 
 			client, err := newPicoClient()
@@ -533,16 +533,180 @@ version uploaded at or before the image version's upload time.`,
 				return fmt.Errorf("failed to find the source SBOM version for SBOM #%d version #%d: %w", opts.ImageSbomID, opts.ImageVersionID, err)
 			}
 
-			out, err := json.MarshalIndent(res, "", "  ")
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(out))
+			printValueJSON(res)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&opts.CommitTime, "commit-time", "", "Committer date of the image's commit, RFC3339. High recommended in case commit sha doesn't find a match. (default: the image version's upload time, ex: '2026-10-01T12:00:00Z')")
+
+	return cmd
+}
+
+// validateCommitTime checks --commit-time when it was passed. Not parseTimestampFlag: "now" would let
+// a redeploy of an old commit pick up versions uploaded after it.
+func validateCommitTime(cmd *cobra.Command, value string) error {
+	if !cmd.Flags().Changed("commit-time") {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339, value); err != nil {
+		return fmt.Errorf("invalid --commit-time: must be the commit's committer date, RFC3339 (ex: '2026-10-01T12:00:00Z'): %w", err)
+	}
+	return nil
+}
+
+// Values of the "result" field in tag-deployment's output.
+const (
+	tagResultCreated       = "created"
+	tagResultAlreadyTagged = "already_tagged"
+	tagResultNotTagged     = "not_tagged"
+)
+
+// tagDeploymentOutput is what tag-deployment prints on stdout. Image and Source are set as each step
+// finishes, so a step that failed is left out. Source is json.RawMessage("null") when there is no
+// source SBOM.
+type tagDeploymentOutput struct {
+	Label  string       `json:"label"`
+	Value  string       `json:"value"`
+	Image  *taggedImage `json:"image,omitempty"`
+	Source any          `json:"source,omitempty"`
+}
+
+type taggedImage struct {
+	SbomID          int    `json:"sbom_id"`
+	VersionID       int    `json:"version_id"`
+	Result          string `json:"result"`
+	EndedVersionIDs []int  `json:"ended_version_ids"`
+}
+
+type taggedSource struct {
+	SbomID          int    `json:"sbom_id"`
+	Name            string `json:"name"`
+	VersionID       int    `json:"version_id,omitempty"`
+	VersionFoundBy  string `json:"version_found_by,omitempty"`
+	Result          string `json:"result"`
+	EndedVersionIDs []int  `json:"ended_version_ids"`
+	Message         string `json:"message"`
+}
+
+// moveResult maps a MoveTagResult to its "result" value and the versions it ended the tag on.
+func moveResult(res *pico.MoveTagResult) (string, []int) {
+	result := tagResultAlreadyTagged
+	if res.Created != nil {
+		result = tagResultCreated
+	}
+	ended := []int{}
+	for _, t := range res.Ended {
+		// Ended is ordered by version, and a version can hold the tag more than once.
+		if len(ended) == 0 || ended[len(ended)-1] != t.VersionID {
+			ended = append(ended, t.VersionID)
+		}
+	}
+	return result, ended
+}
+
+func picoSbomTagDeployment() *cobra.Command {
+	var label, commitTime string
+
+	cmd := &cobra.Command{
+		Use:   "tag-deployment <sbom-id> <version-id> <value>",
+		Short: "Tag a deployed image SBOM version, and its source SBOM version, with environment=<value> (or --label=<value>)",
+		Long: `The deploy step for a CI pipeline. After a version of an image SBOM is deployed, this moves the
+<label>=<value> tag to it (as move-tag does), then finds the source SBOM version deployed with it
+(as find-source-version does) and moves the tag to that too. The label is "environment" unless
+--label is given, for another place a version is deployed to (ex: 'region'). The label and value
+are any non-empty strings and are stored lowercase.
+
+Prints one JSON object on stdout describing both SBOMs, and progress on stderr. Exits 0 when the
+image version is tagged, whether or not a source version was found to tag. If the source SBOM is
+found but has no version to tag, it prints a "warning:" line on stderr. If the image SBOM is in no
+component, or its component has no source SBOM, "source" is null and the reason is on stderr.
+
+Exits non-zero on a bad argument or any API error, after printing the JSON for the steps that
+finished. If tagging the image version fails, the source SBOM is not touched.`,
+		Example: `  # After deploying version 99 of image SBOM 42 to prod:
+  kusari platform sboms tag-deployment 42 99 prod --commit-time 2026-10-01T12:00:00Z
+
+  # The same deploy, recorded by region instead:
+  kusari platform sboms tag-deployment 42 99 eu-west --label region --commit-time 2026-10-01T12:00:00Z`,
+		Args: cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sbomID, err := parseIDArg(args[0], "SBOM")
+			if err != nil {
+				return err
+			}
+			versionID, err := parseIDArg(args[1], "version")
+			if err != nil {
+				return err
+			}
+			value := args[2]
+			if label == "" || value == "" {
+				return fmt.Errorf("label and value must not be empty")
+			}
+			if err := validateCommitTime(cmd, commitTime); err != nil {
+				return err
+			}
+			// From here on errors are API errors, not usage mistakes; keep the usage text out of CI logs.
+			cmd.SilenceUsage = true
+
+			client, err := newPicoClient()
+			if err != nil {
+				return err
+			}
+
+			log := cmd.ErrOrStderr()
+			ctx := context.Background()
+			out := tagDeploymentOutput{Label: label, Value: value}
+			// A pointer, so the steps filled in below are printed on every return.
+			defer printValueJSON(&out)
+
+			imageRes, err := client.MoveSbomVersionTag(ctx, sbomID, versionID, label, value)
+			if imageRes != nil {
+				printMoveTagResult(log, imageRes, sbomID, err != nil)
+			}
+			if err != nil {
+				return fmt.Errorf("failed to move tag %s=%s on SBOM #%d: %w", label, value, sbomID, err)
+			}
+			out.Image = &taggedImage{SbomID: sbomID, VersionID: versionID}
+			out.Image.Result, out.Image.EndedVersionIDs = moveResult(imageRes)
+
+			src, err := client.FindSourceSbomVersion(ctx, pico.FindSourceSbomVersionOptions{
+				ImageSbomID: sbomID, ImageVersionID: versionID, CommitTime: commitTime, Log: log,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to find the source SBOM version for SBOM #%d version #%d: %w", sbomID, versionID, err)
+			}
+			if src == nil {
+				out.Source = json.RawMessage("null")
+				return nil
+			}
+
+			source := taggedSource{
+				SbomID: src.SbomID, Name: src.Name, VersionID: src.VersionID,
+				VersionFoundBy: src.VersionFoundBy, Message: src.Message,
+			}
+			if src.VersionID == 0 {
+				source.Result, source.EndedVersionIDs = tagResultNotTagged, []int{}
+				_, _ = fmt.Fprintf(log, "warning: Source SBOM %d (%s) was not tagged %s=%s: %s.\n", src.SbomID, src.Name, label, value, src.Message)
+				out.Source = source
+				return nil
+			}
+
+			srcRes, err := client.MoveSbomVersionTag(ctx, src.SbomID, src.VersionID, label, value)
+			if srcRes != nil {
+				printMoveTagResult(log, srcRes, src.SbomID, err != nil)
+			}
+			if err != nil {
+				return fmt.Errorf("failed to move tag %s=%s on source SBOM #%d: %w", label, value, src.SbomID, err)
+			}
+			source.Result, source.EndedVersionIDs = moveResult(srcRes)
+			out.Source = source
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&label, "label", "environment", "Tag label to move (ex: 'region')")
+	cmd.Flags().StringVar(&commitTime, "commit-time", "", "Committer date of the deployed commit, RFC3339. Used to find the source SBOM version when none is at the image version's commit (default: the image version's upload time, ex: '2026-10-01T12:00:00Z')")
 
 	return cmd
 }

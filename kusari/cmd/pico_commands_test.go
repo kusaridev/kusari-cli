@@ -416,9 +416,6 @@ func TestPicoCommands_MoveTagOutput(t *testing.T) {
 // Any other request fails the test.
 func findSourceResponder(t *testing.T) picoResponder {
 	return func(r *http.Request) (int, string) {
-		if strings.HasPrefix(r.URL.Path, "/pico/v2/components/") && r.URL.Query().Get("page") != "0" {
-			return http.StatusOK, `{"sboms":[],"total_items":0,"total_pages":1,"current_page":1}`
-		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/22":
 			return http.StatusOK, `{"id":22,"name":"image","component_id":9}`
@@ -438,13 +435,14 @@ func findSourceResponder(t *testing.T) picoResponder {
 	}
 }
 
-// runFindSource runs find-source-version and returns what it printed to stdout and to the command's
-// error stream. Nothing may go to the command's own output stream: the workflow reads stdout as JSON.
-func runFindSource(t *testing.T, args ...string) (stdout, stderr string, err error) {
+// runSbomsJSON runs an sboms subcommand that prints JSON, and returns what it printed to stdout and to
+// the command's error stream. Nothing may go to the command's own output stream: pipelines read stdout
+// as JSON.
+func runSbomsJSON(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	cmd := sboms()
 	var cobraOut, cobraErr bytes.Buffer
-	cmd.SetArgs(append([]string{"find-source-version"}, args...))
+	cmd.SetArgs(args)
 	cmd.SetOut(&cobraOut)
 	cmd.SetErr(&cobraErr)
 	stdout = captureStdout(t, func() { err = cmd.Execute() })
@@ -455,7 +453,7 @@ func runFindSource(t *testing.T, args ...string) (stdout, stderr string, err err
 func TestPicoCommands_FindSourceVersion(t *testing.T) {
 	requests := fakePico(t, findSourceResponder(t))
 
-	out, log, err := runFindSource(t, "22", "902", "--commit-time", "2026-10-01T14:34:56+02:00")
+	out, log, err := runSbomsJSON(t, "find-source-version", "22", "902", "--commit-time", "2026-10-01T14:34:56+02:00")
 	require.NoError(t, err)
 
 	assert.JSONEq(t, `{"sbom_id": 14, "name": "web-app", "version_id": 4790,
@@ -481,8 +479,70 @@ func TestPicoCommands_FindSourceVersion(t *testing.T) {
 func TestPicoCommands_FindSourceVersionNothingToTagPrintsNull(t *testing.T) {
 	fakePico(t, findSourceResponder(t))
 
-	out, log, err := runFindSource(t, "21", "901")
+	out, log, err := runSbomsJSON(t, "find-source-version", "21", "901")
 	require.NoError(t, err)
 	assert.Equal(t, "null\n", out, "pipelines check for a literal null")
 	assert.Contains(t, log, "SBOM 21 is not in a component")
+}
+
+// tagDeploymentResponder fakes what tag-deployment calls for image SBOM 42 version 99. Version 98
+// holds environment=prod, which is ended; creating the tag on 99 answers createStatus. SBOM 42 is in
+// component 9, whose source SBOM 14 has no version at or before the commit time. Any other request,
+// such as a tag on SBOM 14, fails the test.
+func tagDeploymentResponder(t *testing.T, createStatus int) picoResponder {
+	return func(r *http.Request) (int, string) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/42/versions":
+			return http.StatusOK, `{"versions":[{"id":98,"tags":[{"id":12,"version_id":98,"tag_label":"environment","tag_value":"prod","start_timestamp":"2026-09-01T00:00:00Z"}]}],"total_items":1,"total_pages":1,"current_page":0}`
+		case r.Method == http.MethodPost && r.URL.Path == "/pico/v2/sboms/42/versions/99/tags":
+			return createStatus, `{"id":15,"version_id":99,"tag_label":"environment","tag_value":"prod","start_timestamp":"2026-10-01T12:30:00Z"}`
+		case r.Method == http.MethodPatch && r.URL.Path == "/pico/v2/sboms/42/versions/98/tags/12":
+			return http.StatusOK, `{}`
+		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/42":
+			return http.StatusOK, `{"id":42,"name":"app-image","component_id":9}`
+		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/components/9/sboms":
+			return http.StatusOK, `{"sboms":[{"id":42,"name":"app-image","sbom_type":"image"},{"id":14,"name":"app-source","sbom_type":"source"}],"total_items":2,"total_pages":1,"current_page":0}`
+		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/42/versions/99":
+			return http.StatusOK, `{"id":99,"sbom_id":42,"commit_sha":"aaa","first_ingested":"2026-10-01T12:20:00Z"}`
+		case r.Method == http.MethodPost && r.URL.Path == "/pico/v2/sboms/id/by-identifier":
+			return http.StatusNotFound, `{"error":"not found"}`
+		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/14/versions":
+			return http.StatusOK, `{"versions":[],"total_items":0,"total_pages":0,"current_page":0}`
+		}
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.RequestURI())
+		return http.StatusInternalServerError, `{}`
+	}
+}
+
+// Wrong code this catches: exiting non-zero, or leaving out the warning, when only the source SBOM
+// cannot be tagged.
+func TestPicoCommands_TagDeploymentSourceNotTaggedWarnsAndPasses(t *testing.T) {
+	fakePico(t, tagDeploymentResponder(t, http.StatusCreated))
+
+	out, log, err := runSbomsJSON(t, "tag-deployment", "42", "99", "prod", "--commit-time", "2026-10-01T12:00:00Z")
+	require.NoError(t, err)
+
+	assert.JSONEq(t, `{"label": "environment", "value": "prod",
+		"image": {"sbom_id": 42, "version_id": 99, "result": "created", "ended_version_ids": [98]},
+		"source": {"sbom_id": 14, "name": "app-source", "result": "not_tagged", "ended_version_ids": [],
+			"message": "no version at commit aaa; no version at or before 2026-10-01T12:05:00Z (5 minutes after the commit time), so there is no version to tag"}}`, out)
+	assert.Contains(t, log, "Created tag 15 (environment=prod) on SBOM 42 version 99")
+	assert.Contains(t, log, "warning: Source SBOM 14 (app-source) was not tagged environment=prod: no version at commit aaa; no version at or before 2026-10-01T12:05:00Z (5 minutes after the commit time), so there is no version to tag.\n")
+}
+
+// Wrong code this catches: going on to find and tag the source SBOM after the image tag failed, or
+// ignoring --label and moving environment=<value>.
+func TestPicoCommands_TagDeploymentImageFailureLeavesSourceAlone(t *testing.T) {
+	requests := fakePico(t, tagDeploymentResponder(t, http.StatusInternalServerError))
+
+	out, _, err := runSbomsJSON(t, "tag-deployment", "42", "99", "eu-west", "--label", "region")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to move tag region=eu-west on SBOM #42")
+
+	assert.JSONEq(t, `{"label": "region", "value": "eu-west"}`, out, "the failed image step is left out")
+	got := requests()
+	require.Len(t, got, 2, "only the image listing and the failed create")
+	assert.Equal(t, "region", got[0].Query.Get("sbom_tag_label"))
+	assert.Equal(t, http.MethodPost, got[1].Method)
+	assert.JSONEq(t, `{"tag_label":"region","tag_value":"eu-west"}`, got[1].Body)
 }

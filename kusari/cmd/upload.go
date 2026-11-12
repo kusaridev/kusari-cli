@@ -63,7 +63,7 @@ func addUploadFlags(cmd *cobra.Command, includeFilePath bool) {
 	cmd.Flags().StringVar(&uploadRepo, "repo", "", "Repository name in the forge")
 	cmd.Flags().StringVar(&uploadSubrepoPath, "subrepo-path", "", "Path to subrepo within the repository (e.g., app/frontend)")
 	cmd.Flags().StringVar(&uploadCommitSha, "commit-sha", "", "Commit SHA (from git) (optional, for SBOMs only)")
-	cmd.Flags().StringVar(&uploadResultsFile, "results-file", "", "Write machine-readable JSON results (software and component IDs for each ingested SBOM) to this file (requires --wait)")
+	cmd.Flags().StringVar(&uploadResultsFile, "results-file", "", "Write machine-readable JSON results (SBOM, version and component IDs for each ingested SBOM) to this file (requires --wait)")
 	cmd.Flags().BoolVar(&uploadMapComponents, "map-components", false, "After ingestion, ensure each ingested software is mapped to a component: create (or reuse) a component named after the software and assign the software to it (requires --wait)")
 }
 
