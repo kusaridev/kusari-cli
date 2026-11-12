@@ -38,8 +38,10 @@ version deployed with it. The environment can be any value (`prod`, `staging`, .
 lowercase. `--commit-time` is the deployed commit's committer date. It is used only when the source
 SBOM has no version at the commit recorded on the image version, and it cannot be `now`.
 
-Get the SBOM and version IDs of the deployed image from your upload, or with
-`kusari platform sboms id-by-identifier --commit-sha <sha>`.
+The version ID changes with every upload, so pass the one for this deploy from the same pipeline;
+don't store it as a fixed CI variable. To look it up from the deployed commit, run
+`kusari platform sboms id-by-identifier --commit-sha <sha>`. It lists every SBOM built from that
+commit, so pick the row whose `sbom_id` is your image SBOM.
 
 Progress goes to stderr. stdout is one JSON object:
 
@@ -87,8 +89,9 @@ and include:
 | `platform_data_write` | Create tags, and find versions by commit |
 | `software_metadata_write` | End the tag on other versions |
 
-GitLab CI job, with `KUSARI_CLIENT_ID`, `KUSARI_CLIENT_SECRET`, `SBOM_ID` and `VERSION_ID` set as
-CI/CD variables:
+GitLab CI job, with `KUSARI_CLIENT_ID` and `KUSARI_CLIENT_SECRET` set as CI/CD variables, and
+`SBOM_ID` and `VERSION_ID` passed from the deploy job (for example in its `artifacts:reports:dotenv`
+file):
 
 ```yaml
 tag-environment:
@@ -102,11 +105,12 @@ tag-environment:
 ```
 
 Jenkins `sh` step, after the deploy step, with the credentials bound to `KUSARI_CLIENT_ID` and
-`KUSARI_CLIENT_SECRET`:
+`KUSARI_CLIENT_SECRET`, and `SBOM_ID` and `VERSION_ID` set from this build:
 
 ```groovy
 sh '''
   go install github.com/kusaridev/kusari-cli/v2/kusari@latest
+  export PATH="$PATH:$(go env GOPATH)/bin"
   kusari auth login --client-id "$KUSARI_CLIENT_ID" --client-secret "$KUSARI_CLIENT_SECRET"
   kusari platform sboms tag-environment "$SBOM_ID" "$VERSION_ID" prod --commit-time "$(git log -1 --format=%cI)"
 '''
