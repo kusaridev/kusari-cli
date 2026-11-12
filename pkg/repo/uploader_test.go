@@ -966,6 +966,13 @@ func TestLookupSoftwareAndComponentIDs(t *testing.T) {
 	if r.SbomID == nil || *r.SbomID != 7 {
 		t.Errorf("Expected SBOM ID 7, got %v", r.SbomID)
 	}
+	// The v2 names swap the meaning of the v1 ones: the v1 software ID is the v2 SBOM ID.
+	if r.V2SbomID == nil || *r.V2SbomID != 42 {
+		t.Errorf("Expected v2 SBOM ID 42 (the software ID), got %v", r.V2SbomID)
+	}
+	if r.V2VersionID == nil || *r.V2VersionID != 7 {
+		t.Errorf("Expected v2 version ID 7 (the v1 SBOM ID), got %v", r.V2VersionID)
+	}
 	if r.ComponentID == nil || *r.ComponentID != 9 {
 		t.Errorf("Expected component ID 9, got %v", r.ComponentID)
 	}
@@ -991,6 +998,8 @@ func TestWriteResultsFile(t *testing.T) {
 					SbomID:        int64Ptr(7),
 					ComponentID:   int64Ptr(9),
 					ComponentName: strPtr("my-component"),
+					V2SbomID:      int64Ptr(42),
+					V2VersionID:   int64Ptr(7),
 				},
 			},
 			expected: `{
@@ -1002,7 +1011,9 @@ func TestWriteResultsFile(t *testing.T) {
       "software_id": 42,
       "software_name": "my-app",
       "component_id": 9,
-      "component_name": "my-component"
+      "component_name": "my-component",
+      "v2_sbom_id": 42,
+      "v2_version_id": 7
     }
   ]
 }
@@ -1016,6 +1027,8 @@ func TestWriteResultsFile(t *testing.T) {
 					SbomSubject:  "my-app",
 					SoftwareID:   int64Ptr(42),
 					SbomID:       int64Ptr(7),
+					V2SbomID:     int64Ptr(42),
+					V2VersionID:  int64Ptr(7),
 				},
 			},
 			expected: `{
@@ -1027,7 +1040,9 @@ func TestWriteResultsFile(t *testing.T) {
       "software_id": 42,
       "software_name": "my-app",
       "component_id": null,
-      "component_name": null
+      "component_name": null,
+      "v2_sbom_id": 42,
+      "v2_version_id": 7
     }
   ]
 }

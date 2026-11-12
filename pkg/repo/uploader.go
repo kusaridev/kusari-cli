@@ -109,7 +109,11 @@ type softwareComponentInfo struct {
 // null when the lookup failed (see Error) and component fields are null when
 // the software is not mapped to a component. SoftwareName always equals
 // SbomSubject — the SBOM subject is surfaced as "software name" in the
-// frontend, so both names are provided for customer clarity.
+// frontend, so both names are provided for customer clarity. Likewise
+// V2SbomID always equals SoftwareID and V2VersionID always equals SbomID:
+// the older names come from the v1 API, where an SBOM was "software" and a
+// version was an "SBOM", while the v2 fields match the IDs that
+// `kusari platform sboms` commands take.
 // DO NOT RENAME THESE - CUSTOMERS RELY ON NAMES FOR POST-INGESTION ACTIONS IN CI/CD
 // (adding new fields is fine - the contract is additive)
 type sbomResult struct {
@@ -120,6 +124,8 @@ type sbomResult struct {
 	SoftwareName  string  `json:"software_name"`
 	ComponentID   *int64  `json:"component_id"`
 	ComponentName *string `json:"component_name"`
+	V2SbomID      *int64  `json:"v2_sbom_id"`
+	V2VersionID   *int64  `json:"v2_version_id"`
 	Error         string  `json:"error,omitempty"`
 
 	// Unexported: not part of the results-file contract. Carries the ssau
@@ -863,6 +869,8 @@ func lookupSoftwareAndComponentIDs(ctx context.Context, client *http.Client, acc
 			}
 			result.SoftwareID = &ids.SoftwareID
 			result.SbomID = &ids.SbomID
+			result.V2SbomID = &ids.SoftwareID
+			result.V2VersionID = &ids.SbomID
 
 			component, err := getSoftwareComponentInfo(ctx, client, accessToken, tenantEndpoint, ids.SoftwareID)
 			if err != nil {
