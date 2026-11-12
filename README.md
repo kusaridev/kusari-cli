@@ -40,9 +40,14 @@ stored lowercase. `--commit-time` is the deployed commit's committer date. It is
 SBOM has no version at the commit recorded on the image version, and it cannot be `now`.
 
 The version ID changes with every upload, so pass the one for this deploy from the same pipeline;
-don't store it as a fixed CI variable. To look it up from the deployed commit, run
-`kusari platform sboms id-by-identifier --commit-sha <sha>`. It lists every SBOM built from that
-commit, so pick the row whose `sbom_id` is your image SBOM.
+don't store it as a fixed CI variable. The simplest source is the upload itself:
+`kusari platform upload --results-file results.json` writes one entry per SBOM, where
+**`software_id` is the SBOM ID and `sbom_id` is the version ID** (the names come from an older API
+and can't change). Pick your image's entry by `sbom_subject` or `file_path`. Its IDs are `null` if
+the lookup failed, with the reason in `error`, and collecting them needs `platform_data_read` on the
+uploading key. Or look them up from the deployed commit with
+`kusari platform sboms id-by-identifier --commit-sha <sha>`, which lists every SBOM built from that
+commit; there `sbom_id` and `version_id` mean what they say.
 
 Progress goes to stderr. stdout is one JSON object:
 
@@ -91,15 +96,29 @@ and include:
 | `platform_data_write` | Create tags, and find versions by commit |
 | `software_metadata_write` | End the tag on other versions |
 
-GitLab CI job, with `KUSARI_CLIENT_ID` and `KUSARI_CLIENT_SECRET` set as CI/CD variables, and
-`SBOM_ID` and `VERSION_ID` passed from the deploy job (for example in its `artifacts:reports:dotenv`
-file):
+GitLab CI jobs, with `KUSARI_CLIENT_ID` and `KUSARI_CLIENT_SECRET` set as CI/CD variables. The
+build job uploads the image SBOM and passes its IDs on in a dotenv file:
 
 ```yaml
+upload-sbom:
+  stage: build
+  image: golang:1.26
+  script:
+    - apt-get update && apt-get install -y jq
+    - go install github.com/kusaridev/kusari-cli/v2/kusari@latest
+    - kusari auth login --client-id "$KUSARI_CLIENT_ID" --client-secret "$KUSARI_CLIENT_SECRET"
+    - kusari platform upload --file-path image.cdx.json --results-file results.json
+    - >-
+      jq -r '.sboms[] | select(.file_path | endswith("image.cdx.json"))
+      | "SBOM_ID=\(.software_id)\nVERSION_ID=\(.sbom_id)"' results.json > kusari.env
+  artifacts:
+    reports:
+      dotenv: kusari.env
+
 tag-deployment:
   stage: deploy
   image: golang:1.26
-  needs: [deploy-prod]
+  needs: [upload-sbom, deploy-prod]
   script:
     - go install github.com/kusaridev/kusari-cli/v2/kusari@latest
     - kusari auth login --client-id "$KUSARI_CLIENT_ID" --client-secret "$KUSARI_CLIENT_SECRET"
