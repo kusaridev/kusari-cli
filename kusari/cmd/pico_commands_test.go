@@ -416,9 +416,6 @@ func TestPicoCommands_MoveTagOutput(t *testing.T) {
 // Any other request fails the test.
 func findSourceResponder(t *testing.T) picoResponder {
 	return func(r *http.Request) (int, string) {
-		if strings.HasPrefix(r.URL.Path, "/pico/v2/components/") && r.URL.Query().Get("page") != "0" {
-			return http.StatusOK, `{"sboms":[],"total_items":0,"total_pages":1,"current_page":1}`
-		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/22":
 			return http.StatusOK, `{"id":22,"name":"image","component_id":9}`
@@ -494,9 +491,6 @@ func TestPicoCommands_FindSourceVersionNothingToTagPrintsNull(t *testing.T) {
 // such as a tag on SBOM 14, fails the test.
 func tagEnvironmentResponder(t *testing.T, createStatus int) picoResponder {
 	return func(r *http.Request) (int, string) {
-		if strings.HasPrefix(r.URL.Path, "/pico/v2/components/") && r.URL.Query().Get("page") != "0" {
-			return http.StatusOK, `{"sboms":[],"total_items":0,"total_pages":1,"current_page":1}`
-		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/42/versions":
 			return http.StatusOK, `{"versions":[{"id":98,"tags":[{"id":12,"version_id":98,"tag_label":"environment","tag_value":"prod","start_timestamp":"2026-09-01T00:00:00Z"}]}],"total_items":1,"total_pages":1,"current_page":0}`

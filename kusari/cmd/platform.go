@@ -52,6 +52,13 @@ func printJSON(raw json.RawMessage) error {
 	return nil
 }
 
+// printValueJSON pretty-prints v to stdout as JSON. Only pass values json.Marshal cannot fail on
+// (structs, maps, slices and scalars without channels, funcs or custom marshalers).
+func printValueJSON(v any) {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(b))
+}
+
 // parseIDArg parses a positional Kusari Platform ID argument, naming the ID kind (e.g. "SBOM") in the error.
 func parseIDArg(arg, name string) (int, error) {
 	id, err := strconv.Atoi(arg)

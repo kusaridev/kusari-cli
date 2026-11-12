@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -533,11 +532,7 @@ version uploaded at or before the image version's upload time.`,
 				return fmt.Errorf("failed to find the source SBOM version for SBOM #%d version #%d: %w", opts.ImageSbomID, opts.ImageVersionID, err)
 			}
 
-			out, err := json.MarshalIndent(res, "", "  ")
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(out))
+			printValueJSON(res)
 			return nil
 		},
 	}
@@ -647,30 +642,18 @@ finished. If tagging the image version fails, the source SBOM is not touched.`,
 			const label = "environment"
 			log := cmd.ErrOrStderr()
 			ctx := context.Background()
-			// Keys are added as each step finishes, so on an error the output holds only what finished.
-			// A map marshals its keys sorted, which is the order wanted: environment, image, source.
+			// Keys are added as each step finishes and the map is printed on every return, so on an error
+			// the output holds only what finished. A map marshals its keys sorted, which is the order
+			// wanted: environment, image, source.
 			out := map[string]any{"environment": env}
-			printOut := func() error {
-				b, err := json.MarshalIndent(out, "", "  ")
-				if err != nil {
-					return err
-				}
-				fmt.Println(string(b))
-				return nil
-			}
-			fail := func(err error) error {
-				if printErr := printOut(); printErr != nil {
-					return printErr
-				}
-				return err
-			}
+			defer printValueJSON(out)
 
 			imageRes, err := client.MoveSbomVersionTag(ctx, sbomID, versionID, label, env)
 			if imageRes != nil {
 				printMoveTagResult(log, imageRes, sbomID, err != nil)
 			}
 			if err != nil {
-				return fail(fmt.Errorf("failed to move tag %s=%s on SBOM #%d: %w", label, env, sbomID, err))
+				return fmt.Errorf("failed to move tag %s=%s on SBOM #%d: %w", label, env, sbomID, err)
 			}
 			image := taggedImage{SbomID: sbomID, VersionID: versionID}
 			image.Result, image.EndedVersionIDs = moveResult(imageRes)
@@ -680,11 +663,11 @@ finished. If tagging the image version fails, the source SBOM is not touched.`,
 				ImageSbomID: sbomID, ImageVersionID: versionID, CommitTime: commitTime, Log: log,
 			})
 			if err != nil {
-				return fail(fmt.Errorf("failed to find the source SBOM version for SBOM #%d version #%d: %w", sbomID, versionID, err))
+				return fmt.Errorf("failed to find the source SBOM version for SBOM #%d version #%d: %w", sbomID, versionID, err)
 			}
 			if src == nil {
 				out["source"] = nil
-				return printOut()
+				return nil
 			}
 
 			source := taggedSource{
@@ -695,7 +678,7 @@ finished. If tagging the image version fails, the source SBOM is not touched.`,
 				source.Result, source.EndedVersionIDs = tagResultNotTagged, []int{}
 				_, _ = fmt.Fprintf(log, "warning: Source SBOM %d (%s) was not tagged %s=%s: %s.\n", src.SbomID, src.Name, label, env, src.Message)
 				out["source"] = source
-				return printOut()
+				return nil
 			}
 
 			srcRes, err := client.MoveSbomVersionTag(ctx, src.SbomID, src.VersionID, label, env)
@@ -703,11 +686,11 @@ finished. If tagging the image version fails, the source SBOM is not touched.`,
 				printMoveTagResult(log, srcRes, src.SbomID, err != nil)
 			}
 			if err != nil {
-				return fail(fmt.Errorf("failed to move tag %s=%s on source SBOM #%d: %w", label, env, src.SbomID, err))
+				return fmt.Errorf("failed to move tag %s=%s on source SBOM #%d: %w", label, env, src.SbomID, err)
 			}
 			source.Result, source.EndedVersionIDs = moveResult(srcRes)
 			out["source"] = source
-			return printOut()
+			return nil
 		},
 	}
 
