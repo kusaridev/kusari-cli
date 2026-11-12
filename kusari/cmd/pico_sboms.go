@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -31,7 +32,7 @@ func sboms() *cobra.Command {
 	cmd.AddCommand(picoSbomVersionDeleteTag())
 	cmd.AddCommand(picoSbomVersionMoveTag())
 	cmd.AddCommand(picoSbomFindSourceVersion())
-	cmd.AddCommand(picoSbomTagEnvironment())
+	cmd.AddCommand(picoSbomTagDeployment())
 
 	return cmd
 }
@@ -554,12 +555,22 @@ func validateCommitTime(cmd *cobra.Command, value string) error {
 	return nil
 }
 
-// Values of the "result" field in tag-environment's output.
+// Values of the "result" field in tag-deployment's output.
 const (
 	tagResultCreated       = "created"
 	tagResultAlreadyTagged = "already_tagged"
 	tagResultNotTagged     = "not_tagged"
 )
+
+// tagDeploymentOutput is what tag-deployment prints on stdout. Image and Source are set as each step
+// finishes, so a step that failed is left out. Source is json.RawMessage("null") when there is no
+// source SBOM.
+type tagDeploymentOutput struct {
+	Label  string       `json:"label"`
+	Value  string       `json:"value"`
+	Image  *taggedImage `json:"image,omitempty"`
+	Source any          `json:"source,omitempty"`
+}
 
 type taggedImage struct {
 	SbomID          int    `json:"sbom_id"`
@@ -594,26 +605,30 @@ func moveResult(res *pico.MoveTagResult) (string, []int) {
 	return result, ended
 }
 
-func picoSbomTagEnvironment() *cobra.Command {
-	var commitTime string
+func picoSbomTagDeployment() *cobra.Command {
+	var label, commitTime string
 
 	cmd := &cobra.Command{
-		Use:   "tag-environment <sbom-id> <version-id> <environment>",
-		Short: "Tag a deployed image SBOM version, and its source SBOM version, with environment=<environment>",
+		Use:   "tag-deployment <sbom-id> <version-id> <value>",
+		Short: "Tag a deployed image SBOM version, and its source SBOM version, with environment=<value> (or --label=<value>)",
 		Long: `The deploy step for a CI pipeline. After a version of an image SBOM is deployed, this moves the
-environment=<environment> tag to it (as move-tag does), then finds the source SBOM version deployed
-with it (as find-source-version does) and moves the tag to that too. The label is always
-"environment"; the value is any non-empty string and is stored lowercase.
+<label>=<value> tag to it (as move-tag does), then finds the source SBOM version deployed with it
+(as find-source-version does) and moves the tag to that too. The label is "environment" unless
+--label is given, for another place a version is deployed to (ex: 'region'). The label and value
+are any non-empty strings and are stored lowercase.
 
 Prints one JSON object on stdout describing both SBOMs, and progress on stderr. Exits 0 when the
-image version is tagged, whether or not a source version was. If the source SBOM is found but has no
-version to tag, it prints a "warning:" line on stderr. If the image SBOM is in no component, or its
-component has no source SBOM, "source" is null and the reason is on stderr.
+image version is tagged, whether or not a source version was found to tag. If the source SBOM is
+found but has no version to tag, it prints a "warning:" line on stderr. If the image SBOM is in no
+component, or its component has no source SBOM, "source" is null and the reason is on stderr.
 
 Exits non-zero on a bad argument or any API error, after printing the JSON for the steps that
 finished. If tagging the image version fails, the source SBOM is not touched.`,
 		Example: `  # After deploying version 99 of image SBOM 42 to prod:
-  kusari platform sboms tag-environment 42 99 prod --commit-time 2026-10-01T12:00:00Z`,
+  kusari platform sboms tag-deployment 42 99 prod --commit-time 2026-10-01T12:00:00Z
+
+  # The same deploy, recorded by region instead:
+  kusari platform sboms tag-deployment 42 99 eu-west --label region --commit-time 2026-10-01T12:00:00Z`,
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sbomID, err := parseIDArg(args[0], "SBOM")
@@ -624,9 +639,9 @@ finished. If tagging the image version fails, the source SBOM is not touched.`,
 			if err != nil {
 				return err
 			}
-			env := args[2]
-			if env == "" {
-				return fmt.Errorf("environment must not be empty")
+			value := args[2]
+			if label == "" || value == "" {
+				return fmt.Errorf("label and value must not be empty")
 			}
 			if err := validateCommitTime(cmd, commitTime); err != nil {
 				return err
@@ -639,25 +654,21 @@ finished. If tagging the image version fails, the source SBOM is not touched.`,
 				return err
 			}
 
-			const label = "environment"
 			log := cmd.ErrOrStderr()
 			ctx := context.Background()
-			// Keys are added as each step finishes and the map is printed on every return, so on an error
-			// the output holds only what finished. A map marshals its keys sorted, which is the order
-			// wanted: environment, image, source.
-			out := map[string]any{"environment": env}
-			defer printValueJSON(out)
+			out := tagDeploymentOutput{Label: label, Value: value}
+			// A pointer, so the steps filled in below are printed on every return.
+			defer printValueJSON(&out)
 
-			imageRes, err := client.MoveSbomVersionTag(ctx, sbomID, versionID, label, env)
+			imageRes, err := client.MoveSbomVersionTag(ctx, sbomID, versionID, label, value)
 			if imageRes != nil {
 				printMoveTagResult(log, imageRes, sbomID, err != nil)
 			}
 			if err != nil {
-				return fmt.Errorf("failed to move tag %s=%s on SBOM #%d: %w", label, env, sbomID, err)
+				return fmt.Errorf("failed to move tag %s=%s on SBOM #%d: %w", label, value, sbomID, err)
 			}
-			image := taggedImage{SbomID: sbomID, VersionID: versionID}
-			image.Result, image.EndedVersionIDs = moveResult(imageRes)
-			out["image"] = image
+			out.Image = &taggedImage{SbomID: sbomID, VersionID: versionID}
+			out.Image.Result, out.Image.EndedVersionIDs = moveResult(imageRes)
 
 			src, err := client.FindSourceSbomVersion(ctx, pico.FindSourceSbomVersionOptions{
 				ImageSbomID: sbomID, ImageVersionID: versionID, CommitTime: commitTime, Log: log,
@@ -666,7 +677,7 @@ finished. If tagging the image version fails, the source SBOM is not touched.`,
 				return fmt.Errorf("failed to find the source SBOM version for SBOM #%d version #%d: %w", sbomID, versionID, err)
 			}
 			if src == nil {
-				out["source"] = nil
+				out.Source = json.RawMessage("null")
 				return nil
 			}
 
@@ -676,24 +687,25 @@ finished. If tagging the image version fails, the source SBOM is not touched.`,
 			}
 			if src.VersionID == 0 {
 				source.Result, source.EndedVersionIDs = tagResultNotTagged, []int{}
-				_, _ = fmt.Fprintf(log, "warning: Source SBOM %d (%s) was not tagged %s=%s: %s.\n", src.SbomID, src.Name, label, env, src.Message)
-				out["source"] = source
+				_, _ = fmt.Fprintf(log, "warning: Source SBOM %d (%s) was not tagged %s=%s: %s.\n", src.SbomID, src.Name, label, value, src.Message)
+				out.Source = source
 				return nil
 			}
 
-			srcRes, err := client.MoveSbomVersionTag(ctx, src.SbomID, src.VersionID, label, env)
+			srcRes, err := client.MoveSbomVersionTag(ctx, src.SbomID, src.VersionID, label, value)
 			if srcRes != nil {
 				printMoveTagResult(log, srcRes, src.SbomID, err != nil)
 			}
 			if err != nil {
-				return fmt.Errorf("failed to move tag %s=%s on source SBOM #%d: %w", label, env, src.SbomID, err)
+				return fmt.Errorf("failed to move tag %s=%s on source SBOM #%d: %w", label, value, src.SbomID, err)
 			}
 			source.Result, source.EndedVersionIDs = moveResult(srcRes)
-			out["source"] = source
+			out.Source = source
 			return nil
 		},
 	}
 
+	cmd.Flags().StringVar(&label, "label", "environment", "Tag label to move (ex: 'region')")
 	cmd.Flags().StringVar(&commitTime, "commit-time", "", "Committer date of the deployed commit, RFC3339. Used to find the source SBOM version when none is at the image version's commit (default: the image version's upload time, ex: '2026-10-01T12:00:00Z')")
 
 	return cmd

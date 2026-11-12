@@ -26,16 +26,17 @@ For complete setup instructions, templates, and reusable workflows for both GitL
 
 ## Tagging deployments from CI
 
-After a deploy, record which image SBOM version is running in which environment:
+After a deploy, record which image SBOM version is running where:
 
 ```bash
-kusari platform sboms tag-environment <sbom-id> <version-id> <environment> --commit-time <RFC3339>
+kusari platform sboms tag-deployment <sbom-id> <version-id> <value> [--label <label>] --commit-time <RFC3339>
 ```
 
-It tags the image SBOM version `environment=<environment>` and ends that tag on the SBOM's other
-versions. It then finds the source SBOM in the same component and does the same for the source SBOM
-version deployed with it. The environment can be any value (`prod`, `staging`, ...); it is stored
-lowercase. `--commit-time` is the deployed commit's committer date. It is used only when the source
+It tags the image SBOM version `<label>=<value>` and ends that tag on the SBOM's other versions. It
+then finds the source SBOM in the same component and does the same for the source SBOM version
+deployed with it. The label is `environment` unless you pass `--label` (for example `--label region`
+to record `region=eu-west`). The label and value can be any values (`prod`, `staging`, ...); they are
+stored lowercase. `--commit-time` is the deployed commit's committer date. It is used only when the source
 SBOM has no version at the commit recorded on the image version, and it cannot be `now`.
 
 The version ID changes with every upload, so pass the one for this deploy from the same pipeline;
@@ -47,7 +48,8 @@ Progress goes to stderr. stdout is one JSON object:
 
 ```json
 {
-  "environment": "prod",
+  "label": "environment",
+  "value": "prod",
   "image": {
     "sbom_id": 42,
     "version_id": 99,
@@ -94,14 +96,14 @@ GitLab CI job, with `KUSARI_CLIENT_ID` and `KUSARI_CLIENT_SECRET` set as CI/CD v
 file):
 
 ```yaml
-tag-environment:
+tag-deployment:
   stage: deploy
   image: golang:1.26
   needs: [deploy-prod]
   script:
     - go install github.com/kusaridev/kusari-cli/v2/kusari@latest
     - kusari auth login --client-id "$KUSARI_CLIENT_ID" --client-secret "$KUSARI_CLIENT_SECRET"
-    - kusari platform sboms tag-environment "$SBOM_ID" "$VERSION_ID" prod --commit-time "$CI_COMMIT_TIMESTAMP"
+    - kusari platform sboms tag-deployment "$SBOM_ID" "$VERSION_ID" prod --commit-time "$CI_COMMIT_TIMESTAMP"
 ```
 
 Jenkins `sh` step, after the deploy step, with the credentials bound to `KUSARI_CLIENT_ID` and
@@ -112,7 +114,7 @@ sh '''
   go install github.com/kusaridev/kusari-cli/v2/kusari@latest
   export PATH="$PATH:$(go env GOPATH)/bin"
   kusari auth login --client-id "$KUSARI_CLIENT_ID" --client-secret "$KUSARI_CLIENT_SECRET"
-  kusari platform sboms tag-environment "$SBOM_ID" "$VERSION_ID" prod --commit-time "$(git log -1 --format=%cI)"
+  kusari platform sboms tag-deployment "$SBOM_ID" "$VERSION_ID" prod --commit-time "$(git log -1 --format=%cI)"
 '''
 ```
 

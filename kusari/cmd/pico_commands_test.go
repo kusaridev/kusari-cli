@@ -485,11 +485,11 @@ func TestPicoCommands_FindSourceVersionNothingToTagPrintsNull(t *testing.T) {
 	assert.Contains(t, log, "SBOM 21 is not in a component")
 }
 
-// tagEnvironmentResponder fakes what tag-environment calls for image SBOM 42 version 99. Version 98
+// tagDeploymentResponder fakes what tag-deployment calls for image SBOM 42 version 99. Version 98
 // holds environment=prod, which is ended; creating the tag on 99 answers createStatus. SBOM 42 is in
 // component 9, whose source SBOM 14 has no version at or before the commit time. Any other request,
 // such as a tag on SBOM 14, fails the test.
-func tagEnvironmentResponder(t *testing.T, createStatus int) picoResponder {
+func tagDeploymentResponder(t *testing.T, createStatus int) picoResponder {
 	return func(r *http.Request) (int, string) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/pico/v2/sboms/42/versions":
@@ -516,13 +516,13 @@ func tagEnvironmentResponder(t *testing.T, createStatus int) picoResponder {
 
 // Wrong code this catches: exiting non-zero, or leaving out the warning, when only the source SBOM
 // cannot be tagged.
-func TestPicoCommands_TagEnvironmentSourceNotTaggedWarnsAndPasses(t *testing.T) {
-	fakePico(t, tagEnvironmentResponder(t, http.StatusCreated))
+func TestPicoCommands_TagDeploymentSourceNotTaggedWarnsAndPasses(t *testing.T) {
+	fakePico(t, tagDeploymentResponder(t, http.StatusCreated))
 
-	out, log, err := runSbomsJSON(t, "tag-environment", "42", "99", "prod", "--commit-time", "2026-10-01T12:00:00Z")
+	out, log, err := runSbomsJSON(t, "tag-deployment", "42", "99", "prod", "--commit-time", "2026-10-01T12:00:00Z")
 	require.NoError(t, err)
 
-	assert.JSONEq(t, `{"environment": "prod",
+	assert.JSONEq(t, `{"label": "environment", "value": "prod",
 		"image": {"sbom_id": 42, "version_id": 99, "result": "created", "ended_version_ids": [98]},
 		"source": {"sbom_id": 14, "name": "app-source", "result": "not_tagged", "ended_version_ids": [],
 			"message": "no version at commit aaa; no version at or before 2026-10-01T12:05:00Z (5 minutes after the commit time), so there is no version to tag"}}`, out)
@@ -530,16 +530,19 @@ func TestPicoCommands_TagEnvironmentSourceNotTaggedWarnsAndPasses(t *testing.T) 
 	assert.Contains(t, log, "warning: Source SBOM 14 (app-source) was not tagged environment=prod: no version at commit aaa; no version at or before 2026-10-01T12:05:00Z (5 minutes after the commit time), so there is no version to tag.\n")
 }
 
-// Wrong code this catches: going on to find and tag the source SBOM after the image tag failed.
-func TestPicoCommands_TagEnvironmentImageFailureLeavesSourceAlone(t *testing.T) {
-	requests := fakePico(t, tagEnvironmentResponder(t, http.StatusInternalServerError))
+// Wrong code this catches: going on to find and tag the source SBOM after the image tag failed, or
+// ignoring --label and moving environment=<value>.
+func TestPicoCommands_TagDeploymentImageFailureLeavesSourceAlone(t *testing.T) {
+	requests := fakePico(t, tagDeploymentResponder(t, http.StatusInternalServerError))
 
-	out, _, err := runSbomsJSON(t, "tag-environment", "42", "99", "prod")
+	out, _, err := runSbomsJSON(t, "tag-deployment", "42", "99", "eu-west", "--label", "region")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to move tag environment=prod on SBOM #42")
+	assert.Contains(t, err.Error(), "failed to move tag region=eu-west on SBOM #42")
 
-	assert.JSONEq(t, `{"environment": "prod"}`, out, "the failed image step is left out")
+	assert.JSONEq(t, `{"label": "region", "value": "eu-west"}`, out, "the failed image step is left out")
 	got := requests()
 	require.Len(t, got, 2, "only the image listing and the failed create")
+	assert.Equal(t, "region", got[0].Query.Get("sbom_tag_label"))
 	assert.Equal(t, http.MethodPost, got[1].Method)
+	assert.JSONEq(t, `{"tag_label":"region","tag_value":"eu-west"}`, got[1].Body)
 }
