@@ -6,7 +6,7 @@
 package waybill
 
 const (
-	Version = "0.14.1"
+	Version = "0.17.0"
 	Repo    = "kusari-oss/waybill"
 )
 
@@ -17,19 +17,19 @@ const (
 // absent: upstream does not currently publish those targets.
 var assets = map[string]asset{
 	"darwin/arm64": {
-		"waybill-v0.14.1-aarch64-apple-darwin.tar.gz",
-		"3ba80e5fbee3de9c72f4233ff5b5673dd144881b3e89beca48d13ef813ff64f8",
+		"waybill-v0.17.0-aarch64-apple-darwin.tar.gz",
+		"394bd821c3b3d4a466b47703100b278e7750da468d897384042d5fc831c5b2dc",
 	},
 	"linux/amd64": {
-		"waybill-v0.14.1-x86_64-unknown-linux-gnu.tar.gz",
-		"09f320d1ae230f155ea6d9d9d71961e805d3674763623ed7eed2cff5d5bdf9c2",
+		"waybill-v0.17.0-x86_64-unknown-linux-gnu.tar.gz",
+		"422fccea15e83ed29a060e9bbb2df9cea068a6eecae4a99b83c7f00e3ec77dd5",
 	},
 	"linux/arm64": {
-		"waybill-v0.14.1-aarch64-unknown-linux-gnu.tar.gz",
-		"bb950cdbf2529b7c1de2582b1dcafdcc85228f5678c46e98b8c887144c89b238",
+		"waybill-v0.17.0-aarch64-unknown-linux-gnu.tar.gz",
+		"b282dc4f644fcb3792c31978e833eed27dbc8e54bdd59a8d86101ccf94d6aaa7",
 	},
 	"windows/amd64": {
-		"waybill-v0.14.1-x86_64-pc-windows-msvc.zip",
-		"702ab5cb2e949e67c8581be6263bbd739bde442c23bb18c514072eac2ea8f121",
+		"waybill-v0.17.0-x86_64-pc-windows-msvc.zip",
+		"2c231c317f0d614025addf35c6e5298c29a8daeee9704dccce2648ec7103d7ce",
 	},
 }
