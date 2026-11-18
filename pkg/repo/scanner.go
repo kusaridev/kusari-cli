@@ -367,7 +367,7 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
 
-	_, userID, epoch, isMachine, err := urlBuilder.GetIDsFromUrl(presignedUrl)
+	userID, epoch, isMachine, err := urlBuilder.GetIDsFromUrl(presignedUrl)
 	if err != nil {
 		return err
 	}
