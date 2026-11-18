@@ -293,14 +293,14 @@ func Test_ScanEventKey(t *testing.T) {
 	}{
 		{
 			name:       "user diff scan",
-			presignUrl: "https://example.com/workspace/ws/user/human/u/diff/blob/123",
-			want:       "2d0e73b9d8da14f652356ac5d81889d0f351149bd6628cf2279066c87eeb633d",
+			presignUrl: "https://example.com/workspace/ws/user/human/dev%2Bci%40example.com/diff/blob/1761082861?X-Amz-Signature=abc",
+			want:       "dd9dcf69cd89b292f85e057cc26893a6f3b8a8986572706f61e81f18b01eaaaf",
 		},
 		{
 			name:       "API key risk check",
-			presignUrl: "https://example.com/workspace/ws/user/machine/spiffe%3Atd%3Akusari%3Asa%3Aci/full/blob/1761082861?X-Amz-Signature=abc",
+			presignUrl: "https://example.com/workspace/ws/user/machine/spiffe%3Atd%3Akusari.dev%3Ans%3Aci%3Asa%3Arunner/full/blob/1761082861?X-Amz-Signature=abc",
 			full:       true,
-			want:       "cc0c671282179fc947120cabb86bf6c2efc505d333092333d333e323606f65a3",
+			want:       "02a6c4d59c3d5337da80fdf5f4f79b42cb871a0688d6c5aab3fa66c7b8bf9cf2",
 		},
 	}
 	for _, tt := range tests {
