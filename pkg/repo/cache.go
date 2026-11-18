@@ -43,8 +43,8 @@ type ScanCacheEntry struct {
 	// asking for markdown could be served a cached SARIF document, since the
 	// rest of the key is identical for the same diff.
 	OutputFormat string    `json:"output_format,omitempty"`
-	Results      string    `json:"results"`     // The scan output (SARIF or markdown)
-	ConsoleURL   string    `json:"console_url"` // Link to console results
+	FullOutput   bool      `json:"full_output,omitempty"`
+	Results      string    `json:"results"` // The scan output (SARIF or markdown)
 	Timestamp    time.Time `json:"timestamp"`
 	// Verdict is absent on entries written before it was recorded. A gated scan
 	// treats that as a miss rather than assuming an outcome.
@@ -58,9 +58,8 @@ type ScanCache struct {
 
 // CacheResult represents the result of a cache check.
 type CacheResult struct {
-	Hit        bool
-	Results    string
-	ConsoleURL string
+	Hit     bool
+	Results string
 	// Verdict is nil when the entry predates verdict caching.
 	Verdict *CachedVerdict
 }
@@ -192,7 +191,7 @@ func computeDiffHash(repoPath, baseRef string) (string, error) {
 // CheckCache checks if there's a valid cached result for the given repo and base ref.
 // Returns CacheResult with Hit=true if cache is valid, or Hit=false if scan needed.
 // Returns error only for the special case of no changes to scan.
-func CheckCache(repoPath, baseRef, outputFormat string, verbose bool) (*CacheResult, error) {
+func CheckCache(repoPath, baseRef, outputFormat string, fullOutput, verbose bool) (*CacheResult, error) {
 	// Normalize repo path to absolute
 	absPath, err := filepath.Abs(repoPath)
 	if err != nil {
@@ -233,6 +232,13 @@ func CheckCache(repoPath, baseRef, outputFormat string, verbose bool) (*CacheRes
 		return &CacheResult{Hit: false}, nil
 	}
 
+	if entry.FullOutput != fullOutput {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Cache full output mismatch: %t vs %t\n", entry.FullOutput, fullOutput)
+		}
+		return &CacheResult{Hit: false}, nil
+	}
+
 	// Check if cache is too old
 	if time.Since(entry.Timestamp) > CacheMaxAge {
 		if verbose {
@@ -261,10 +267,9 @@ func CheckCache(repoPath, baseRef, outputFormat string, verbose bool) (*CacheRes
 			fmt.Fprintf(os.Stderr, "Cache hit! Diff hash matches: %s\n", currentHash[:16])
 		}
 		return &CacheResult{
-			Hit:        true,
-			Results:    entry.Results,
-			ConsoleURL: entry.ConsoleURL,
-			Verdict:    entry.Verdict,
+			Hit:     true,
+			Results: entry.Results,
+			Verdict: entry.Verdict,
 		}, nil
 	}
 
@@ -275,7 +280,7 @@ func CheckCache(repoPath, baseRef, outputFormat string, verbose bool) (*CacheRes
 }
 
 // SaveToCache stores a scan result in the cache.
-func SaveToCache(repoPath, baseRef, outputFormat, results, consoleURL string, verdict *CachedVerdict, verbose bool) error {
+func SaveToCache(repoPath, baseRef, outputFormat string, fullOutput bool, results string, verdict *CachedVerdict, verbose bool) error {
 	// Normalize repo path to absolute
 	absPath, err := filepath.Abs(repoPath)
 	if err != nil {
@@ -297,8 +302,8 @@ func SaveToCache(repoPath, baseRef, outputFormat, results, consoleURL string, ve
 		DiffHash:     diffHash,
 		BaseRef:      baseRef,
 		OutputFormat: outputFormat,
+		FullOutput:   fullOutput,
 		Results:      results,
-		ConsoleURL:   consoleURL,
 		Timestamp:    time.Now(),
 		Verdict:      verdict,
 	}
