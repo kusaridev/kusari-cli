@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -396,7 +396,8 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
-		return queryForResult(platformUrl, sortString, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose, dir, rev, fullOutput, opts.FailOnFindings)
+		eventKey := urlBuilder.ScanEventKey(userID, epoch, full, isMachine)
+		return queryForResult(platformUrl, eventKey, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose, dir, rev, fullOutput, opts.FailOnFindings)
 	}
 	return nil
 }
@@ -405,197 +406,162 @@ func cleanupWorkingDirectory(tempDir string) {
 	_ = os.RemoveAll(tempDir)
 }
 
-func queryForResult(platformUrl string, sortKey string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool, failOnFindings bool) error {
-	maxAttempts := 750
-	attempt := 0
-	sleepDuration := time.Second
+var resultPollInterval = time.Second
 
-	// Create spinner for stderr
+func queryForResult(platformUrl string, eventKey string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool, failOnFindings bool) error {
+	scan, err := waitForScan(platformUrl, eventKey, accessToken, workspace)
+	if err != nil {
+		return err
+	}
+	return printScanResult(scan, consoleFullUrl, outputFormat, full, commentPlatform, verbose, repoDir, baseRef, fullOutput, failOnFindings)
+}
+
+// waitForScan polls workspace-api until the scan with eventKey succeeds, and
+// returns it with its analysis.
+func waitForScan(platformUrl, eventKey, accessToken, workspace string) (*api.InspectorScan, error) {
+	const maxAttempts = 750
+
+	scansURL, err := urlBuilder.Build(platformUrl, "api/v0/inspector/scan")
+	if err != nil {
+		return nil, err
+	}
+	listURL := *scansURL + "?" + url.Values{"event_key": {eventKey}, "limit": {"1"}}.Encode()
+
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-	s.Writer = os.Stderr // Send spinner to stderr
+	s.Writer = os.Stderr
 	s.Prefix = "Analysis in progress... "
-	s.FinalMSG = "✓ Results found!\n"
 	s.Start()
-
-	// Ensure spinner stops no matter what
 	defer s.Stop()
 
 	client := &http.Client{Timeout: 10 * time.Second}
-
-	scanType := "scan"
-	if full {
-		scanType = "risk-check"
+	get := func(endpoint string, into any) error {
+		return getWorkspaceAPI(client, endpoint, accessToken, workspace, into)
 	}
-	// Build URL - sortKey is already URL-encoded from CreateSortString
-	fullURL := fmt.Sprintf("%s/inspector/result/user?sortKey=%s&op=beginswith&scanType=%s",
-		strings.TrimSuffix(platformUrl, "/"),
-		sortKey,
-		scanType)
 
-	for attempt < maxAttempts {
-		attempt++
-
-		// Create HTTP client
-		req, err := http.NewRequest("GET", fullURL, nil)
-		if err != nil {
-			continue
-		}
-
-		req.Header.Set("Authorization", "Bearer "+accessToken)
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Kusari-Workspace", workspace)
-
-		resp, err := client.Do(req)
-		if err != nil {
-			time.Sleep(sleepDuration)
-			continue
-		}
-		defer func() {
-			_ = resp.Body.Close()
-		}()
-
-		if resp.StatusCode == http.StatusOK {
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				time.Sleep(sleepDuration)
-				continue
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		var list api.InspectorScanList
+		if err := get(listURL, &list); err == nil && len(list.Items) > 0 {
+			found := list.Items[0]
+			status := found.Status
+			if status != "" {
+				status = strings.ToUpper(status[:1]) + status[1:]
 			}
 
-			var results []api.UserInspectorResult
-			if err := json.Unmarshal(body, &results); err != nil {
-				time.Sleep(sleepDuration)
-				continue
-			}
-
-			if len(results) > 0 {
-				if results[0].Analysis != nil {
-					// Stop spinner before outputting results
+			switch found.Status {
+			case "success":
+				var scan api.InspectorScan
+				if err := get(*scansURL+"/"+url.PathEscape(found.ID), &scan); err == nil && scan.Analysis != nil {
 					s.FinalMSG = "✓ Analysis complete!\n"
-					s.Stop()
-
-					// Post comment to the specified platform (only for diff scans, not full scans)
-					if commentPlatform != "" && !full && results[0].Analysis.RawLLMAnalysis != nil {
-						if err := postCommentToPlatform(commentPlatform, results[0].Analysis.RawLLMAnalysis, consoleFullUrl, verbose); err != nil {
-							// Log error but don't fail the scan
-							fmt.Fprintf(os.Stderr, "Warning: Failed to post %s comment: %v\n", commentPlatform, err)
-						}
-					}
-
-					if full {
-						printFullScanResults(results[0].Analysis)
-						return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
-					}
-
-					// Check output format
-					if outputFormat == "sarif" {
-						// Output sarif format
-						sarifOutput, err := sarif.ConvertToSARIF(results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
-						if err != nil {
-							return fmt.Errorf("failed to convert to SARIF: %w", err)
-						}
-
-						fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
-						fmt.Print(sarifOutput) // stdout
-
-						// Save to cache for diff scans
-						if !full && repoDir != "" {
-							if err := SaveToCache(repoDir, baseRef, outputFormat, sarifOutput, *consoleFullUrl, verdictFrom(results[0].Analysis.RawLLMAnalysis), verbose); err != nil && verbose {
-								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", err)
-							}
-						}
-						return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
-					}
-
-					// Clean and format results for stdout
-					var rawContent string
-					if fullOutput {
-						rawContent = results[0].Analysis.Results
-					} else {
-						rawContent = results[0].Analysis.TruncatedCommentWithCodeMitigations
-					}
-					rawContent = replaceConsoleLink(rawContent, *consoleFullUrl)
-					fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
-					cleanedContent := removeImageLines(rawContent)
-
-					// Render with glamour to stdout
-					r, err := glamour.NewTermRenderer(
-						glamour.WithAutoStyle(),
-						glamour.WithWordWrap(100),
-					)
-					if err != nil {
-						fmt.Print(cleanedContent) // stdout
-						// Save to cache for diff scans (save cleaned content for re-rendering)
-						if !full && repoDir != "" {
-							if cacheErr := SaveToCache(repoDir, baseRef, outputFormat, cleanedContent, *consoleFullUrl, verdictFrom(results[0].Analysis.RawLLMAnalysis), verbose); cacheErr != nil && verbose {
-								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
-							}
-						}
-						return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
-					}
-
-					rendered, err := r.Render(cleanedContent)
-					if err != nil {
-						fmt.Print(cleanedContent) // stdout
-						// Save to cache for diff scans
-						if !full && repoDir != "" {
-							if cacheErr := SaveToCache(repoDir, baseRef, outputFormat, cleanedContent, *consoleFullUrl, verdictFrom(results[0].Analysis.RawLLMAnalysis), verbose); cacheErr != nil && verbose {
-								fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
-							}
-						}
-						return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
-					}
-
-					fmt.Print(rendered) // stdout
-
-					// Save to cache for diff scans (save rendered content for immediate reuse)
-					if !full && repoDir != "" {
-						if cacheErr := SaveToCache(repoDir, baseRef, outputFormat, rendered, *consoleFullUrl, verdictFrom(results[0].Analysis.RawLLMAnalysis), verbose); cacheErr != nil && verbose {
-							fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
-						}
-					}
-					return findingsResult(failOnFindings, results[0].Analysis.RawLLMAnalysis, *consoleFullUrl)
+					return &scan, nil
 				}
-
-				slices.SortFunc(results, func(a, b api.UserInspectorResult) int {
-					if a.StatusMeta.UpdatedAt < b.StatusMeta.UpdatedAt {
-						return 1
-					}
-
-					if a.StatusMeta.UpdatedAt == b.StatusMeta.UpdatedAt {
-						return 0
-					}
-
-					return -1
-				})
-
-				status := results[0].StatusMeta.Status
-
-				prefix := status
-				if len(status) >= 1 {
-					prefix = strings.ToUpper(results[0].StatusMeta.Status[:1]) + results[0].StatusMeta.Status[1:]
+			case "failed":
+				s.FinalMSG = status
+				s.Stop()
+				fmt.Fprintln(os.Stderr)
+				if found.StatusDetail != "" {
+					fmt.Fprintf(os.Stderr, "Error: %s\n", found.StatusDetail)
 				}
-
-				s.Prefix = prefix + " "
-
-				if status == "failed" {
-					s.FinalMSG = prefix
-					s.Stop()
-					fmt.Fprintln(os.Stderr)
-					if results[0].StatusMeta.Details != "" {
-						fmt.Fprintf(os.Stderr, "Error: %s\n", results[0].StatusMeta.Details)
-					}
-					return errors.New("processing failed after uploading")
-				}
+				return nil, errors.New("processing failed after uploading")
+			default:
+				s.Prefix = status + " "
 			}
 		}
-
-		time.Sleep(sleepDuration)
+		time.Sleep(resultPollInterval)
 	}
 
-	// If we get here, we failed
 	s.FinalMSG = "✗ No results found after maximum attempts\n"
-	s.Stop()
-	return fmt.Errorf("no results found after %d attempts", maxAttempts)
+	return nil, fmt.Errorf("no results found after %d attempts", maxAttempts)
+}
+
+func getWorkspaceAPI(client *http.Client, endpoint, accessToken, workspace string, into any) error {
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Kusari-Workspace", workspace)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: %s", endpoint, resp.Status)
+	}
+	return json.NewDecoder(resp.Body).Decode(into)
+}
+
+// printScanResult prints, posts and caches a finished scan's analysis.
+func printScanResult(scan *api.InspectorScan, consoleFullUrl *string, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool, failOnFindings bool) error {
+	analysis := scan.Analysis
+
+	// Post comment to the specified platform (only for diff scans, not full scans)
+	if commentPlatform != "" && !full && analysis.RawLLMAnalysis != nil {
+		if err := postCommentToPlatform(commentPlatform, analysis.RawLLMAnalysis, consoleFullUrl, verbose); err != nil {
+			// Log error but don't fail the scan
+			fmt.Fprintf(os.Stderr, "Warning: Failed to post %s comment: %v\n", commentPlatform, err)
+		}
+	}
+
+	if full {
+		printFullScanResults(analysis)
+		return findingsResult(failOnFindings, analysis.RawLLMAnalysis, *consoleFullUrl)
+	}
+
+	// Check output format
+	if outputFormat == "sarif" {
+		// Output sarif format
+		sarifOutput, err := sarif.ConvertToSARIF(analysis.RawLLMAnalysis, *consoleFullUrl)
+		if err != nil {
+			return fmt.Errorf("failed to convert to SARIF: %w", err)
+		}
+
+		fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
+		fmt.Print(sarifOutput) // stdout
+
+		// Save to cache for diff scans
+		if repoDir != "" {
+			if err := SaveToCache(repoDir, baseRef, outputFormat, sarifOutput, *consoleFullUrl, verdictFrom(analysis.RawLLMAnalysis), verbose); err != nil && verbose {
+				fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", err)
+			}
+		}
+		return findingsResult(failOnFindings, analysis.RawLLMAnalysis, *consoleFullUrl)
+	}
+
+	// Clean and format results for stdout
+	var rawContent string
+	if fullOutput {
+		rawContent = analysis.Results
+	} else {
+		rawContent = analysis.TruncatedCommentWithCodeMitigations
+	}
+	rawContent = replaceConsoleLink(rawContent, *consoleFullUrl)
+	fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
+	cleanedContent := removeImageLines(rawContent)
+
+	// Render with glamour to stdout, falling back to the cleaned markdown
+	output := cleanedContent
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(100),
+	)
+	if err == nil {
+		if rendered, renderErr := r.Render(cleanedContent); renderErr == nil {
+			output = rendered
+		}
+	}
+	fmt.Print(output) // stdout
+
+	if repoDir != "" {
+		if cacheErr := SaveToCache(repoDir, baseRef, outputFormat, output, *consoleFullUrl, verdictFrom(analysis.RawLLMAnalysis), verbose); cacheErr != nil && verbose {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
+		}
+	}
+	return findingsResult(failOnFindings, analysis.RawLLMAnalysis, *consoleFullUrl)
 }
 
 // ValidateDirectory checks if a directory exists and is readable

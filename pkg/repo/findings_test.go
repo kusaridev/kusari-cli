@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kusaridev/kusari-cli/v2/api"
 	"github.com/kusaridev/kusari-cli/v2/pkg/login"
@@ -18,26 +19,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// resultServer stands in for the platform's result endpoint. Until now no test
-// reached queryForResult at all: every scan test passes Wait=false, so the
-// whole result-rendering path was unexercised.
-func resultServer(t *testing.T, analysis *api.SecurityAnalysis) *httptest.Server {
+// workspaceAPIServer serves workspace-api's public scan routes. listResponses
+// are the scans the list returns, one per poll, repeating the last.
+func workspaceAPIServer(t *testing.T, analysis *api.SecurityAnalysis, listResponses ...[]api.InspectorScan) *httptest.Server {
 	t.Helper()
-	payload := []api.UserInspectorResult{{
+	scan := api.InspectorScan{
+		ID:     "scan-1",
+		Status: "success",
 		Analysis: &api.Analysis{
 			Proceed:                             analysis.ShouldProceed,
 			Results:                             "## Findings\n\nfull markdown body",
 			TruncatedCommentWithCodeMitigations: "## Findings\n\ntruncated body",
 			RawLLMAnalysis:                      analysis,
 		},
-		StatusMeta: api.StatusMeta{Status: "complete", UpdatedAt: "2026-01-01T00:00:00Z"},
-	}}
-	body, err := json.Marshal(payload)
-	require.NoError(t, err)
+	}
+	if len(listResponses) == 0 {
+		listResponses = [][]api.InspectorScan{{{ID: scan.ID, Status: scan.Status}}}
+	}
 
+	var polls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
+		switch r.URL.Path {
+		case "/api/v0/inspector/scan":
+			items := listResponses[min(polls, len(listResponses)-1)]
+			polls++
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+		case "/api/v0/inspector/scan/" + scan.ID:
+			_ = json.NewEncoder(w).Encode(scan)
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -56,6 +68,22 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 
 	require.NoError(t, w.Close())
 	os.Stdout = orig
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+	return string(out), callErr
+}
+
+func captureStderr(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+
+	callErr := fn()
+
+	require.NoError(t, w.Close())
+	os.Stderr = orig
 	out, err := io.ReadAll(r)
 	require.NoError(t, err)
 	return string(out), callErr
@@ -88,15 +116,48 @@ func queryOnce(t *testing.T, srv *httptest.Server, format string, failOnFindings
 	return captureStdout(t, func() error {
 		// repoDir is empty so the cache path is skipped: this test is about the
 		// verdict, not caching.
-		return queryForResult(srv.URL, "sort-key", "token", &consoleURL, "ws", format,
+		return queryForResult(srv.URL, "event-key", "token", &consoleURL, "ws", format,
 			false, "", false, "", "HEAD", true, failOnFindings)
 	})
+}
+
+// Catches treating a scan that isn't in workspace-api yet, or is still
+// processing, as finished.
+func TestQueryForResult_WaitsUntilScanSucceeds(t *testing.T) {
+	resultPollInterval = time.Millisecond
+	t.Cleanup(func() { resultPollInterval = time.Second })
+
+	srv := workspaceAPIServer(t, clean(),
+		nil,
+		[]api.InspectorScan{{ID: "scan-1", Status: "processing"}},
+		[]api.InspectorScan{{ID: "scan-1", Status: "success"}},
+	)
+
+	out, err := queryOnce(t, srv, "markdown", false)
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "full markdown body")
+}
+
+// Catches polling past a failed scan until the attempts run out.
+func TestQueryForResult_FailedScanStops(t *testing.T) {
+	srv := workspaceAPIServer(t, clean(),
+		[]api.InspectorScan{{ID: "scan-1", Status: "failed", StatusDetail: "bundle unreadable"}},
+	)
+
+	stderr, err := captureStderr(t, func() error {
+		_, err := queryOnce(t, srv, "markdown", false)
+		return err
+	})
+
+	require.EqualError(t, err, "processing failed after uploading")
+	assert.Contains(t, stderr, "Error: bundle unreadable")
 }
 
 // The whole point of the flag: a completed scan that reports findings must exit
 // non-zero, and be distinguishable from a scan that broke.
 func TestQueryForResult_FailOnFindings_ReportsFindings(t *testing.T) {
-	out, err := queryOnce(t, resultServer(t, withFindings()), "markdown", true)
+	out, err := queryOnce(t, workspaceAPIServer(t, withFindings()), "markdown", true)
 
 	require.Error(t, err)
 	var fe *FindingsError
@@ -115,14 +176,14 @@ func TestQueryForResult_FailOnFindings_ReportsFindings(t *testing.T) {
 
 // Without the flag, behavior is exactly as before: findings do not fail.
 func TestQueryForResult_WithoutFlag_FindingsDoNotFail(t *testing.T) {
-	out, err := queryOnce(t, resultServer(t, withFindings()), "markdown", false)
+	out, err := queryOnce(t, workspaceAPIServer(t, withFindings()), "markdown", false)
 
 	require.NoError(t, err, "the flag is opt-in; default behavior must not change")
 	assert.NotEmpty(t, out)
 }
 
 func TestQueryForResult_FailOnFindings_CleanScanSucceeds(t *testing.T) {
-	_, err := queryOnce(t, resultServer(t, clean()), "markdown", true)
+	_, err := queryOnce(t, workspaceAPIServer(t, clean()), "markdown", true)
 	assert.NoError(t, err, "a clean scan must exit zero even with the flag set")
 }
 
@@ -130,7 +191,7 @@ func TestQueryForResult_FailOnFindings_CleanScanSucceeds(t *testing.T) {
 // own coverage: the verdict must be reported there too, and the SARIF document
 // must still be complete on stdout.
 func TestQueryForResult_FailOnFindings_SarifStillEmitted(t *testing.T) {
-	out, err := queryOnce(t, resultServer(t, withFindings()), "sarif", true)
+	out, err := queryOnce(t, workspaceAPIServer(t, withFindings()), "sarif", true)
 
 	var fe *FindingsError
 	require.ErrorAs(t, err, &fe)
@@ -170,7 +231,7 @@ func TestScan_GatedScanIsServedFromCacheAndStillBlocks(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	srv := resultServer(t, withFindings())
+	srv := workspaceAPIServer(t, withFindings())
 
 	repoDir := t.TempDir()
 	setupGitRepoAt(t, repoDir)
@@ -228,7 +289,7 @@ func TestScan_CachedVerdictDoesNotAffectUngatedScan(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	srv := resultServer(t, withFindings())
+	srv := workspaceAPIServer(t, withFindings())
 	repoDir := t.TempDir()
 	setupGitRepoAt(t, repoDir)
 

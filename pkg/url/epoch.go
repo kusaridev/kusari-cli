@@ -30,18 +30,8 @@ cli-api-full: cli-api-full|{{remoteHash}}|{{dirName}}|{{branch}}|machine|{{epoch
 Status entries append: |status|{{status}}
 */
 func CreateSortString(userID, epoch string, full, isMachine bool, remote, dirName, branch string) string {
-	var prefix string
-
-	if !isMachine {
-		prefix = "cli-user"
-		if full {
-			prefix = "cli-user-full"
-		}
-	} else {
-		prefix = "cli-api"
-		if full {
-			prefix = "cli-api-full"
-		}
+	prefix := cliScanType(full, isMachine)
+	if isMachine {
 		userID = "machine"
 	}
 
@@ -96,4 +86,23 @@ func GetIDsFromUrl(presignUrl string) (string, string, string, bool, error) {
 	}
 
 	return workspaceID, userID, epoch, isMachine, nil
+}
+
+// ScanEventKey is workspace-api's event_key for a CLI scan: the hex SHA-256 of
+// {type}|{uploader}|{epoch}. Unlike the sort key, an API key's uploader stays its
+// own subject.
+func ScanEventKey(userID, epoch string, full, isMachine bool) string {
+	hash := sha256.Sum256([]byte(cliScanType(full, isMachine) + "|" + userID + "|" + epoch))
+	return hex.EncodeToString(hash[:])
+}
+
+func cliScanType(full, isMachine bool) string {
+	scanType := "cli-user"
+	if isMachine {
+		scanType = "cli-api"
+	}
+	if full {
+		scanType += "-full"
+	}
+	return scanType
 }
