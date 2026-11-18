@@ -279,3 +279,35 @@ func Test_CreateSortString_DifferentRemote_DifferentHash(t *testing.T) {
 
 	assert.NotEqual(t, parts1[1], parts2[1], "Different remotes should produce different hashes")
 }
+
+// The hashes are sha256 of {type}|{uploader}|{epoch}, which is what workspace-api
+// stores as a CLI scan's event_key. The API-key row catches collapsing the
+// uploader to "machine" as CreateSortString does, and hashing the subject while
+// it is still URL-encoded.
+func Test_ScanEventKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		presignUrl string
+		full       bool
+		want       string
+	}{
+		{
+			name:       "user diff scan",
+			presignUrl: "https://example.com/workspace/ws/user/human/u/diff/blob/123",
+			want:       "2d0e73b9d8da14f652356ac5d81889d0f351149bd6628cf2279066c87eeb633d",
+		},
+		{
+			name:       "API key risk check",
+			presignUrl: "https://example.com/workspace/ws/user/machine/spiffe%3Atd%3Akusari%3Asa%3Aci/full/blob/1761082861?X-Amz-Signature=abc",
+			full:       true,
+			want:       "cc0c671282179fc947120cabb86bf6c2efc505d333092333d333e323606f65a3",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, userID, epoch, isMachine, err := GetIDsFromUrl(tt.presignUrl)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, ScanEventKey(userID, epoch, tt.full, isMachine))
+		})
+	}
+}
