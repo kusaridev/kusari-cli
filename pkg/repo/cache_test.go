@@ -294,7 +294,6 @@ func TestVerdictFrom(t *testing.T) {
 func TestCache_McpAndCliFormatsDoNotCollide(t *testing.T) {
 	dir := cacheRepo(t)
 
-	// MCP-shaped scan: sarif, full output, waits for results.
 	require.NoError(t, SaveToCache(dir, "HEAD", "sarif", false, `{"runs":[{"results":[]}]}`,
 		&CachedVerdict{ShouldProceed: true}, false))
 

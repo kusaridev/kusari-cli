@@ -220,6 +220,12 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 		}
 	}
 
+	if !full {
+		if _, err := urlBuilder.Build(consoleUrl); err != nil {
+			return fmt.Errorf("invalid console URL: %w", err)
+		}
+	}
+
 	fileUploader := uploadFileToS3
 	presignedURLGetter := getPresignedURL
 	defaultWorkspaceGetter := login.FetchWorkspaces
