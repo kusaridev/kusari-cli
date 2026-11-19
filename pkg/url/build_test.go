@@ -14,9 +14,15 @@ func Test_Build_Base(t *testing.T) {
 }
 
 func Test_Build_Hostname_Error(t *testing.T) {
-	_, e := Build("*****")
+	_, e := Build("console.us.kusari.cloud")
 
-	assert.NotNil(t, e)
+	assert.EqualError(t, e, `base URL "console.us.kusari.cloud" has no host`)
+}
+
+func Test_Build_Unparseable_Error(t *testing.T) {
+	_, e := Build("https://%zz")
+
+	assert.ErrorContains(t, e, "failed to parse base URL")
 }
 
 func Test_Build_Base_Trailing_Slash(t *testing.T) {
