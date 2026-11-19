@@ -118,13 +118,11 @@ func ScanWithOptions(opts ScanOptions) error {
 	return scan(opts, false, nil)
 }
 
-func RiskCheck(dir string, platformUrl string, consoleUrl string, verbose bool, wait bool) error {
-	// default to outputformat "markdown" for now for risk check as it will link to console
+func RiskCheck(dir string, platformUrl string, verbose bool, wait bool) error {
 	// commentPlatform is empty for risk-check as it's not typically run in MR context
 	return scan(ScanOptions{
 		Dir:          dir,
 		PlatformURL:  platformUrl,
-		ConsoleURL:   consoleUrl,
 		OutputFormat: "markdown",
 		Verbose:      verbose,
 		Wait:         wait,
@@ -152,7 +150,7 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 	// churn with no reader benefit.
 	dir, rev := opts.Dir, opts.Rev
 	platformUrl, consoleUrl := opts.PlatformURL, opts.ConsoleURL
-	outputFormat, commentPlatform := opts.OutputFormat, opts.CommentPlatform
+	outputFormat := opts.OutputFormat
 	overrideBranch := opts.OverrideBranch
 	verbose, wait, fullOutput := opts.Verbose, opts.Wait, opts.FullOutput
 
@@ -175,7 +173,7 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 
 	// For diff scans (not full), check cache first.
 	if !full && wait {
-		cacheResult, cacheErr := CheckCache(dir, rev, outputFormat, verbose)
+		cacheResult, cacheErr := CheckCache(dir, rev, outputFormat, fullOutput, verbose)
 		if cacheErr != nil {
 			// "no changes to scan" is a valid case - return early
 			if strings.Contains(cacheErr.Error(), "no changes to scan") {
@@ -189,9 +187,6 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 		} else if cacheResult != nil && cacheResult.Hit {
 			// Cache hit - output cached results
 			fmt.Fprintf(os.Stderr, "✓ Returning cached results (no changes since last scan)\n")
-			if cacheResult.ConsoleURL != "" {
-				fmt.Fprintf(os.Stderr, "View results at: %s\n", cacheResult.ConsoleURL)
-			}
 			fmt.Print(cacheResult.Results)
 			// Reach the same decision the original scan did, rather than
 			// returning success just because the work was skipped. A nil verdict
@@ -199,7 +194,7 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 			// carries no verdict -- entries written before verdicts were recorded
 			// cannot reach here at all, since they also predate the output format
 			// being part of the cache key.
-			return cacheResult.Verdict.findingsError(opts.FailOnFindings, cacheResult.ConsoleURL)
+			return cacheResult.Verdict.findingsError(opts.FailOnFindings)
 		}
 	}
 
@@ -222,6 +217,12 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 			fmt.Fprintf(os.Stderr, "  kusari repo risk-check ./packages/project1\n")
 			fmt.Fprintf(os.Stderr, "  kusari repo risk-check ./packages/project2\n")
 			os.Exit(1)
+		}
+	}
+
+	if !full {
+		if _, err := urlBuilder.Build(consoleUrl); err != nil {
+			return fmt.Errorf("invalid console URL: %w", err)
 		}
 	}
 
@@ -309,8 +310,7 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 		cleanupWorkingDirectory(tempDir)
 	}()
 
-	meta, err := createMeta(rev, full, overrideBranch)
-	if err != nil {
+	if _, err := createMeta(rev, full, overrideBranch); err != nil {
 		return fmt.Errorf("failed to create meta file: %w", err)
 	}
 
@@ -367,37 +367,17 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 		return fmt.Errorf("failed to upload file to S3: %w", err)
 	}
 
-	workspaceID, userID, epoch, isMachine, err := urlBuilder.GetIDsFromUrl(presignedUrl)
+	userID, epoch, isMachine, err := urlBuilder.GetIDsFromUrl(presignedUrl)
 	if err != nil {
 		return err
 	}
 
-	sortString := urlBuilder.CreateSortString(userID, epoch, full, isMachine, meta.Remote, meta.DirName, meta.CurrentBranch)
-
-	var consoleFullUrl *string
-	var consoleUrlErr error
-	if !full {
-		consoleFullUrl, consoleUrlErr = urlBuilder.Build(consoleUrl, "workspaces", workspaceID, "analysis", sortString, "result")
-		if consoleUrlErr != nil {
-			return consoleUrlErr
-		}
-	} else {
-		// /workspaces/{{workspaceID}}/risk-check/{{repo}}/{{sortKey}}/result
-		consoleFullUrl, consoleUrlErr = urlBuilder.Build(consoleUrl, "workspaces", workspaceID, "risk-check", meta.DirName, sortString, "result")
-		if consoleUrlErr != nil {
-			return consoleUrlErr
-		}
-	}
-
 	fmt.Fprint(os.Stderr, "Upload successful, your scan is processing!\n")
-	// We print the URL when it is completed, but that doesn't help if it fails
-	// for some reason and the user needs to contact support.
-	fmt.Fprintf(os.Stderr, "Once completed, you can see results at: %s\n", *consoleFullUrl)
 
 	// Wait for results if the user wants, or exit immediately
 	if wait {
 		eventKey := urlBuilder.ScanEventKey(userID, epoch, full, isMachine)
-		return queryForResult(platformUrl, eventKey, accessToken, consoleFullUrl, workspace, outputFormat, full, commentPlatform, verbose, dir, rev, fullOutput, opts.FailOnFindings)
+		return queryForResult(opts, full, eventKey, accessToken, workspace)
 	}
 	return nil
 }
@@ -408,12 +388,12 @@ func cleanupWorkingDirectory(tempDir string) {
 
 var resultPollInterval = time.Second
 
-func queryForResult(platformUrl string, eventKey string, accessToken string, consoleFullUrl *string, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool, failOnFindings bool) error {
-	scan, err := waitForScan(platformUrl, eventKey, accessToken, workspace)
+func queryForResult(opts ScanOptions, full bool, eventKey, accessToken, workspace string) error {
+	scan, err := waitForScan(opts.PlatformURL, eventKey, accessToken, workspace)
 	if err != nil {
 		return err
 	}
-	return printScanResult(scan, consoleFullUrl, outputFormat, full, commentPlatform, verbose, repoDir, baseRef, fullOutput, failOnFindings)
+	return printScanResult(scan, opts, full, workspace)
 }
 
 // waitForScan polls workspace-api until the scan with eventKey succeeds, and
@@ -496,51 +476,52 @@ func getWorkspaceAPI(client *http.Client, endpoint, accessToken, workspace strin
 }
 
 // printScanResult prints, posts and caches a finished scan's analysis.
-func printScanResult(scan *api.InspectorScan, consoleFullUrl *string, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool, failOnFindings bool) error {
+func printScanResult(scan *api.InspectorScan, opts ScanOptions, full bool, workspace string) error {
 	analysis := scan.Analysis
-
-	// Post comment to the specified platform (only for diff scans, not full scans)
-	if commentPlatform != "" && !full && analysis.RawLLMAnalysis != nil {
-		if err := postCommentToPlatform(commentPlatform, analysis.RawLLMAnalysis, consoleFullUrl, verbose); err != nil {
-			// Log error but don't fail the scan
-			fmt.Fprintf(os.Stderr, "Warning: Failed to post %s comment: %v\n", commentPlatform, err)
-		}
-	}
 
 	if full {
 		printFullScanResults(analysis)
-		return findingsResult(failOnFindings, analysis.RawLLMAnalysis, *consoleFullUrl)
+		return findingsResult(opts.FailOnFindings, analysis.RawLLMAnalysis)
+	}
+
+	resultURL, err := urlBuilder.Build(opts.ConsoleURL, "workspaces", workspace, "analysis", scan.ID, "result")
+	if err != nil {
+		return err
+	}
+
+	if opts.CommentPlatform != "" && analysis.RawLLMAnalysis != nil {
+		if err := postCommentToPlatform(opts.CommentPlatform, analysis.RawLLMAnalysis, *resultURL, opts.Verbose); err != nil {
+			// Log error but don't fail the scan
+			fmt.Fprintf(os.Stderr, "Warning: Failed to post %s comment: %v\n", opts.CommentPlatform, err)
+		}
 	}
 
 	// Check output format
-	if outputFormat == "sarif" {
+	if opts.OutputFormat == "sarif" {
 		// Output sarif format
-		sarifOutput, err := sarif.ConvertToSARIF(analysis.RawLLMAnalysis, *consoleFullUrl)
+		sarifOutput, err := sarif.ConvertToSARIF(analysis.RawLLMAnalysis, *resultURL)
 		if err != nil {
 			return fmt.Errorf("failed to convert to SARIF: %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
 		fmt.Print(sarifOutput) // stdout
 
 		// Save to cache for diff scans
-		if repoDir != "" {
-			if err := SaveToCache(repoDir, baseRef, outputFormat, sarifOutput, *consoleFullUrl, verdictFrom(analysis.RawLLMAnalysis), verbose); err != nil && verbose {
+		if opts.Dir != "" {
+			if err := SaveToCache(opts.Dir, opts.Rev, opts.OutputFormat, opts.FullOutput, sarifOutput, verdictFrom(analysis.RawLLMAnalysis), opts.Verbose); err != nil && opts.Verbose {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", err)
 			}
 		}
-		return findingsResult(failOnFindings, analysis.RawLLMAnalysis, *consoleFullUrl)
+		return findingsResult(opts.FailOnFindings, analysis.RawLLMAnalysis)
 	}
 
 	// Clean and format results for stdout
 	var rawContent string
-	if fullOutput {
+	if opts.FullOutput {
 		rawContent = analysis.Results
 	} else {
 		rawContent = analysis.TruncatedCommentWithCodeMitigations
 	}
-	rawContent = replaceConsoleLink(rawContent, *consoleFullUrl)
-	fmt.Fprintf(os.Stderr, "You can also view your results here: %s\n", *consoleFullUrl)
 	cleanedContent := removeImageLines(rawContent)
 
 	// Render with glamour to stdout, falling back to the cleaned markdown
@@ -556,12 +537,12 @@ func printScanResult(scan *api.InspectorScan, consoleFullUrl *string, outputForm
 	}
 	fmt.Print(output) // stdout
 
-	if repoDir != "" {
-		if cacheErr := SaveToCache(repoDir, baseRef, outputFormat, output, *consoleFullUrl, verdictFrom(analysis.RawLLMAnalysis), verbose); cacheErr != nil && verbose {
+	if opts.Dir != "" {
+		if cacheErr := SaveToCache(opts.Dir, opts.Rev, opts.OutputFormat, opts.FullOutput, output, verdictFrom(analysis.RawLLMAnalysis), opts.Verbose); cacheErr != nil && opts.Verbose {
 			fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
 		}
 	}
-	return findingsResult(failOnFindings, analysis.RawLLMAnalysis, *consoleFullUrl)
+	return findingsResult(opts.FailOnFindings, analysis.RawLLMAnalysis)
 }
 
 // ValidateDirectory checks if a directory exists and is readable
@@ -742,22 +723,6 @@ func detectMonoRepo(path string) (bool, []string, error) {
 	return len(indicators) > 0, indicators, nil
 }
 
-// replaceConsoleLink replaces any console URL in content with the provided consoleFullUrl.
-// It matches bare URLs sharing the same scheme+host as consoleFullUrl.
-func replaceConsoleLink(content, consoleFullUrl string) string {
-	// Extract scheme+host from consoleFullUrl to build the match prefix
-	// e.g. "https://console.us.kusari.cloud"
-	schemeHost := consoleFullUrl
-	if i := strings.Index(consoleFullUrl, "://"); i != -1 {
-		rest := consoleFullUrl[i+3:]
-		if j := strings.Index(rest, "/"); j != -1 {
-			schemeHost = consoleFullUrl[:i+3+j]
-		}
-	}
-	pattern := regexp.MustCompile(`https?://` + regexp.QuoteMeta(strings.TrimPrefix(strings.TrimPrefix(schemeHost, "https://"), "http://")) + `[^\s\)]*`)
-	return pattern.ReplaceAllString(content, consoleFullUrl)
-}
-
 func removeImageLines(content string) string {
 	// Split into lines
 	lines := strings.Split(content, "\n")
@@ -839,7 +804,7 @@ func titleize(s string) string {
 }
 
 // postCommentToPlatform dispatches comment posting to the appropriate platform
-func postCommentToPlatform(platform string, analysis *api.SecurityAnalysis, consoleURL *string, verbose bool) error {
+func postCommentToPlatform(platform string, analysis *api.SecurityAnalysis, consoleURL string, verbose bool) error {
 	switch platform {
 	case PlatformGitLab:
 		return postToGitLab(analysis, consoleURL, verbose)
@@ -851,7 +816,7 @@ func postCommentToPlatform(platform string, analysis *api.SecurityAnalysis, cons
 }
 
 // postToGitLab posts scan results as a comment to a GitLab merge request
-func postToGitLab(analysis *api.SecurityAnalysis, consoleURL *string, verbose bool) error {
+func postToGitLab(analysis *api.SecurityAnalysis, consoleURL string, verbose bool) error {
 	// Get GitLab configuration from environment
 	projectID, mrIID := gitlab.GetMRInfoFromEnv()
 	if projectID == "" || mrIID == "" {
@@ -866,17 +831,12 @@ func postToGitLab(analysis *api.SecurityAnalysis, consoleURL *string, verbose bo
 		return fmt.Errorf("no GitLab token found (set GITLAB_TOKEN or CI_JOB_TOKEN)")
 	}
 
-	consoleURLStr := ""
-	if consoleURL != nil {
-		consoleURLStr = *consoleURL
-	}
-
 	opts := gitlab.CommentOptions{
 		ProjectID:   projectID,
 		MergeReqIID: mrIID,
 		GitLabURL:   gitlab.GetGitLabAPIURLFromEnv(),
 		Token:       token,
-		ConsoleURL:  consoleURLStr,
+		ConsoleURL:  consoleURL,
 		Verbose:     verbose,
 	}
 
@@ -895,7 +855,7 @@ func postToGitLab(analysis *api.SecurityAnalysis, consoleURL *string, verbose bo
 }
 
 // postToGitHub posts scan results as a comment to a GitHub pull request
-func postToGitHub(analysis *api.SecurityAnalysis, consoleURL *string, verbose bool) error {
+func postToGitHub(analysis *api.SecurityAnalysis, consoleURL string, verbose bool) error {
 	// Get GitHub configuration from environment
 	owner, repo, prNumber := github.GetPRInfoFromEnv()
 	if owner == "" || repo == "" || prNumber == 0 {
@@ -910,18 +870,13 @@ func postToGitHub(analysis *api.SecurityAnalysis, consoleURL *string, verbose bo
 		return fmt.Errorf("no GitHub token found (set GITHUB_TOKEN or GH_TOKEN)")
 	}
 
-	consoleURLStr := ""
-	if consoleURL != nil {
-		consoleURLStr = *consoleURL
-	}
-
 	opts := github.CommentOptions{
 		Owner:      owner,
 		Repo:       repo,
 		PRNumber:   prNumber,
 		GitHubURL:  github.GetGitHubAPIURLFromEnv(),
 		Token:      token,
-		ConsoleURL: consoleURLStr,
+		ConsoleURL: consoleURL,
 		Verbose:    verbose,
 	}
 

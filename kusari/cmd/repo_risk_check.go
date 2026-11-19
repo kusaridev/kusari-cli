@@ -18,7 +18,7 @@ func riskcheck() *cobra.Command {
 
 		dir := args[0]
 
-		return repo.RiskCheck(dir, platformUrl, consoleUrl, verbose, wait)
+		return repo.RiskCheck(dir, platformUrl, verbose, wait)
 	}
 
 	return riskcheckcmd

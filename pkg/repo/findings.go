@@ -29,8 +29,6 @@ type FindingsError struct {
 	CodeMitigations int
 	// DependencyMitigations is how many dependency findings must be addressed.
 	DependencyMitigations int
-	// ConsoleURL links to the full results.
-	ConsoleURL string
 	// Reason is the analysis justification, used when the verdict blocks without
 	// itemized findings attached.
 	Reason string
@@ -42,13 +40,13 @@ func (e *FindingsError) Error() string {
 	// be addressed" in that case is nonsense, so fall back to the justification.
 	if e.CodeMitigations == 0 && e.DependencyMitigations == 0 {
 		if e.Reason != "" {
-			return fmt.Sprintf("Kusari Inspector advises against proceeding: %s: %s", e.Reason, e.ConsoleURL)
+			return fmt.Sprintf("Kusari Inspector advises against proceeding: %s", e.Reason)
 		}
-		return fmt.Sprintf("Kusari Inspector advises against proceeding: %s", e.ConsoleURL)
+		return "Kusari Inspector advises against proceeding"
 	}
 	return fmt.Sprintf(
-		"Kusari Inspector reported %d code and %d dependency finding(s) that must be addressed: %s",
-		e.CodeMitigations, e.DependencyMitigations, e.ConsoleURL)
+		"Kusari Inspector reported %d code and %d dependency finding(s) that must be addressed",
+		e.CodeMitigations, e.DependencyMitigations)
 }
 
 // ExitCode implements the exit-code interface main uses to choose a process
@@ -67,14 +65,13 @@ func (e *FindingsError) ExitCode() int { return findingsExitCode }
 // job that needs the findings text to act on. Returning early, before the
 // output is written, would hand it an exit code and nothing to show. The flag
 // changes the exit status and nothing else.
-func findingsResult(failOnFindings bool, analysis *api.SecurityAnalysis, consoleURL string) error {
+func findingsResult(failOnFindings bool, analysis *api.SecurityAnalysis) error {
 	if !failOnFindings || analysis == nil || analysis.ShouldProceed {
 		return nil
 	}
 	return &FindingsError{
 		CodeMitigations:       len(analysis.RequiredCodeMitigations),
 		DependencyMitigations: len(analysis.RequiredDependencyMitigations),
-		ConsoleURL:            consoleURL,
 		Reason:                analysis.Justification,
 	}
 }
@@ -94,14 +91,13 @@ func verdictFrom(analysis *api.SecurityAnalysis) *CachedVerdict {
 
 // findingsError rebuilds the gate result from a cached verdict, so a cache hit
 // reaches the same decision the original scan did.
-func (v *CachedVerdict) findingsError(failOnFindings bool, consoleURL string) error {
+func (v *CachedVerdict) findingsError(failOnFindings bool) error {
 	if !failOnFindings || v == nil || v.ShouldProceed {
 		return nil
 	}
 	return &FindingsError{
 		CodeMitigations:       v.CodeMitigations,
 		DependencyMitigations: v.DependencyMitigations,
-		ConsoleURL:            consoleURL,
 		Reason:                v.Justification,
 	}
 }

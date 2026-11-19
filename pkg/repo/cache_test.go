@@ -4,6 +4,8 @@
 package repo
 
 import (
+	"encoding/json"
+
 	"github.com/kusaridev/kusari-cli/v2/api"
 	"os"
 	"os/exec"
@@ -51,11 +53,10 @@ func TestSaveAndLoadCache(t *testing.T) {
 	cache := &ScanCache{
 		Entries: map[string]ScanCacheEntry{
 			"/test/repo": {
-				DiffHash:   "abc123",
-				BaseRef:    "HEAD",
-				Results:    "test results",
-				ConsoleURL: "https://console.kusari.dev/test",
-				Timestamp:  time.Now(),
+				DiffHash:  "abc123",
+				BaseRef:   "HEAD",
+				Results:   "test results",
+				Timestamp: time.Now(),
 			},
 		},
 	}
@@ -73,7 +74,6 @@ func TestSaveAndLoadCache(t *testing.T) {
 	assert.Equal(t, "abc123", entry.DiffHash)
 	assert.Equal(t, "HEAD", entry.BaseRef)
 	assert.Equal(t, "test results", entry.Results)
-	assert.Equal(t, "https://console.kusari.dev/test", entry.ConsoleURL)
 }
 
 func TestCleanupOldEntries(t *testing.T) {
@@ -144,40 +144,11 @@ func TestLoadCache_CorruptedFile(t *testing.T) {
 	assert.Empty(t, cache.Entries)
 }
 
-func TestScanCacheEntry_Fields(t *testing.T) {
-	now := time.Now()
-	entry := ScanCacheEntry{
-		DiffHash:   "hash123",
-		BaseRef:    "main",
-		Results:    "test results",
-		ConsoleURL: "https://example.com",
-		Timestamp:  now,
-	}
-
-	assert.Equal(t, "hash123", entry.DiffHash)
-	assert.Equal(t, "main", entry.BaseRef)
-	assert.Equal(t, "test results", entry.Results)
-	assert.Equal(t, "https://example.com", entry.ConsoleURL)
-	assert.Equal(t, now, entry.Timestamp)
-}
-
-func TestCacheResult_Fields(t *testing.T) {
-	result := CacheResult{
-		Hit:        true,
-		Results:    "cached results",
-		ConsoleURL: "https://console.kusari.dev/cached",
-	}
-
-	assert.True(t, result.Hit)
-	assert.Equal(t, "cached results", result.Results)
-	assert.Equal(t, "https://console.kusari.dev/cached", result.ConsoleURL)
-}
-
 func TestCheckCache_NoEntry(t *testing.T) {
 	tmpDir := t.TempDir()
 	useHomeDir(t, tmpDir)
 
-	result, err := CheckCache("/nonexistent/repo", "HEAD", "markdown", false)
+	result, err := CheckCache("/nonexistent/repo", "HEAD", "markdown", false, false)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.False(t, result.Hit)
@@ -218,14 +189,14 @@ func cacheRepo(t *testing.T) string {
 func TestCache_OutputFormatIsPartOfTheKey(t *testing.T) {
 	dir := cacheRepo(t)
 
-	require.NoError(t, SaveToCache(dir, "HEAD", "sarif", `{"runs":[]}`, "https://console/x", nil, false))
+	require.NoError(t, SaveToCache(dir, "HEAD", "sarif", false, `{"runs":[]}`, nil, false))
 
-	hit, err := CheckCache(dir, "HEAD", "sarif", false)
+	hit, err := CheckCache(dir, "HEAD", "sarif", false, false)
 	require.NoError(t, err)
 	require.True(t, hit.Hit, "the same format should hit")
 	assert.Equal(t, `{"runs":[]}`, hit.Results)
 
-	miss, err := CheckCache(dir, "HEAD", "markdown", false)
+	miss, err := CheckCache(dir, "HEAD", "markdown", false, false)
 	require.NoError(t, err)
 	assert.False(t, miss.Hit, "a different output format must not be served from cache")
 }
@@ -235,9 +206,9 @@ func TestCache_OutputFormatIsPartOfTheKey(t *testing.T) {
 func TestCache_LegacyEntryWithoutFormatMisses(t *testing.T) {
 	dir := cacheRepo(t)
 
-	require.NoError(t, SaveToCache(dir, "HEAD", "", "legacy content", "https://console/x", nil, false))
+	require.NoError(t, SaveToCache(dir, "HEAD", "", false, "legacy content", nil, false))
 
-	result, err := CheckCache(dir, "HEAD", "markdown", false)
+	result, err := CheckCache(dir, "HEAD", "markdown", false, false)
 	require.NoError(t, err)
 	assert.False(t, result.Hit, "an entry with no recorded format must not be reused")
 }
@@ -255,15 +226,15 @@ func TestCache_GatedScanServedFromCacheStillBlocks(t *testing.T) {
 		DependencyMitigations: 1,
 		Justification:         "hardcoded credential",
 	}
-	require.NoError(t, SaveToCache(dir, "HEAD", "sarif", `{"runs":[]}`, "https://console/x", blocking, false))
+	require.NoError(t, SaveToCache(dir, "HEAD", "sarif", false, `{"runs":[]}`, blocking, false))
 
-	hit, err := CheckCache(dir, "HEAD", "sarif", false)
+	hit, err := CheckCache(dir, "HEAD", "sarif", false, false)
 	require.NoError(t, err)
 	require.True(t, hit.Hit)
 	require.NotNil(t, hit.Verdict, "the verdict must survive the round trip through disk")
 
 	// Gated: the cached verdict must produce the same error a live scan would.
-	gErr := hit.Verdict.findingsError(true, hit.ConsoleURL)
+	gErr := hit.Verdict.findingsError(true)
 	require.Error(t, gErr)
 	var fe *FindingsError
 	require.ErrorAs(t, gErr, &fe)
@@ -272,30 +243,30 @@ func TestCache_GatedScanServedFromCacheStillBlocks(t *testing.T) {
 	assert.Equal(t, "hardcoded credential", fe.Reason)
 
 	// Ungated: the same cached entry must not fail anything.
-	assert.NoError(t, hit.Verdict.findingsError(false, hit.ConsoleURL))
+	assert.NoError(t, hit.Verdict.findingsError(false))
 }
 
 func TestCache_GatedScanServedFromCacheAllowsOnProceed(t *testing.T) {
 	dir := cacheRepo(t)
 
 	proceed := &CachedVerdict{ShouldProceed: true, CodeMitigations: 3}
-	require.NoError(t, SaveToCache(dir, "HEAD", "markdown", "report", "https://console/x", proceed, false))
+	require.NoError(t, SaveToCache(dir, "HEAD", "markdown", false, "report", proceed, false))
 
-	hit, err := CheckCache(dir, "HEAD", "markdown", false)
+	hit, err := CheckCache(dir, "HEAD", "markdown", false, false)
 	require.NoError(t, err)
 	require.True(t, hit.Hit)
 
 	// should_proceed is the verdict: findings attached to it are advisory and
 	// must not fail a gated scan.
-	assert.NoError(t, hit.Verdict.findingsError(true, hit.ConsoleURL))
+	assert.NoError(t, hit.Verdict.findingsError(true))
 }
 
 // A nil verdict must behave exactly as the live path does with a nil analysis,
 // so a cache hit and a fresh scan never disagree.
 func TestCache_NilVerdictMatchesLiveBehavior(t *testing.T) {
 	var cached *CachedVerdict
-	assert.NoError(t, cached.findingsError(true, "https://console/x"))
-	assert.NoError(t, findingsResult(true, nil, "https://console/x"),
+	assert.NoError(t, cached.findingsError(true))
+	assert.NoError(t, findingsResult(true, nil),
 		"the live path returns no error for a nil analysis; the cache must agree")
 }
 
@@ -323,16 +294,61 @@ func TestVerdictFrom(t *testing.T) {
 func TestCache_McpAndCliFormatsDoNotCollide(t *testing.T) {
 	dir := cacheRepo(t)
 
-	// MCP-shaped scan: sarif, full output, waits for results.
-	require.NoError(t, SaveToCache(dir, "HEAD", "sarif", `{"runs":[{"results":[]}]}`, "https://console/x",
+	require.NoError(t, SaveToCache(dir, "HEAD", "sarif", false, `{"runs":[{"results":[]}]}`,
 		&CachedVerdict{ShouldProceed: true}, false))
 
-	mcp, err := CheckCache(dir, "HEAD", "sarif", false)
+	mcp, err := CheckCache(dir, "HEAD", "sarif", false, false)
 	require.NoError(t, err)
 	require.True(t, mcp.Hit, "the MCP path should be served from cache")
 	assert.Contains(t, mcp.Results, `"runs"`)
 
-	cli, err := CheckCache(dir, "HEAD", "markdown", false)
+	cli, err := CheckCache(dir, "HEAD", "markdown", false, false)
 	require.NoError(t, err)
 	assert.False(t, cli.Hit, "a markdown request must not be served the cached SARIF")
+}
+
+// Catches serving full text to a truncated request on the grounds that it is a
+// superset: the two renderings differ, so each must miss the other.
+func TestCache_FullOutputIsPartOfTheKey(t *testing.T) {
+	dir := cacheRepo(t)
+
+	require.NoError(t, SaveToCache(dir, "HEAD", "markdown", true, "full", nil, false))
+	truncated, err := CheckCache(dir, "HEAD", "markdown", false, false)
+	require.NoError(t, err)
+	assert.False(t, truncated.Hit)
+
+	require.NoError(t, SaveToCache(dir, "HEAD", "markdown", false, "truncated", nil, false))
+	full, err := CheckCache(dir, "HEAD", "markdown", true, false)
+	require.NoError(t, err)
+	assert.False(t, full.Hit)
+}
+
+// Catches a cache schema change that drops entries written by earlier releases,
+// which carry console_url and no full_output.
+func TestCache_EntryWrittenBeforeFullOutputStillLoads(t *testing.T) {
+	dir := cacheRepo(t)
+	absDir, err := filepath.Abs(dir)
+	require.NoError(t, err)
+	diffHash, err := computeDiffHash(absDir, "HEAD")
+	require.NoError(t, err)
+
+	cachePath, err := getCachePath()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0700))
+	entry := map[string]any{
+		"diff_hash":     diffHash,
+		"base_ref":      "HEAD",
+		"output_format": "markdown",
+		"results":       "earlier release",
+		"console_url":   "https://console/x",
+		"timestamp":     time.Now(),
+	}
+	data, err := json.Marshal(map[string]any{"entries": map[string]any{absDir: entry}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(cachePath, data, 0600))
+
+	hit, err := CheckCache(dir, "HEAD", "markdown", false, false)
+	require.NoError(t, err)
+	require.True(t, hit.Hit)
+	assert.Equal(t, "earlier release", hit.Results)
 }

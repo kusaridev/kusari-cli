@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
@@ -22,10 +21,9 @@ import (
 
 // ScanToolResult contains the result of a scan operation.
 type ScanToolResult struct {
-	Success    bool
-	ConsoleURL string
-	Results    string
-	Error      string
+	Success bool
+	Results string
+	Error   string
 }
 
 // executeScanLocalChanges performs a local changes scan using internal packages.
@@ -73,9 +71,6 @@ func (s *Server) executeScanLocalChanges(ctx context.Context, args ScanLocalChan
 		return nil, fmt.Errorf("scan failed: %w", err)
 	}
 
-	// Extract console URL from stderr
-	consoleURL := extractConsoleURL(stderr)
-
 	// Format results with status messages from stderr and scan results from stdout
 	var resultBuilder strings.Builder
 
@@ -97,12 +92,9 @@ func (s *Server) executeScanLocalChanges(ctx context.Context, args ScanLocalChan
 		resultBuilder.WriteString(stdout)
 	}
 
-	results := formatResultWithConsoleURL(resultBuilder.String(), consoleURL)
-
 	return &ScanToolResult{
-		Success:    true,
-		ConsoleURL: consoleURL,
-		Results:    results,
+		Success: true,
+		Results: resultBuilder.String(),
 	}, nil
 }
 
@@ -173,35 +165,6 @@ func validateGitRepo(path string) error {
 		return fmt.Errorf(".git is not a directory in %s", path)
 	}
 	return nil
-}
-
-// extractConsoleURL extracts the Kusari console URL from stderr output.
-// It looks for patterns like "Once completed, you can see results at: URL"
-// or "You can also view your results here: URL"
-func extractConsoleURL(stderr string) string {
-	// Pattern 1: "Once completed, you can see results at: URL"
-	// Pattern 2: "You can also view your results here: URL"
-	patterns := []string{
-		`(?:Once completed, you can see results at:|You can also view your results here:)\s*(https://[^\s]+)`,
-	}
-
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(pattern)
-		matches := re.FindStringSubmatch(stderr)
-		if len(matches) >= 2 {
-			return strings.TrimSpace(matches[1])
-		}
-	}
-
-	return ""
-}
-
-// formatResultWithConsoleURL adds a console URL banner to the results if URL is available.
-func formatResultWithConsoleURL(results string, consoleURL string) string {
-	if consoleURL == "" {
-		return results
-	}
-	return fmt.Sprintf("View detailed results: %s\n\n---\n\n%s", consoleURL, results)
 }
 
 // captureOutput captures stdout and stderr from a function execution.

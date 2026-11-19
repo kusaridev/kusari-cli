@@ -112,12 +112,14 @@ func queryOnce(t *testing.T, srv *httptest.Server, format string, failOnFindings
 	t.Helper()
 	// Sandbox HOME so a stray cache write cannot touch the developer's files.
 	t.Setenv("HOME", t.TempDir())
-	consoleURL := "https://console.example.com/results/abc"
 	return captureStdout(t, func() error {
 		// repoDir is empty so the cache path is skipped: this test is about the
 		// verdict, not caching.
-		return queryForResult(srv.URL, "event-key", "token", &consoleURL, "ws", format,
-			false, "", false, "", "HEAD", true, failOnFindings)
+		opts := ScanOptions{
+			Rev: "HEAD", PlatformURL: srv.URL, ConsoleURL: "https://console.example.com",
+			OutputFormat: format, FullOutput: true, FailOnFindings: failOnFindings,
+		}
+		return queryForResult(opts, false, "event-key", "token", "ws")
 	})
 }
 
@@ -164,7 +166,6 @@ func TestQueryForResult_FailOnFindings_ReportsFindings(t *testing.T) {
 	require.ErrorAs(t, err, &fe, "callers must be able to tell findings from a failure")
 	assert.Equal(t, 2, fe.CodeMitigations)
 	assert.Equal(t, 1, fe.DependencyMitigations)
-	assert.Equal(t, "https://console.example.com/results/abc", fe.ConsoleURL)
 	assert.Equal(t, 3, fe.ExitCode(), "exit 3 keeps findings distinct from a generic failure")
 
 	// The ordering guarantee: results are printed before the verdict is
@@ -200,22 +201,24 @@ func TestQueryForResult_FailOnFindings_SarifStillEmitted(t *testing.T) {
 		"the SARIF document must be written in full before the verdict is returned")
 	assert.Contains(t, out, "code-mitigation")
 	assert.Contains(t, out, "src/config.js")
+	assert.Contains(t, out, "https://console.example.com/workspaces/ws/analysis/scan-1/result",
+		"catches linking by the event key or the old sort key instead of the scan id")
 }
 
 func TestFindingsResult(t *testing.T) {
 	t.Run("nil analysis never reports findings", func(t *testing.T) {
-		assert.NoError(t, findingsResult(true, nil, "url"))
+		assert.NoError(t, findingsResult(true, nil))
 	})
 	t.Run("flag off never reports findings", func(t *testing.T) {
-		assert.NoError(t, findingsResult(false, withFindings(), "url"))
+		assert.NoError(t, findingsResult(false, withFindings()))
 	})
 	t.Run("should proceed reports nothing", func(t *testing.T) {
-		assert.NoError(t, findingsResult(true, clean(), "url"))
+		assert.NoError(t, findingsResult(true, clean()))
 	})
 	t.Run("findings report an error", func(t *testing.T) {
-		err := findingsResult(true, withFindings(), "url")
+		err := findingsResult(true, withFindings())
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "2 code and 1 dependency")
+		assert.Equal(t, "Kusari Inspector reported 2 code and 1 dependency finding(s) that must be addressed", err.Error())
 	})
 }
 
@@ -321,4 +324,54 @@ func TestScan_CachedVerdictDoesNotAffectUngatedScan(t *testing.T) {
 	// Same repo, same diff, same cached entry -- but not gated.
 	_, err = captureStdout(t, func() error { return scan(base, false, mock()) })
 	assert.NoError(t, err, "without --fail-on-findings a cached blocking verdict must not fail the scan")
+}
+
+// Catches a console link the CLI prints itself, live or on a cache hit, and a
+// cache that serves truncated text to a --full-output rerun.
+func TestScan_PrintsNoConsoleLinkAndKeysTheCacheOnFullOutput(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	srv := workspaceAPIServer(t, clean())
+	repoDir := t.TempDir()
+	setupGitRepoAt(t, repoDir)
+
+	var uploads int
+	mock := &scanMock{
+		fileUploader: func(presignedURL, filePath string) error { uploads++; return nil },
+		presignedURLGetter: func(apiEndpoint, jwtToken, filePath, workspace string, full bool, size int64) (string, error) {
+			return "https://example.com/workspace/ws/user/human/u/diff/blob/123", nil
+		},
+		defaultWorkspaceGetter: func(platformUrl, jwtToken string) ([]login.Workspace, map[string][]string, error) {
+			return []login.Workspace{{ID: "ws", Description: "Test Workspace"}},
+				map[string][]string{"ws": {"test-tenant"}}, nil
+		},
+		token: "token",
+	}
+	opts := ScanOptions{
+		Dir: repoDir, Rev: "HEAD", PlatformURL: srv.URL,
+		ConsoleURL: "https://console.example.com", OutputFormat: "markdown", Wait: true,
+	}
+	run := func() (stdout, stderr string) {
+		stderr, err := captureStderr(t, func() error {
+			var err error
+			stdout, err = captureStdout(t, func() error { return scan(opts, false, mock) })
+			return err
+		})
+		require.NoError(t, err)
+		return stdout, stderr
+	}
+
+	for _, label := range []string{"live", "cache hit"} {
+		stdout, stderr := run()
+		assert.Contains(t, stdout, "truncated body", label)
+		assert.NotContains(t, stdout+stderr, "https://console", label)
+	}
+	require.Equal(t, 1, uploads, "the second run should be served from cache")
+
+	opts.FullOutput = true
+	stdout, _ := run()
+	assert.Equal(t, 2, uploads, "a --full-output rerun must not be served the truncated entry")
+	assert.Contains(t, stdout, "full markdown body")
 }

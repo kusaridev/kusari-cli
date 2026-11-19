@@ -33,8 +33,6 @@ type ScanRequest struct {
 type ScanResult struct {
 	// Success indicates whether the scan completed successfully.
 	Success bool
-	// ConsoleURL is the URL to view results in Kusari console.
-	ConsoleURL string
 	// Results contains the formatted scan results.
 	Results string
 	// Error contains the error message if scan failed.
