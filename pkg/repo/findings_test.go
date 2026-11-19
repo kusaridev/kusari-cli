@@ -115,8 +115,11 @@ func queryOnce(t *testing.T, srv *httptest.Server, format string, failOnFindings
 	return captureStdout(t, func() error {
 		// repoDir is empty so the cache path is skipped: this test is about the
 		// verdict, not caching.
-		return queryForResult(srv.URL, "https://console.example.com", "event-key", "token", "ws", format,
-			false, "", false, "", "HEAD", true, failOnFindings)
+		opts := ScanOptions{
+			Rev: "HEAD", PlatformURL: srv.URL, ConsoleURL: "https://console.example.com",
+			OutputFormat: format, FullOutput: true, FailOnFindings: failOnFindings,
+		}
+		return queryForResult(opts, false, "event-key", "token", "ws")
 	})
 }
 

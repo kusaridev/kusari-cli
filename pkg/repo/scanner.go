@@ -150,7 +150,7 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 	// churn with no reader benefit.
 	dir, rev := opts.Dir, opts.Rev
 	platformUrl, consoleUrl := opts.PlatformURL, opts.ConsoleURL
-	outputFormat, commentPlatform := opts.OutputFormat, opts.CommentPlatform
+	outputFormat := opts.OutputFormat
 	overrideBranch := opts.OverrideBranch
 	verbose, wait, fullOutput := opts.Verbose, opts.Wait, opts.FullOutput
 
@@ -377,7 +377,7 @@ func scan(opts ScanOptions, full bool, mock *scanMock) error {
 	// Wait for results if the user wants, or exit immediately
 	if wait {
 		eventKey := urlBuilder.ScanEventKey(userID, epoch, full, isMachine)
-		return queryForResult(platformUrl, consoleUrl, eventKey, accessToken, workspace, outputFormat, full, commentPlatform, verbose, dir, rev, fullOutput, opts.FailOnFindings)
+		return queryForResult(opts, full, eventKey, accessToken, workspace)
 	}
 	return nil
 }
@@ -388,12 +388,12 @@ func cleanupWorkingDirectory(tempDir string) {
 
 var resultPollInterval = time.Second
 
-func queryForResult(platformUrl, consoleUrl, eventKey, accessToken, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool, failOnFindings bool) error {
-	scan, err := waitForScan(platformUrl, eventKey, accessToken, workspace)
+func queryForResult(opts ScanOptions, full bool, eventKey, accessToken, workspace string) error {
+	scan, err := waitForScan(opts.PlatformURL, eventKey, accessToken, workspace)
 	if err != nil {
 		return err
 	}
-	return printScanResult(scan, consoleUrl, workspace, outputFormat, full, commentPlatform, verbose, repoDir, baseRef, fullOutput, failOnFindings)
+	return printScanResult(scan, opts, full, workspace)
 }
 
 // waitForScan polls workspace-api until the scan with eventKey succeeds, and
@@ -480,28 +480,28 @@ var backendFullResultsLink = regexp.MustCompile(`\[View full analysis results\]\
 const fullOutputHint = "Rerun with `--full-output` to see the full results."
 
 // printScanResult prints, posts and caches a finished scan's analysis.
-func printScanResult(scan *api.InspectorScan, consoleUrl, workspace, outputFormat string, full bool, commentPlatform string, verbose bool, repoDir string, baseRef string, fullOutput bool, failOnFindings bool) error {
+func printScanResult(scan *api.InspectorScan, opts ScanOptions, full bool, workspace string) error {
 	analysis := scan.Analysis
 
 	if full {
 		printFullScanResults(analysis)
-		return findingsResult(failOnFindings, analysis.RawLLMAnalysis)
+		return findingsResult(opts.FailOnFindings, analysis.RawLLMAnalysis)
 	}
 
-	resultURL, err := urlBuilder.Build(consoleUrl, "workspaces", workspace, "analysis", scan.ID, "result")
+	resultURL, err := urlBuilder.Build(opts.ConsoleURL, "workspaces", workspace, "analysis", scan.ID, "result")
 	if err != nil {
 		return err
 	}
 
-	if commentPlatform != "" && analysis.RawLLMAnalysis != nil {
-		if err := postCommentToPlatform(commentPlatform, analysis.RawLLMAnalysis, *resultURL, verbose); err != nil {
+	if opts.CommentPlatform != "" && analysis.RawLLMAnalysis != nil {
+		if err := postCommentToPlatform(opts.CommentPlatform, analysis.RawLLMAnalysis, *resultURL, opts.Verbose); err != nil {
 			// Log error but don't fail the scan
-			fmt.Fprintf(os.Stderr, "Warning: Failed to post %s comment: %v\n", commentPlatform, err)
+			fmt.Fprintf(os.Stderr, "Warning: Failed to post %s comment: %v\n", opts.CommentPlatform, err)
 		}
 	}
 
 	// Check output format
-	if outputFormat == "sarif" {
+	if opts.OutputFormat == "sarif" {
 		// Output sarif format
 		sarifOutput, err := sarif.ConvertToSARIF(analysis.RawLLMAnalysis, *resultURL)
 		if err != nil {
@@ -511,17 +511,17 @@ func printScanResult(scan *api.InspectorScan, consoleUrl, workspace, outputForma
 		fmt.Print(sarifOutput) // stdout
 
 		// Save to cache for diff scans
-		if repoDir != "" {
-			if err := SaveToCache(repoDir, baseRef, outputFormat, fullOutput, sarifOutput, verdictFrom(analysis.RawLLMAnalysis), verbose); err != nil && verbose {
+		if opts.Dir != "" {
+			if err := SaveToCache(opts.Dir, opts.Rev, opts.OutputFormat, opts.FullOutput, sarifOutput, verdictFrom(analysis.RawLLMAnalysis), opts.Verbose); err != nil && opts.Verbose {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", err)
 			}
 		}
-		return findingsResult(failOnFindings, analysis.RawLLMAnalysis)
+		return findingsResult(opts.FailOnFindings, analysis.RawLLMAnalysis)
 	}
 
 	// Clean and format results for stdout
 	var rawContent string
-	if fullOutput {
+	if opts.FullOutput {
 		rawContent = analysis.Results
 	} else {
 		rawContent = analysis.TruncatedCommentWithCodeMitigations
@@ -542,12 +542,12 @@ func printScanResult(scan *api.InspectorScan, consoleUrl, workspace, outputForma
 	}
 	fmt.Print(output) // stdout
 
-	if repoDir != "" {
-		if cacheErr := SaveToCache(repoDir, baseRef, outputFormat, fullOutput, output, verdictFrom(analysis.RawLLMAnalysis), verbose); cacheErr != nil && verbose {
+	if opts.Dir != "" {
+		if cacheErr := SaveToCache(opts.Dir, opts.Rev, opts.OutputFormat, opts.FullOutput, output, verdictFrom(analysis.RawLLMAnalysis), opts.Verbose); cacheErr != nil && opts.Verbose {
 			fmt.Fprintf(os.Stderr, "Warning: Failed to cache results: %v\n", cacheErr)
 		}
 	}
-	return findingsResult(failOnFindings, analysis.RawLLMAnalysis)
+	return findingsResult(opts.FailOnFindings, analysis.RawLLMAnalysis)
 }
 
 // ValidateDirectory checks if a directory exists and is readable
