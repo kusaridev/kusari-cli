@@ -475,10 +475,6 @@ func getWorkspaceAPI(client *http.Client, endpoint, accessToken, workspace strin
 	return json.NewDecoder(resp.Body).Decode(into)
 }
 
-var backendFullResultsLink = regexp.MustCompile(`\[View full analysis results\]\([^)]*\)`)
-
-const fullOutputHint = "Rerun with `--full-output` to see the full results."
-
 // printScanResult prints, posts and caches a finished scan's analysis.
 func printScanResult(scan *api.InspectorScan, opts ScanOptions, full bool, workspace string) error {
 	analysis := scan.Analysis
@@ -526,7 +522,6 @@ func printScanResult(scan *api.InspectorScan, opts ScanOptions, full bool, works
 	} else {
 		rawContent = analysis.TruncatedCommentWithCodeMitigations
 	}
-	rawContent = backendFullResultsLink.ReplaceAllLiteralString(rawContent, fullOutputHint)
 	cleanedContent := removeImageLines(rawContent)
 
 	// Render with glamour to stdout, falling back to the cleaned markdown

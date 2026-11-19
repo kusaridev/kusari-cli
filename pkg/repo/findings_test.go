@@ -29,7 +29,7 @@ func workspaceAPIServer(t *testing.T, analysis *api.SecurityAnalysis, listRespon
 		Analysis: &api.Analysis{
 			Proceed:                             analysis.ShouldProceed,
 			Results:                             "## Findings\n\nfull markdown body",
-			TruncatedCommentWithCodeMitigations: "## Findings\n\ntruncated body\n\n[View full analysis results](https://console.us.kusari.cloud/analysis)",
+			TruncatedCommentWithCodeMitigations: "## Findings\n\ntruncated body",
 			RawLLMAnalysis:                      analysis,
 		},
 	}
@@ -326,9 +326,9 @@ func TestScan_CachedVerdictDoesNotAffectUngatedScan(t *testing.T) {
 	assert.NoError(t, err, "without --fail-on-findings a cached blocking verdict must not fail the scan")
 }
 
-// Catches a console link left on stderr or in the rendered results, live or on a
-// cache hit, and a cache that serves truncated text to a --full-output rerun.
-func TestScan_TruncatedResultsHintAtFullOutputAndPrintNoLink(t *testing.T) {
+// Catches a console link the CLI prints itself, live or on a cache hit, and a
+// cache that serves truncated text to a --full-output rerun.
+func TestScan_PrintsNoConsoleLinkAndKeysTheCacheOnFullOutput(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -365,7 +365,7 @@ func TestScan_TruncatedResultsHintAtFullOutputAndPrintNoLink(t *testing.T) {
 
 	for _, label := range []string{"live", "cache hit"} {
 		stdout, stderr := run()
-		assert.Contains(t, stdout, "--full-output", label)
+		assert.Contains(t, stdout, "truncated body", label)
 		assert.NotContains(t, stdout+stderr, "https://console", label)
 	}
 	require.Equal(t, 1, uploads, "the second run should be served from cache")
