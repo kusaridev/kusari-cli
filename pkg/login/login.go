@@ -14,6 +14,7 @@ import (
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
 	urlBuilder "github.com/kusaridev/kusari-cli/v2/pkg/url"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 )
 
 func Login(ctx context.Context, clientId, clientSecret, redirectUrl, authEndpoint, redirectPort, consoleUrl, platformUrl string, verbose bool, useSso bool) error {
@@ -157,7 +158,8 @@ func FetchWorkspaces(platformUrl string, accessToken string) ([]Workspace, map[s
 	}
 
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout:   10 * time.Second,
+		Transport: useragent.NewTransport(nil),
 	}
 
 	req, err := http.NewRequest("GET", *userEndpoint, nil)

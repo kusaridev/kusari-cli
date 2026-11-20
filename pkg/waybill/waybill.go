@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/briandowns/spinner"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 )
 
 type asset struct {
@@ -235,7 +236,7 @@ func downloadAndVerify(ctx context.Context, url, wantHex string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Transport: useragent.NewTransport(nil)}).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download %s: %w", url, err)
 	}

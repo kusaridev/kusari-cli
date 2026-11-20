@@ -12,6 +12,7 @@ import (
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/connectivity"
 	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -74,7 +75,7 @@ environment variables.`,
 			printAllowlist(allowlist, proxyEnv)
 
 			if reportPath != "" {
-				rep := connectivity.BuildReport(results, allowlist, getVersion(), proxyEnv, time.Now())
+				rep := connectivity.BuildReport(results, allowlist, useragent.Version(), proxyEnv, time.Now())
 				if err := connectivity.WriteReport(reportPath, rep); err != nil {
 					return err
 				}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/kusaridev/kusari-cli/v2/api"
 	"github.com/kusaridev/kusari-cli/v2/pkg/comment"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 )
 
 const (
@@ -154,7 +155,7 @@ type mrNote struct {
 func listMRNotes(apiURL, projectID, mrIID, token string) ([]mrNote, error) {
 	endpoint := fmt.Sprintf("%s/projects/%s/merge_requests/%s/notes", apiURL, projectID, mrIID)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -240,7 +241,7 @@ func updateNote(apiURL, projectID, mrIID string, noteID int, token, body string)
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("PUT", endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -341,7 +342,7 @@ func postCodeMitigationComments(analysis *api.SecurityAnalysis, opts CommentOpti
 func getMRDiffRefs(apiURL, projectID, mrIID, token string) (*mrDiffRefs, error) {
 	endpoint := fmt.Sprintf("%s/projects/%s/merge_requests/%s", apiURL, projectID, mrIID)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -469,7 +470,7 @@ func postInlineComment(apiURL, projectID, mrIID, token string, diffRefs *mrDiffR
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -505,7 +506,7 @@ func postNote(endpoint, token, body string) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)

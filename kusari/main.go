@@ -17,14 +17,7 @@ type exitCoder interface {
 	ExitCode() int
 }
 
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
-)
-
 func main() {
-	cmd.SetVersionInfo(version, commit, date)
 	if err := cmd.Execute(); err != nil {
 		// A scan that completed but reported findings exits with its own status,
 		// so callers can tell a security finding from a broken scan.

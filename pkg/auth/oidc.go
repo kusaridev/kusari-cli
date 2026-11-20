@@ -12,6 +12,7 @@ import (
 	"net/url"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 )
@@ -38,6 +39,7 @@ func Authenticate(ctx context.Context, clientId, clientSecret, redirectUrl, auth
 	}
 
 	oauth2Config := oauthConfig(clientId, redirectUrl, authEndpoint)
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{Transport: useragent.NewTransport(nil)})
 
 	var token *oauth2.Token
 	if clientSecret != "" {

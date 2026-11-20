@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 )
 
 const (
@@ -101,7 +102,7 @@ func (o Options) withDefaults() Options {
 		o.ProxyResolver = http.ProxyFromEnvironment
 	}
 	if o.UserAgent == "" {
-		o.UserAgent = "kusari-cli/connectivity-check"
+		o.UserAgent = useragent.String() + " connectivity-check"
 	}
 	return o
 }

@@ -5,10 +5,10 @@ package cmd
 
 import (
 	"fmt"
-	"runtime/debug"
 	"strings"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -18,74 +18,7 @@ var (
 	consoleUrl  string
 	platformUrl string
 	verbose     bool
-
-	// Version information (injected at build time)
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
 )
-
-// SetVersionInfo sets the version information for the CLI
-func SetVersionInfo(v, c, d string) {
-	version = v
-	commit = c
-	date = d
-}
-
-// getVersion returns the version string, using build info as fallback
-func getVersion() string {
-	if version != "dev" {
-		return version
-	}
-
-	// Try to get version from build info (works with go install)
-	if info, ok := debug.ReadBuildInfo(); ok {
-		if info.Main.Version != "" && info.Main.Version != "(devel)" {
-			return info.Main.Version
-		}
-	}
-
-	return version
-}
-
-// getCommit returns the commit hash, using build info as fallback
-func getCommit() string {
-	if commit != "none" {
-		return commit
-	}
-
-	// Try to get commit from build info
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, setting := range info.Settings {
-			if setting.Key == "vcs.revision" {
-				if len(setting.Value) > 7 {
-					return setting.Value[:7]
-				}
-				return setting.Value
-			}
-		}
-	}
-
-	return commit
-}
-
-// getBuildDate returns the build date, using build info as fallback
-func getBuildDate() string {
-	if date != "unknown" {
-		return date
-	}
-
-	// Try to get build date from build info
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, setting := range info.Settings {
-			if setting.Key == "vcs.time" {
-				return setting.Value
-			}
-		}
-	}
-
-	return date
-}
 
 func init() {
 	cobra.OnInitialize(initConfig)
@@ -97,7 +30,7 @@ func init() {
 
 	// Set version information for the root command
 	// This enables the --version flag automatically
-	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built at: %s)", getVersion(), getCommit(), getBuildDate())
+	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built at: %s)", useragent.Version(), useragent.Commit(), useragent.Date())
 
 	rootCmd.PersistentFlags().StringVarP(&consoleUrl, "console-url", "", constants.DefaultConsoleURL, "console url")
 	rootCmd.PersistentFlags().StringVarP(&platformUrl, "platform-url", "", constants.DefaultPlatformURL, "platform url")
