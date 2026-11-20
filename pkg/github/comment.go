@@ -17,6 +17,7 @@ import (
 
 	"github.com/kusaridev/kusari-cli/v2/api"
 	"github.com/kusaridev/kusari-cli/v2/pkg/comment"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 )
 
 const (
@@ -155,7 +156,7 @@ func PostComment(analysis *api.SecurityAnalysis, opts CommentOptions) (*comment.
 func listIssueComments(apiURL, owner, repo string, prNumber int, token string) ([]issueComment, error) {
 	endpoint := fmt.Sprintf("%s/repos/%s/%s/issues/%d/comments", apiURL, owner, repo, prNumber)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -229,7 +230,7 @@ func createIssueComment(apiURL, owner, repo string, prNumber int, token, body st
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -264,7 +265,7 @@ func updateIssueComment(apiURL, owner, repo string, commentID int64, token, body
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("PATCH", endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -293,7 +294,7 @@ func updateIssueComment(apiURL, owner, repo string, commentID int64, token, body
 func getPRInfo(apiURL, owner, repo string, prNumber int, token string) (*pullRequest, error) {
 	endpoint := fmt.Sprintf("%s/repos/%s/%s/pulls/%d", apiURL, owner, repo, prNumber)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -326,7 +327,7 @@ func getPRInfo(apiURL, owner, repo string, prNumber int, token string) (*pullReq
 func listPRReviewComments(apiURL, owner, repo string, prNumber int, token string) ([]prComment, error) {
 	endpoint := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/comments", apiURL, owner, repo, prNumber)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -475,7 +476,7 @@ func createPRReviewComment(apiURL, owner, repo string, prNumber int, token, comm
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -510,7 +511,7 @@ func updatePRReviewComment(apiURL, owner, repo string, commentID int64, token, b
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: useragent.NewTransport(nil)}
 	req, err := http.NewRequest("PATCH", endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 )
 
 // uploadToS3Options contains configuration for uploading data to S3
@@ -29,7 +31,7 @@ func uploadToS3WithOptions(opts uploadToS3Options) error {
 
 	client := opts.client
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Transport: useragent.NewTransport(nil)}
 	}
 
 	req, err := http.NewRequest("PUT", opts.presignedURL, bytes.NewReader(opts.data))
@@ -101,7 +103,8 @@ func getPresignedURLWithOptions(opts presignedURLOptions) (string, error) {
 	client := opts.client
 	if client == nil {
 		client = &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout:   10 * time.Second,
+			Transport: useragent.NewTransport(nil),
 		}
 	}
 

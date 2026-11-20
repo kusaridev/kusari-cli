@@ -23,6 +23,7 @@ import (
 	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
 	"github.com/kusaridev/kusari-cli/v2/pkg/constants"
 	"github.com/kusaridev/kusari-cli/v2/pkg/login"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -269,7 +270,8 @@ func Upload(
 
 	// Create HTTP client
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout:   30 * time.Second,
+		Transport: useragent.NewTransport(nil),
 	}
 
 	// Check if path is a directory or file
@@ -970,7 +972,7 @@ func queryForIngestionStatusWithTimeout(ctx context.Context, platformUrl, tenant
 	attempt := 0
 	sleepDuration := 2 * time.Second
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, Transport: useragent.NewTransport(nil)}
 	var lastStatus string
 
 	for attempt < maxAttempts {

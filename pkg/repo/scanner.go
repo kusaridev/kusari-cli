@@ -28,6 +28,7 @@ import (
 	"github.com/kusaridev/kusari-cli/v2/pkg/login"
 	"github.com/kusaridev/kusari-cli/v2/pkg/sarif"
 	urlBuilder "github.com/kusaridev/kusari-cli/v2/pkg/url"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 )
 
 const (
@@ -413,7 +414,7 @@ func waitForScan(platformUrl, eventKey, accessToken, workspace string) (*api.Ins
 	s.Start()
 	defer s.Stop()
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, Transport: useragent.NewTransport(nil)}
 	get := func(endpoint string, into any) error {
 		return getWorkspaceAPI(client, endpoint, accessToken, workspace, into)
 	}

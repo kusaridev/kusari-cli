@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kusaridev/kusari-cli/v2/pkg/auth"
+	"github.com/kusaridev/kusari-cli/v2/pkg/useragent"
 )
 
 // APIError is returned by the client when the Pico API responds with a 4xx or 5xx status.
@@ -40,7 +41,8 @@ func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 90 * time.Second,
+			Timeout:   90 * time.Second,
+			Transport: useragent.NewTransport(nil),
 		},
 	}
 }

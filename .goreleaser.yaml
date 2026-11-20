@@ -67,9 +67,9 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
+      - -X github.com/kusaridev/kusari-cli/v2/pkg/useragent.version=v{{.Version}}
+      - -X github.com/kusaridev/kusari-cli/v2/pkg/useragent.commit={{.Commit}}
+      - -X github.com/kusaridev/kusari-cli/v2/pkg/useragent.date={{.Date}}
       - -X main.builtBy=goreleaser
     goos:
       - linux
